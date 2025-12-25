@@ -600,6 +600,7 @@ IMPORTANT GUIDELINES:
 - Base your answers on the retrieved documentation content
 - Be helpful, accurate, and cite specific commands or procedures when possible
 - If information isn't in the documentation, let the user know
+- NEVER include raw markdown syntax like {:target="_blank"}, {: .class}, or other kramdown/Jekyll attributes in your responses. Just provide clean, readable text.
 
 TOPICS COVERED:
 - Account management and access
