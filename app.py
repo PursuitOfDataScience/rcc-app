@@ -826,7 +826,7 @@ with st.sidebar:
     st.markdown("## 📚 RCC User Guide")
     st.markdown("---")
     st.markdown("### About")
-    st.markdown("AI assistant for UChicago's Research Computing Center documentation.")
+    st.markdown("AI assistant for UChicago's Midway Computing Clusters.")
     st.markdown("---")
     st.markdown("### Topics")
     st.markdown("""
