@@ -1,0 +1,19 @@
+/* Maximum space for text block */
+.md-grid {
+  max-width: 95%; /* or 100%, if you want to stretch to full-width */
+}
+:root > * {
+  --md-primary-fg-color:        #A00508;
+  --md-primary-fg-color--light: #Af2b2b;
+  --md-primary-fg-color--dark:  #5c0303;
+}
+[data-md-color-scheme="slate"] {
+  --md-primary-fg-color:        #FFA319;
+  --md-primary-fg-color--light: #Af2b2b;
+  --md-primary-bg-color:        #000000;
+  --md-hue: 210; 
+}
+
+img[src*="#shadow"] {
+  box-shadow: 0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19);
+}
