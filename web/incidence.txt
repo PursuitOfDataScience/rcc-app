@@ -1,0 +1,9 @@
+URL: https://learn-radiology.rcc.uchicago.edu/incidence
+Title: Incidence of Prostate Cancer
+| Learn Radiology: Prostate
+================================================================================
+Incidence of Prostate Cancer
+Prostate cancer accounts for 20% of all new cancer cases amongst US men at approximately 174,650 new men diagnosed each year, with prostate cancer alone accounting for nearly 1 in 5 new cancer diagnoses. It is estimated that 31,620 men suffer prostate cancer related death in 2019, which is the highest cancer related death after lung, pancreas and colon & rectum. The inequality for prostate cancer mortality was largely confined to African American men, even after accounting for Hispanic ethnicity among Caucasian Americans. There is a stronger association between lower socioeconomic status and prostate cancer mortality among African Americans.
+However, for all stages combined, 5‐year relative survival rate was highest for prostate cancer (98%)
+amongst all cancers diagnosed during 2008 through 2014. Therefore, effective screening and early diagnosis of prostate cancer can improve patient outcomes.
+Siegel RL, Miller KD, Jemal A. Cancer statistics, 2019. CA: A Cancer Journal for Clinicians 2019;69(1):7-34. https://doi.org/10.3322/caac.21551

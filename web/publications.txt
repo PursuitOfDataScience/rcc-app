@@ -1,0 +1,12 @@
+URL: https://beag3.rcc.uchicago.edu/publications
+Title: Publications | Beagle3 - RCC
+================================================================================
+(773) 795-2667 help@rcc.uchicago.edu
+Beagle3 and the RCC's resources and staff support a number of faculty projects that have resulted in published academic papers.
+If you have published a paper that acknowledged RCC please contact us with the appropriate citation information.
+For information on how to cite or acknowledge RCC in your publications see:
+If you have published a paper or have given a presentation that acknowledges the RCC's computational resources or other services, please e-mail us with the paper title, journal, or conference where a presentation was given. These citations help the RCC demonstrate the role of computational resources and support staff in research at UChicago. If you would like your RCC-supported work featured on our website, please indicate that you are comfortable with us doing so.
+In citations and acknowledgements, please reference the RCC as "the University of Chicago's Research Computing Center." Some example citations are shown below.
+This work was completed in part with resources provided by the University of Chicago's Research Computing Center.
+We are grateful for the support of the University of Chicago's Research Computing Center for assistance with the calculations carried out in this work.
+We acknowledge the University of Chicago's Research Computing Center for their support of this work.

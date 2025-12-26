@@ -1,0 +1,24 @@
+URL: https://rcc.uchicago.edu/about-rcc/research-computing-oversight-committee
+Title: Research Computing Oversight Committee | Research Computing Center
+================================================================================
+The Research Computing Oversight Committee was created to oversee the development and execution of a comprehensive University-wide research computing strategy, along with attendant policies, and to provide advice to the vice provost for research and the director of research computing on research computing challenges and opportunities.
+Chaired by rin J. Adams
+Vice Provost for Research and Senior Research Officer, Office of Research Joseph Regenstein Professor, Department of Biochemistry and Molecular Biology Director, CASE , t he Oversight Committee also includes:
+Mark G. Berman
+, Associate Professor, Associate Chair, Department of Psychology
+Diane Brentari
+, Professor in Linguistics and the Humanities Collegiate Division
+Aaron Dinner
+, Associate Professor in Chemistry
+Michael Franklin
+Morton D. Hull Distinguished Service Professor, Senior Advisor to the Provost for Computing and Data Science Laura Gagliardi , Richard and Kathy Leventhal Professor, Department of Chemistry, Pritzker School of Molecular Engineering and James Franck Institute. Director of the Chicago Center for Theoretical Chemistry Giulia Galli , Liew Family Professor of Molecular Engineering, Pritzker School of Molecular Engineering T. Conrad Gilliam , Dean for research and graduate education, Biological Sciences Division; Marjorie I. and Bernard A. Mitchell Professor in Human Genetics; senior fellow, Computation Institute; and Pritzker Fellow, University of Chicago and the Pritzker School of Medicine Susan Goldin-Meadow , Bearsdley Ruml Distinguished Service Professor in the Department of Psychology, Comparative Human Development Nicholas Hatsopoulos , Professor in Organismal Biology and Anatomy and chair, Committee on Computational Neuroscience Brent Neiman Edward Eagle Brown Professor of Economics
+- Chicago Booth
+Benoit Roux
+, Professor in Biochemistry and Molecular Biophysics
+Matthew Stephens
+, Department Chair, Statistics, Ralph W. Gerard Professor, Department of Statistics and Human Genetics, and the College Greg Voth , Haig P. Papazian Distinguished Service Professor in Chemistry Primary Staff:
+H. Birali Runesha
+Associate Vice President and Director of the Research Computing Center
+Ex Officio Staff:
+Kevin Boyd
+, Associate Vice President for Information Technology and Chief Information Officer Torsten Reimer , University Librarian and Dean of the University Library

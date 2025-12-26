@@ -1,0 +1,9 @@
+URL: https://beag3.rcc.uchicago.edu
+Title: Beagle3 - RCC |
+================================================================================
+help@rcc.uchicago.edu
+Beagle3
+A Shared GPU Cluster for Biomolecular Sciences
+About Beagle3
+Beagle3 is a new, shared GPU cluster for the Biomolecular Sciences. It is funded by the NIH (award S10OD028655) and housed in the University of Chicago's data center along with Midway2 and Midway3. Beagle3 features a diverse collection of the state-of-the-art HPC technologies, including Intel Ice Lake processors, HDR InfiniBand interconnect, and the latest NVIDIA GPUs. Named for the ship that carried Charles Darwin on his pivotal expedition, Beagle3 was preceded by the highly successful Beagle1 and Beagle2 supercomputer clusters for biomedical research. The Beagle3 shared GPU cluster enables the quantitative assessment and validation of biomolecular models and significantly increases efficiency and productivity. Biomedical research depends increasingly on structural and dynamical information about the networks of macromolecular assemblies that underlie all biological function. Beagle3 enables NIH-funded research projects relying on intensive computational analysis.
+Please contact us at if you require additional assistance in accessing or utilizing this resource.

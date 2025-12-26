@@ -1,0 +1,20 @@
+URL: https://rcc.uchicago.edu/resources/software
+Title: Software | Research Computing Center
+================================================================================
+Quality software is integral to effective high-performance computing. The Research Computing Center (RCC) installs, configures, and maintains hundreds of software packages on the RCC cluster, Midway.
+For more information on available software at RCC, see the
+Software section of the User Guide
+, and the full list of installed packages
+Upon request, the RCC can build and install open-source software. The RCC can also help with negotiating licensing agreements and purchasing commercial software or migrating purchased commercial software to our systems.
+The RCC actively maintains many software packages, including:
+Compilers
+: We have the latest GNU and Intel C/C++/Fortran compiler suites, as well as Nvidia's CUDA compiler for GPU computing. We also maintain compilers for many other languages, including Java, Julia, Go, and Haskell.
+Interactive programming environments
+: We maintain many open-source and commercial programming environments, including Python, MATLAB, Mathematica, Stata, and R. These environments often include pre-installed libraries and packages.
+Data processing tools
+: Examples include programs for dealing with large-scale data formats, like HDF5 and NetCDF, data-movement programs such as Globus, and database software such as PostgreSQL and Hadoop.
+Numerical libraries
+: Examples include Intel's Math Kernel Library (MKL) and OpenBLAS, highly optimized implementations of linear algebra routines; the GNU Scientific Library (GSL); and FFTW, a Fourier transform library.
+Community codes
+: We have a large number of commonly-used scientific software. Examples include LAMMPS and Gromacs for molecular dynamics; YT and lfrit for astrophysical analysis and visualization; QIIME for microbiology; and programs such as SAMtools, Bowtie, BLAST, GATK, PLINK, and TopHat for genetic analysis.
+To inquire about specific software installations on the RCC cluster, please send an email to help@rcc.uchicago.edu

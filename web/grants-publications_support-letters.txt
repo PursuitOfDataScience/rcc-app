@@ -1,0 +1,4 @@
+URL: https://rcc.uchicago.edu/grants-publications/support-letters
+Title: Support Letters | Research Computing Center
+================================================================================
+The Research Computing Center is happy to write a letter of support for your grant to guarantee the availability of hosting facilities, computer hardware, storage, system administration, or computational scientist time. Given the time, we can also interview PIs to provide personalized content verifying their credentials as a grant applicant. To obtain a support letter for your grant, please submit a request here

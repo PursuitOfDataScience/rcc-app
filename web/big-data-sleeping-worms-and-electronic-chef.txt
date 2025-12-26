@@ -1,0 +1,35 @@
+URL: https://rcc.uchicago.edu/big-data-sleeping-worms-and-electronic-chef
+Title: Big Data, Sleeping Worms, and an Electronic Chef | Research Computing Center
+================================================================================
+by Benjamin Recchie, AB'03
+This year's Mind Bytes symposium, held on October 28, was a rousing success. The first of what the Research Computing Center plans as an annual event, Mind Bytes was created as a way for researchers across the University to learn about the state of the art in high-performance computing and understand how their colleagues in other disciplines were using research computing to further their own work. Over 160 people attended--students, faculty, staff, and visitors to campus.
+Resource Displays
+Numerous posters and displays were set up to educate attendees about the resources available to them on campus. Attendees could learn about managing their data with Globus (a project of the University of Chicago's Computation Institute and Argonne National Laboratory), usingOCHRE (the Online Cultural and Historical Research Environment) to record and categorize historical and cultural data, and parallelizing their programs with Swift The Research Computing Center's own Robin Weiss (above, center) gave attendees a sneak preview of the RCC's Interactive Visualization Workbench, an experimental setup that combines touchscreen computing and three-dimenesional imaging to create a different way to interact with and display 3D information.
+Cognitive Computing
+The keynote speaker for Mind Bytes was Swami Chandrasekaran, executive architect and technical leader for IBM Watson CTO office. The goal for the Watson project specifically and cognitive computing in general, Chandrasekaran said, was to "find new related pathways in your data to make discoveries in a fraction of the time you could before."
+Representatives from IBM gave a demonstration of what Chandrasekaran was talking about--a kiosk showing off the cognitive computing capabilities of their Watson system. Watson may still be best known in its earlier version that defeated human contestants on Jeopardy!
+, but IBM has grown the system and started to apply it to real-world applications. These included healthcare and law-enforcement, but perhaps the most popular application was Chef Watson , a program which takes user-selected ingredients and invents a recipe for them. Cognitive computing tries to exploit the computational power of computers while finding unexpected links between nuggets of information to provide novel insights to its users--in the case of Chef Watson, flavors that you wouldn't expect that go together but do.
+Lightning Talks
+Many attendees said their favorite part of the event were the afternoon's lightning talks, which showcased the variety of disciplines currently supported at the RCC. With just 15 minutes to present their work and no time to answer questions from the audience, presenters were challeneged to explain their research clearly and concisely. Juan de Pablo (Liew Family Professor, Institute for Molecular Engineering; above), Andrey Kravtsov (professor of astronomy and astrophysics, Kavli Institute for Cosmological Physics, and the Enrico Fermi Institute), Burhaneddin Sandicki (associate professor of operations management, Chicago Booth), John Goldsmith (Edward Carson Waller Distinguished Service Professor of linguistics and computer science), and David Biron (assistant professor of physics) all gave lightning talks this year.
+In case you missed it, click here for the slide decks for
+Goldsmith's and
+Biron's talks.
+Big Data
+Sema Barlas, director of the master of science in analytics program at the University of Chicago Graham School of Continuing Studies, moderated a panel of experts discussing the challenges and opportunites of big data. The panel comprised Michelangelo D'Agostino, (senior data scientist at Civis Analytics and former senior analyst at Obama for America 2012), Nick Kadochnikov (data scientist, educator, and business analytics consultant at IBM), Joe Kleinhenz (director of big data analytics and product intelligence at Allstate Corporation), and Andrei Broder (distiguished scientist at Google).
+The panelists tried to tease out how much enthusiasm for big data is real, and how much is hype; how to find value in a data set and from analytics; the dangers of crowdsourcing; and the need for more advanced skills than traditional analysts have. But t he first thing the panel agreed on? That the term "big data" is used (and misued) so very differently between disciplines that it's easy to lose track of its real value.
+Posters
+A major part of Mind Bytes wwas the poster competition, which allowed researchers to present their results attained through the use of RCC's computers, programs, and.or consultants. Twenty-seven posters, in every field from liguistics to cosmology, were submitted for the poster competition.
+A panel of four judges considered the research contained in the posters for three awards. The winners were:
+The Research Computing Center Mind Bytes Award for Visualization in Research
+Simulating the Dark Side of the Universe
+(Diemer and Kravtsov)
+The Research Computing Center Mind Bytes Award for Performance and Scalability
+Towards Anatomic Scale Agent-Based Modeling with a Spatially Explicit General Purpose Model of Enteric Tissue (Cockrell, Christley, and An)
+The Research Computing Center Mind Bytes Award for Big-Data Research:
+Coarse Graining of Electronic Structure and Multiscale Reactive Molecular Dynamics Simulations (Knight, Tse, Savage, Peng, and Voth)
+An additional award, to acknowledge efforts for novel application of research computing, was given to Learning Natural Language Morphology from a Raw Text (Lee and Goldsmith)
+Finally, attendees could vote in person for their overall favorite poster:
+Attendee's Choice Award
+Comparative Analysis of Capital Investments in Electric Utility Industry
+(Banerjee, Agrawal, and Klusendorf)
+Many thanks to all our attendees, presenters, and exhibitors, and especially to sponsors Intel, Nvidia, and Lenovo. The second annual Mind Bytes will be held in the fall of 2015; check mindbytes.uchicago.edu for updates starting this spring.

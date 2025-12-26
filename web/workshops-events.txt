@@ -1,0 +1,87 @@
+URL: https://vislab.rcc.uchicago.edu/workshops-events
+Title: Events | Visualization Laboratory - Research Computing Center
+================================================================================
+Covid-19 Epidemic Data Visualization Workshop
+Wednesday, May 20, 2020
+5:00 pm
+7:00 pm
+With the rapid spread in the novel Corona-virus worldwide, the World Health Organization (WHO) and several countries have published results on the impact of COVID-19 over the past few months. We will be using the data repository curated by John Hopkins University, together with nCoV2019 dataset and other public data, to analyze the COVID-19 epidemic data and create interactive dashboards using Python. We will visualize the emergence of the COVID-19 epidemic, including analysis on infection, mortality, and recovery rates, at different times and geographical location.
+Presenters: Teodora Szasz (The University of Chicago) and Luis Ibanez (Google)
+This is a community event, hosted by AnitaB.org and featuring the RCC Visualization Lab's Teodora Szasz, and Google's Luis Ibanez.
+COVID-19 Epidemic Data Visualization
+Tuesday, April 14, 2020
+2:00 pm
+4:00 pm
+With the rapid spread in the novel Corona-virus worldwide, the World Health Organisation (WHO) and several countries have published results on the impact of COVID-19 over the past few months. We will be using the data repository curated by John Hopkins University, together with nCoV2019 dataset and other public data, to analyze the COVID-19 epidemic data and create interactive dashboards using Python. We will visualize the emergence of the COVID-19 epidemic, including analysis on infection, mortality, and recovery rates, at different times and geographical location.
+Introduction to Computer Vision in Python
+Thursday, February 20, 2020
+4:30 pm
+This workshop provides an introduction to computer vision (CV), fundamentals of image formation, imaging geometry, feature detection and matching, multiview geometry including stereo, motion estimation and tracking, and classification. This workshop will cover basic algorithms for applications that include finding known models in images, depth recovery from stereo, camera calibration, image stabilization, automated alignment (e.g. panoramas), tracking, and action recognition. We will focus less on the machine learning aspect of CV as that is really classification theory best learned in an ML course. In this workshop you will not, for the most part, apply high-level library functions but use low to mid level algorithms to analyze images and extract structural information.
+Data Visualization for Storytellers
+Thursday, Dec 5, 2019
+4:30pm - 6pm
+This will be a hands-on workshop on how to create clear visualizations and how to use interactive dashboards to tell stories about your data for expressing meaningful ideas. We will present the main principles on creating effective interactive visualization and work with some very powerful visualization tools (
+Tableau Public and
+Google Data Studio
+). Participants are encouraged to bring their laptops and download Tableau Public prior to participating in the workshop.
+Introduction to Python for Data Analysis
+Tuesday, December 10, 2019
+2:00pm - 4:30pm
+Python is a powerful, highly readable, object oriented language. It has expanded in recent years to include massive libraries for data manipulation, visualization and analysis. Whereas R was built as a statistical language, Python may be the better choice for those interested in machine learning and data analysis tasks that need to be integrated in web applications. In this introduction, you will learn Python fundamentals such as reading a .csv file and handling data structures such as lists, arrays and data frames. You will learn about creating Python functions and customizing your own plots based on real data.
+Data Wrangling and Visualization in R
+Tuesday, December 5, 2019
+2:00pm - 5:00pm
+The purpose of this workshop is to provide an end-to-end demonstration of common Extract, Transform, Load (ETL) tasks including how to use an API; how to clean, standardize, and format data for different types of analysis; methods for generating summary statistics and analytics, and producing custom plots. The workshop will use the R programming language.
+Introduction to Deep Learning for Image Classification
+Tuesday, November 26, 2019
+Deep learning is a subset of machine learning algorithms that is good at recognizing patterns. Recent advances in deep learning made tasks such as image and speech recognition possible. This workshop will demonstrate how to develop neural network models from scratch for image classification.
+Mind Bytes 2019
+Tuesday, November 5th
+Save the Date: Mind Bytes '19: Research Computing Expo and Symposium will take place on November 5th, 2019. Now in its fifth year, this annual symposium brings together faculty, students, and staff from across the university for a series of panels, lightning talks, technical demonstrations, posters, and more. The theme of this year's Mind Bytes is Data Science: The Complexity of Connections. For more information and to register, visit the Mind Bytes homepage.
+Deep Learning for Computer Vision in Python
+Tuesday, August 27, 2019
+2:00 PM - 6:00 PM CST
+Deep learning, a subfield of machine learning, has been increasingly applied to solving problems such as image classification in computer vision. During this workshop, we will develop a complete end-to-end application that can detect smiles in a video stream in real-time using deep learning along with traditional computer vision techniques. We will be training a LetNet architecture on a dataset of images that contain faces of people who are smiling and not smiling.
+Prerequisites: Python - intermediate level. Attendees should bring a laptop if they would like to participate in the hands-on exercises.
+Location: John Crerar Library - Zar Room
+Introduction to Information Data Visualization
+Tuesday, August 13, 2019
+2:00 PM - 5:00 PM CST
+Data visualization allows researchers to explore and display data such as to tell a story about the contexts from which that data is drawn.
+This workshop will provide a brief introduction to information data visualization and its theory and strategies. It is designed to showcase the types of information data visualization that are useful to people who have little to no experience with data visualization methods.
+Prerequisites: All participants are expected to bring a laptop with a Mac, Linux, or Windows operating system that they have administrative privileges on. Python and Jupyter Notebooks must already be installed. Participants are expected to understand basic Linux commands; and to have basic programming skill using Python with a Jupyter Notebook.
+Developing Data Visualization for the Social Sciences
+Friday, July 19, 2019
+12:00 PM - 1:30 PM CST
+This is a hands-on workshop on designing and developing interactive visualization using social sciences datasets and the Python programming language. Example visualizations will be drawn from the Visualization for Understanding and Exploration (VUE) project , developed at Research Computing Center.
+Presented by Teodora Szasz, Visualization Lab Manager, and Kazutaka Takahashi, Computational scientist.
+Location:
+Classics 110
+Data Visualization with R
+Friday, June 28, 2019
+12:00 PM -1:30 PM CST
+This workshop will focus on creating visualizations with the R package ggplot2. This package builds upon a design theory called the Grammar of Graphics and allows users to create visualizations that are customizable to a nearly endless degree. Objectives - this workshop covers: design theory and understanding the "grammar of graphics;" the basics of 'aesthetics' and 'geoms;' ways to customize the layout of your visualization; visualizing spatial data. This workshop will assume that participants have a basic level of familiarity with working with data in R.
+Presented by Parmanand Sinha, Computational Scientist
+Regenstein A-11
+In-situ Visualization: Visualizing Simulation Data as they are Generated
+Tuesday, June 4, 2019
+4:00 PM CST
+A classic simulation workflow involves pre-processing and creating input files for the simulation, computing and generating results, post-processing the results, and visualizing results. In-situ visualization can be defined as visualization of data from a simulation in real-time, while a simulation is still running. This hands-on workshop will introduce the concept of in-situ visualization, its advantages, limitations, and its comparison to the post-hoc visualization. We will use ParaView Catalyst and VTK on the Midway high-performance computing cluster for the hands-on exercises.
+3D Printing from Medical Data
+Tuesday, May 21, 2019
+Ever wanted to 3D print models of bones and organs? Learn to process public domain de-identified medical data to create anatomical models. Bring your laptops for this hands-on class with Theodora Szasz from the Research Computing Center.
+Open to the public. Basic computer skills required, but no previous experience with medical image processing is necessary.
+This event is part of UChicago Innovation Fest 2019, a month-long celebration of pioneering discovery and entrepreneurial endeavors at the University of Chicago.
+View the slides from this event here
+Introduction to Network Analysis and Visualization
+Thursday, May 16, 2019
+Interactions of many units such as words, genes, neurons, and people can be described as various types of network. Despite the fact that types of network can be undirected, directed, weighted, signed, or labeled in the context of graph theory, every network can be expressed mathematically in the form of an adjacency matrix whose rows and columns are assigned to the nodes in the network and the presence or the weight of an edge can be assigned as a binary value or be symbolized by a numerical value. This workshop will cover methods to construct network from data, to analyze topological structure of network by analyzing the structure of adjacency matrices, and furthermore introduce various methods to visualize networks based on their sizes and topological properties. We will mainly focus on text networks.
+Increase Font
+Decrease Font
+Black & White
+Inverse Colors
+Highlight Links
+Regular Font
+Reset
+Page Reader
+Real Accessability

@@ -1,0 +1,5 @@
+URL: https://rcc.uchicago.edu/grants-publications
+Title: Grants & Publications | Research Computing Center
+================================================================================
+Enabling research is at the center of the Research Computing Center's (RCC) mission. Our department has helped enable the advancement of critical inquiry in many fields--from the physical sciences, social sciences, to the humanities. In addition to the cutting-edge hardware and the advanced software that the RCC maintains, our expert staff--computational scientists, research programmers, and HPC systems administrators--assist research projects through support, consultation, and training to help effectively implement our hardware, software, and visualization resources.
+Use the navigation to find information about grant support and research that the Research Computing Center works with.

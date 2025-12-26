@@ -1,0 +1,5 @@
+URL: https://rcc.uchicago.edu/support-and-services/consultant-partnership-program
+Title: Consultant Partnership Program | Research Computing Center
+================================================================================
+If the needs of your project or group exceed what can be provided by our basic level of service, you may benefit from the Consultant Partnership Program. The Research Computing Center (RCC) not only provides access to computing resources but also to computational scientists and application development consulting services. Similar to the way that principal investigators can purchase hardware through the , a research group may purchase a portion of a full-time equivalent (FTE) computational scientist or application developer through this program for a defined period of time. The program is targeted at research institutes and departments that may want to provide a computational scientist in their domain of expertise or principal investigators who may want to leverage a member of the RCC staff for extended periods of time.
+All partnerships are handled on a case-by-case basis, so please with questions and proposals.

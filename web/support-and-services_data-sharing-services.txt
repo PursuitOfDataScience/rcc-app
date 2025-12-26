@@ -1,0 +1,6 @@
+URL: https://rcc.uchicago.edu/support-and-services/data-sharing-services
+Title: Data Sharing Services | Research Computing Center
+================================================================================
+The Research Computing Center (RCC) provides a centralized infrastructure where all resources are accessible by multiple users simultaneously. This makes RCC's storage system ideal for sharing data among research group members.
+Additionally, data access and restriction levels can be put in place on an extremely granular level.
+Learn more about RCC's storage and backup and systems and practices.

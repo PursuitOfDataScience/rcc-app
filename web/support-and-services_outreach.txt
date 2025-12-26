@@ -1,0 +1,25 @@
+URL: https://rcc.uchicago.edu/support-and-services/outreach
+Title: Outreach | Research Computing Center
+================================================================================
+Mind Bytes 2015
+Interactive Visualization Workbench at Mind Bytes 2014.
+Brain Awareness Day 2014.
+VSCSE 2013.
+The Research Computing Center (RCC) is committed to fostering a wider understanding of high-performance computing. The RCC participates in numerous events designed to bring that understanding to the general public.
+Mind Bytes
+2014
+2015
+2017
+2018
+, 2019, and 2021)
+The annual Mind Bytes symposium showcases research done using RCC resources and invites the public in to learn about key issues related to high-performance computing.
+Brain Awareness Week (2013, 2014,
+2016
+, and 2019)
+Students from Chicago Public Schools spend half a day learning about how computation enables groundbreaking research in neuroscience.
+Digital Archeology Day (
+Students from Chicago Public Schools spend half a day learning about how the field of archeology is becoming more digital, thanks to a partnership with the Oriental Institute VSCSE (2013, 2014)
+RCC hosted the University of Chicago location for the
+Virtual School of Computational Science and Engineering
+(VSCSE) seminar, a multi-institution summer school dedicated to teaching attendees the skills they need to make better use of cutting-edge computational resources.
+For more information on how to partner with the RCC on educational outreach, please contact us at info@rcc.uchicago.edu

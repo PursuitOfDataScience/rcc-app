@@ -1,0 +1,7 @@
+URL: https://rcc.uchicago.edu/data-visualization-initiative-advisory-committee
+Title: Data Visualization Initiative Advisory Committee | Research Computing Center
+================================================================================
+The charge of the Research Computing Center Data Visualization Initiative Advisory Committee is to promote and advise data visualization services that will support research and scholarship at the University of Chicago.
+The committee includes:
+John A. Goldsmith
+, Edward Carson Waller Distinguished Service Professor, Chairman, Department of Computer Science Gordon L. Kindlmann , associate professor, Department of Computer Science Mark Subbarao , Space Visualization Laboratory director, Adler Planetarium Nicola Ferrier , Institute Senior Fellow, Institute for Molecular Engineering John Novembre , associate professor, Department of Human Genetics

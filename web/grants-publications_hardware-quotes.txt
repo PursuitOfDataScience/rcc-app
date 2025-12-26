@@ -1,0 +1,4 @@
+URL: https://rcc.uchicago.edu/grants-publications/hardware-quotes
+Title: Hardware Quotes | Research Computing Center
+================================================================================
+The Research Computing Center provides hardware technical descriptions, pricing, and timelines for the acquisition and management of research computing hardware. We team with leading industry partners like Intel and Lenovo to obtain the best possible pricing for our University team members. Such hardware support may include research instrumentation or defining computational hardware needs for multi-disciplinary teams. To obtain a hardware quote for your grant, please submit a request here

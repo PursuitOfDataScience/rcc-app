@@ -1,0 +1,90 @@
+URL: https://vislab.rcc.uchicago.edu/tools-resources-color
+Title: Resources | Visualization Laboratory - Research Computing Center
+================================================================================
+- 6 X 3 array of 55 inch LCD Samsung UD55E-B displays
+- Each display has full HD resolution (1920 X 1080)
+- Ultra-narrow bezel width of 3.5mm from image to image
+- Overall wall dimensions: 23.9′ x 6.7′
+- Overall wall resolution: 11520 X 3240 pixels, or 37.3. megapixels
+- Connected workstation has 3 NVIDIA Quadro P6000 GPUs
+- Dual boot: Microsoft Windows 10 and Ubuntu
+3D Stereoscopic Projector
+3D Stereoscopic Projector Specs:
+- 2 ProjectionDesign F35 AS3D active stereoscopic projectors
+- 10 foot silver screen
+- 2.3 MPixel active 3D display
+- 30 pairs of 3D glasses
+- Connected workstation with NVidia Quadro 5000 GPU and high performance 6TB local disk array
+- Connected to the RCC compute cluster & storage system, enabling interactive supercomputing Visualization Workstation Visualization Workstation Specs:
+- NVidia Quadro 5000 GPU and high performance 6TB local disk array
+- Coupled with a ProjectionDesign F35 AS3D active stereoscopic projector which provides a 2.3 MPixel active-3D display
+- Connected to the RCC compute cluster & storage system,
+providing straightforward access to research data and enabling interactive supercomputingHTC ViveHTC Vive Specs:
+- 1 Headset with a dual AMOLED 3.6'' diagonal screen and integrated microphone
+- Headset resolution: 1080 x 1200 pixels per eye (2160 x 1200 pixels combined)
+- 2 Wireless controllers
+- 2 Base stations
+- 1 Link box
+Mobile VR Systems
+Mobile VR Specs:
+- 20 Google cardboard headsets with biconvex lenses
+- 20 Google cardboard magnetic controllers
+- 2 Google Daydream headsets
+- 2 Google Daydream wireless controllers
+Multitouch VR Workbench
+Multitouch VR Workbench Specs:
+- Multitouch table
+- Head-tracked stereoscopic display wall
+Omni Haptic Device
+Omni Haptic Device Specs:
+- Workspace: 6.4″ W x 4.8″ H x 2.8″ D
+- Nominal position resolution: > 450 dpi
+- Backdrive friction: < 1 oz
+- Max exertable force: 0.75 lbf
+- Continuous exertable force: > 0.2 lbf
+- Stiffness: X axis > 7.3 lbs./in; Y axis > 13.A lbs./in; Z axis > 5.9 lbs./in
+- Inertia: ~ 0.101 lbm
+- Force feedback: x, y, z
+- Position sensing: x, y, z (digital encoders)
+- Stylus gimbal: pitch, roll, yaw (± 5% linearity potentiometers)
+- OpenHaptics® SDK compatible
+Kinect
+Kinect Specs:
+- Motion sensor providing full-body 3D motion capture, alongside facial and voice recognition.
+- Connected to the visualization tile wall and associated workstation.
+ParaView
+Paraview is open source, data analysis software. it was designed to support interactive scientific visualization of large datasets.
+SVIZ
+SViz is a RCC developed remote visualization tool. It allows users to run graphics-intensive visualization applications on the Midway compute cluster with all graphical output sent to the user's local machine. Further, through Sviz, a user can directly visualize data stored on Midway without having to first transfer that data to a local computer.
+VMD
+Visual Molecular Dynamics (VMD) is a visualization tool designed to analyze complex molecular simulations. It was developed by researchers at the University of Illinois at Urbana-Champaign.
+Slicer 3D
+Slicer 3D is open source, widely extensible software designed to support scientific visualizations in the field of medicine.
+OpenSpace
+OpenSpace is open source, interactive data visualization software designed to visualize the entire known universe and to portray our ongoing efforts to investigate the cosmos.
+OpenSpace supports interactive presentations of dynamic data from observations, simulations, and space mission planning and operations.
+SAGE2
+Current web-based collaboration systems, such as Google Hangouts, WebEx, and Skype, primarily enable single users to work with remote collaborators through video conferencing and desktop mirroring. The original SAGE software, developed in 2004 and adopted at over one hundred international sites, was designed to enable groups to work in front of large shared displays in order to solve problems that required juxtaposing large volumes of information in ultra high-resolution. SAGE2, a complete redesign and implementation of SAGE, uses advances in cloud-based and web-browser technologies in order to enhance data intensive co-located and remote collaboration.
+Amira
+Thermo Scientific's Amira software is 2D-5D platform for visualizing, manipulating, and understanding life science research data from many image modalities, including CT, MRI, 3D Microscopy, and other techniques. The RCC provides its faculty partners with an Amira license for use in their research.
+VisIt
+VisIt is an open source visualization, animation and analysis tool. Originally developed by the Department of Energy (DOE) Advanced Simulation and Computing Initiative (ASCI), VisIt is well suited for visualizing simulations at scales up to ASCI terascale data.
+RCC
+The RCC provides a robust suite of tools for development, simulation, and visualization. In addition, the RCC develops custom visualization tools for faculty using Python, Javascript,
+MATLAB, Mathematica, Stata, and R. To view the full list of these software please visit the RCC's software mondules page Advanced Technical Support for Data Visualization and Image Analysis The RCC offers advanced technical support in the form of code development and optimization, software development, and grant support. The RCC Visualization Laboratory specializes in providing support for image analysis and visualization. In addition, the lab provides hands-on training with its resources, one-on-one troubleshooting, and walk-in support during open hours.
+The Consultant Partnership Program offers UChicago faculty the dedicated support of a pool of RCC computational scientists. These scientists use the resources of the RCC Visualization Laboratory to develop and demo faculty software and visualizations.
+Faculty Projects
+The RCC Visualization Laboratory is available for faculty outreach and dissemination events. The lab's resources support a wide variety of use cases from 3D projection of computational models, to surgical training in VR, to touchscreen exploration of complex simulations.
+Teaching and Learning Support
+The RCC Visualization Laboratory invites educators from across campus to use the lab's resources in their teaching.
+The lab has facilitated innovative undergraduate and graduate classes in which students learned to develop and analyze complex data visualizations.
+We provide training and in-class support to educators who request it.
+Increase Font
+Decrease Font
+Black & White
+Inverse Colors
+Highlight Links
+Regular Font
+Reset
+Page Reader
+Real Accessability

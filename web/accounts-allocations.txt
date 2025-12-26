@@ -1,0 +1,9 @@
+URL: https://rcc.uchicago.edu/accounts-allocations
+Title: Accounts & Allocations | Research Computing Center
+================================================================================
+The Research Computing Center (RCC) resources are available to all members of the University of Chicago community. The RCC can also establish user accounts for collaborators from outside the University of Chicago.
+The RCC offers two types of user accounts: a principal investigator (PI)
+account and a eneral user account
+. All general users must be sponsored by a PI with an active RCC account.
+Learn more about requesting an account.
+After obtaining an account, a PI receives start-up resources, which are a limited quantity of computing time and storage resources that allows users to quickly gain access to the RCC, port and test their codes, and gather information to use when applying for larger research allocations. Research allocations offer researchers more computing time--measured in service units or SUs--and storage, in several instances. Please use the page to determine which kind of allocation is right for your group and for instructions on how to apply.

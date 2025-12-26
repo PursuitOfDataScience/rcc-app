@@ -1,0 +1,9 @@
+URL: https://rcc.uchicago.edu/grants-publications/acknowledging-the-RCC
+Title: Acknowledging the RCC | Research Computing Center
+================================================================================
+If you have published a paper or have given a presentation that acknowledges the Research Computing Center 's (RCC) computational resources or other services, please email us with the paper title, journal, or conference where a presentation was given. These citations help the RCC demonstrate the vital role of computational resources and support staff in research at the University of Chicago.
+If you would like your RCC-supported work featured on our website, please indicate that you are comfortable with us doing so.
+In citations and acknowledgments, please reference the RCC as "the University of Chicago's Research Computing Center." Some example citations are shown below.
+This work was completed in part with resources provided by the University of Chicago's Research Computing Center.
+We are grateful for the support of the University of Chicago's Research Computing Center for assistance with the calculations carried out in this work.
+We acknowledge the University of Chicago's Research Computing Center for their support of this work.

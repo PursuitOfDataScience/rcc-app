@@ -1,0 +1,14 @@
+URL: https://rcc.uchicago.edu/grants-publications/grant-support
+Title: Grant Services | Research Computing Center
+================================================================================
+The RCC provides support and services for grant proposals from brainstorming ideas to proposal writing to computation to dissemination.
+Brainstorming Ideas, Solicitation Search, and Piloting of Computational Projects:
+We meet with UChicago PIs to brainstorm how computation and data can enhance their research goals, to find an appropriate grant solicitation, and pilot computational projects with PIs for incorporation in grant proposals.
+Hardware Quotes, Acquisition, and Management:
+Our HPC experts can design the computational and data infrastructure, contribute to the hardware technical descriptions, pricing, and timelines for the acquisition and management of research hardware budgeted in research grants. The RCC can host and manage the proposed hardware for the duration of the project.
+Grant Writing:
+The RCC can write and support the writing of sections of grants related to computation, instrument management plans, broader impacts and training sections related to computation, the facilities section of proposals, and data management and sharing plans.
+Staff Expertise:
+The RCC Computational Scientist and Applications Development groups can contribute their diverse talents to faculty projects, including AI/ML, GIS, algorithm development and optimization, image analysis, data visualization, application development, and more.
+Data and Image Repositories for Sharing, Reuse and Reproducibility:
+We can create repositories of data, software or artifacts required to reproduce published results of a supported project. The RCC can develop custom platforms for faculty to satisfy the data management and sharing requirements of federal grants.

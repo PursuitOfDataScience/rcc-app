@@ -1,0 +1,21 @@
+URL: https://beag3.rcc.uchicago.edu/software
+Title: Software | Beagle3 - RCC
+================================================================================
+(773) 795-2667 help@rcc.uchicago.edu
+Software on Beagle3
+Beagle3 uses the same operating system CentoOS as Midway3. Beagle3 also shares the same software module stack with Midway3, but if you need software not currently available in the module system, send a detailed request to Using Software Modules The RCC uses Environment Modules for managing software. The modules system permits us to set up the shell environment to make running and compiling software easier. It also allows us to make available many software packages and libraries that would otherwise conflict with one another.
+When you first log into Beagle3, you will be entered into a very barebones user environment with minimal software available. The module system is a script based system used to manage the user environment and to "activate" software packages. In order to access software that is installed on Midway2, you must first load the corresponding software module.
+Basic commands:
+Command
+Description module avail [name]
+lists modules matching [name]
+module load [name]
+loads the named module module unload [name]
+unloads the named module module list lists the modules currently loaded for the user For more information on how to use software modules on Beagle3, consult The RCC's Using software modules on Midway page.
+Full Software Module List
+The best way to view the most current software offerings on Beagle3 is to check the list of available software modules with the avail command. While the list of available software continues to grow, the following modules are currently available:
+Compiling Software
+The Midway3/Beagle3 software module system provides a number of compilers. For compiling C/C++ code, we recommend either the GNU compiler collection gcc , or the Intel C/C++ compiler icc . To use , you can either run module load gcc/<version>
+, or use the default system-wide installation. To use the Intel compilers, run module load icc . References for both of these compilers can be found in their documentation pages:
+https://gcc.gnu.org/onlinedocs/
+https://www.intel.com/content/www/us/en/develop/documentation/cpp-compiler-developer-guide-and-reference/top.html If there is any compiler or other library missing in the Midway3 module environment that is required to build your software, please send a request to with the details.

@@ -1,0 +1,15 @@
+URL: https://rcc.uchicago.edu/resources/high-performance-computing
+Title: High-Performance Computing | Research Computing Center
+================================================================================
+Midway2, a professionally-managed high performance computing cluster forms the second generation core of the Research Computing Center's (RCC) advanced computational infrastructure. The first generation cluster, Midway, was decommissioned at the beginning of 2019. Midway2 includes a large pool of servers, software, and storage that researchers can utilize to increase the efficiency and scale of their computational science. The RCC provides resources for distributed computing and shared memory computing, as well as emerging technologies including accelerators and big-data systems.
+The RCC resources are free to use for University of Chicago researchers. For more information, see the Getting Started page. To learn how you can extend RCC resources with more storage and computation, see Cluster Computing Resources The RCC maintains three pools of servers for parallel and distributed high-performance computing. Ideal for tightly coupled parallel computing tasks, our tightly coupled nodes on Midway2 have a fully non-blocking FDR and EDR Infiniband, providing up to 100Gbps interconnect. Loosely-coupled nodes are similar to the tightly-coupled nodes, but are connected with 40Gbps GigE rather than Infiniband and are best suited for distributed tasks. Finally, our shared memory nodes contain much larger main memories (up to 1 TB) and are ideal for memory-bound tasks.
+The types of CPU architectures RCC maintains are:
+Intel Broadwell--28 cores @ 2.4 GHz with 64 GB memory per node
+Intel Skylake--40 cores @ 2.4 GHz with 96 GB memory per node
+The RCC also maintains a number of specialty nodes:
+Large shared memory nodes--up to 1TB of memory per node with either 16, 28, or 32 Intel CPU cores.
+At the time of writing, Midway2 contains a total of 16,016 cores across 572 nodes and 2.2 PB of storage.
+Emerging technology
+Just as the University of Chicago is at the forefront of science, RCC's emerging technology resources allow researchers to be on the cutting edge of scientific computing.
+Originally developed at Yahoo and based on Google's paper, Hadoop is a framework for large-scale data processing. Researchers can experiment with our Hadoop infrastructure to become familiar with big data techniques.
+GPU Computing: Scientific computing on graphics cards can unlock even greater amounts of parallelism from code. GPU nodes on Midway each have 4 Nvidia K80 accelerator cards and are integrated in the Infiniband network.

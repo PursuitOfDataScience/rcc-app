@@ -1,0 +1,22 @@
+URL: https://rcc.uchicago.edu/support-and-services/cluster-partnership-program
+Title: Cluster Partnership Program | Research Computing Center
+================================================================================
+In addition to providing free access to shared compute resources, the Research Computing Center (RCC) enables researchers to purchase dedicated compute and storage resources through the Cluster Partnership Program (CPP). Faculty participating in this program can augment the Midway3 and MidwayR compute clusters with high-performance, professionally managed compute nodes and storage dedicated exclusively to their research group.
+The RCC works with top-tier vendors to deliver an expandable computing environment to the University of Chicago community. This infrastructure includes core hardware, software, networking, administrative, technical, and user support that can be used by researchers to convert funding into research computing resources in a highly efficient and cost-effective manner.
+Through the Cluster Partnership Program, the RCC will support you in all phases of the technology lifecycle including:
+Collaborating with you to determine what type(s) of compute resources best meet your research needs.
+Negotiating competitive prices from a range of top-tier vendors using bulk purchasing prices.
+Hosting your dedicated compute resources in a secure on-campus data center.
+On-going support, updates, and maintenance by a team of professional system and network administrators.
+The RCC will configure any resources purchased through the Cluster Partnership Program to meet your needs. This includes limiting access to your resources to groups of users you specify.
+By locating your dedicated hardware inside of RCC's computing environment, you will be able to leverage RCC's existing network and interconnect, storage, software, and secure data center. Additionally, you can have peace of mind knowing that your compute resources and storage are being hosted and maintained securely by professional staff.
+Compute Hardware
+Through the Cluster Partnership Program, researchers can purchase dedicated tightly coupled nodes for distributed and data-intensive computing. These nodes are equipped with an InfiniBand interconnect device capable of ultra low latency, high-bandwidth inter-node communication that are ideal for massively parallel processing (MPP) computing.
+Base CPU node: These are ideal for computations that don't require substantial amounts of RAM. Configurations are available ranging from 256 GB up to 512 GB of RAM and a variety of processors and core count.
+Large Memory nodes: These are ideal for data-intensive computations requiring substantial amounts of RAM. Configurations are available ranging from 768 GB up to 3.0 TB of RAM and a variety of processors and core count.
+GPU computing nodes: Compute servers equipped with one or more graphical processing unit (GPU) devices, ideal for massively parallel processing (MPP) computing through GPU-aware software.
+If you are interested in purchasing dedicated hardware through RCC's Cluster Partnership Program, contact us at help@rcc.uchicago.edu and a computational scientist will work with you to secure appropriate hardware and configurations to meet your needs.
+Storage
+Storage space is offered by the terabyte, but not all terabytes are equal. Every byte purchased is snapshotted daily and backed up to tape nightly. Your data is replicated multiple times both locally and remotely, so if a disk or even an entire data center fails, your data remains safe. The RCC provides professional management of your storage, so if a question or problem arises, knowledgeable staff is available to help.
+The RCC currently offers two storage solutions: GPFS ("General Parallel File System") and CDS ("cost-effective storage"). GPFS is the most dependable, optimized for parallel workloads and commonly used storage option. CDS is a slower-access, less expensive option that is suitable for data that are not in active use.
+To get more details on costs for purchasing storage through the CPP, please contact us at cpp@rcc.uchicago.edu

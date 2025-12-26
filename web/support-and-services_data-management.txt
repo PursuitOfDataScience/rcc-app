@@ -1,0 +1,22 @@
+URL: https://rcc.uchicago.edu/support-and-services/data-management
+Title: Data Management | Research Computing Center
+================================================================================
+Increasingly, funding agencies, such as the National Institute of Health, are requiring detailed data management and sharing plans that assure data is available to other researchers in forms organized to facilitate reuse and reproducibility while protecting the security of restricted data.
+The Research Computing Center (RCC) can help researchers develop data management and sharing plans that meet funding agency requirements. We assist researchers in every stage of the research data lifecycle, including the writing of data management and sharing plans, and data security plans, as well as implementing them on RCC systems. Our tiered storage infrastructure meets the stringent requirements defined by most grant applications, and the security of our advanced storage backup system makes our Midway supercomputing cluster a state-of-the-art environment for data storage and backup. Midway's infrastructure gives users peace of mind that their data is safeguarded and managed by high-performance computing professionals.
+RCC computational scientists can work with researchers to collect, administer, store, and analyze data on RCC's systems and can format data stored in RCC systems for transmission to on- or off-campus long-term repositories. RCC instruments such as the Data Lifecycle Instrument can be used to automate the collection, organization, and storage of data produced from experiments, observations, and simulations.
+RCC computational scientists can work with researchers to curate data and code to meet the requirements of the NIH, NSF, and other agencies so that data is organized for easy searchability, indexing, and cataloging.
+RCC can work with researchers to develop documentation and prepare metadata to enhance user access to data to foster discoverability, interpretation, reuse, and reproducibility.
+RCC computational scientists can work with researchers to de-identify data on RCC's secure systems so that restricted data is protected while maintaining the shareability of un-restricted data.
+The RCC can develop data access portals for different labs and groups.
+Learn about RCC storage and backup infrastructure and RCC's highly customizable data-sharing services To obtain RCC support for creating a data management and sharing plan for your grant, please submit a request here or email help@rcc.uchicago.edu University of Chicago Resources:
+Library -
+https://guides.lib.uchicago.edu/datamanagement/nih-dms
+University Research Administration (URA) -
+https://ura.uchicago.edu/policy-library/nih-2023-data-management-and-sharing-policy-dms-policy Data Management and Sharing listserv -
+datasharing@uchicago.edu
+Data Management Plan Tool -
+https://dmptool.org/plans
+Funding Agency Resources:
+NIH Guide for Writing data management and sharing plans -
+https://sharing.nih.gov/data-management-and-sharing-policy/planning-and-budgeting-for-data-management-and-sharing/writing-a-data-management-and-sharing-planNIH Cost Estimation Tool -
+https://nda.nih.gov/contribute/contribute-data.html#cost

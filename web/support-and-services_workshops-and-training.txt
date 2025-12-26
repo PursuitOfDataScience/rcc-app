@@ -1,0 +1,240 @@
+URL: https://rcc.uchicago.edu/support-and-services/workshops-and-training
+Title: Workshops and Training | Research Computing Center
+================================================================================
+The Research Computing Center (RCC) conducts interactive workshops on a variety of topics relevant to research computing. Past workshop topics have included introductory, intermediate, and advanced seminars on programming languages; data management tools and best practices; and sessions focused on using Midway and other RCC resources. Unless otherwise noted, all of our workshops are in-person due to their hands-on nature.
+In addition to workshops led by the RCC staff, the RCC routinely invites industry experts and hardware and software vendors to teach courses focused on specific systems.
+2025-2026 RCC Workshop Series
+Fall Workshops
+Introduction to RCC Resources & Services​
+Date: Tuesday, October 14
+Time and Location: 2:00 - 4:00 PM, Zar Room
+Presenter: Bailey Howell
+Distributed data processing on RCC Midway​
+Date: Thursday, October 23
+Time and Location: 1:00 - 3:00 PM, Zar Room
+Presenter: Trung Nguyen
+AI and Deep Learning Capability using Avizo and Amira
+Date: Tuesday, October 28
+Time and Location: 12:00 - 2:00 PM, Zar Room
+Presenters: Arsalan Zolfaghari, ThermoFisher Scientific and Ashwini Naik
+Accelerating Research Workflows: Introduction to Open OnDemand on Midway3
+Date: Thursday, October 30
+Presenter: Aleks Lykhin
+Running jobs on RCC systems using the SLURM batch scheduler and Best Practices​
+Date: Tuesday, November 4
+Presenter: Debasmita Samaddar
+Grounding Large Language Models with Retrieval-Augmented Generation​
+Date: Wednesday, November 5
+Presenter: Youzhi Yu
+Introduction to Quantum Simulators and Algorithms
+Date: Tuesday, November 11
+Time and Location: 2:00 - 4:00 PM, Zar Room
+Presenter: Akhil Francis
+Visualizing Research Data through Interactive Dashboards with React & OpenAI​
+Date: Tuesday, November 18
+Presenter: Ashwini Naik
+Graph Neural Networks in Action: From Foundations to Biomedical Applications
+Date: Thursday, November 20
+Presenter: Mohsen Zand
+2024-2025 RCC Workshop Series
+Summer Workshops
+Date: Tuesday, July 8, 2025
+Level: Introductory
+Date: Thursday, July 10, 2025
+Applied Containerization for Machine Learning in HPC
+Date: Tuesday, July 15, 2025
+Presenter: Parmanand Sinha
+Level: Intermediate
+Fundamentals of Research Data Sharing on Midway HPC Systems
+Date: Tuesday, July 22, 2025
+Presenters: Debbie/Ashwini
+Level: Introductory
+AI-Enhanced Image Analysis with 3D Slicer
+Date: Tuesday, July 29, 2025
+Presenter: Ashwini Naik
+Basics of CUDA Programming
+Date: Wednesday, July 30, 2025
+Time and Location: 1:00 - 3:30 PM, Zar Room
+Presenter: Dossay Oryspayev
+Geospatial Python Part 1: Satellite & Climate Raster Analysis
+Date: Thursday, July 31, 2025
+Presenter: Hamid Dashti
+Geospatial Python Part 2: Scaling Geospatial Workflows with Dask
+Date: Tuesday, August 5, 2025
+Distributed data processing in the RCC HPC platform
+Date: Thursday, August 7, 2025
+Presenter: Trung Nguyen
+Unlocking LLMs: Practical Prompt-Engineering Patterns​
+Date: Tuesday, August 12, 2025
+Presenter: Youzhi Yu
+Date: Thursday, August 14, 2025
+Presenter: Mohsen Zand
+Level: Advanced
+Spring Workshops
+Fundamentals of Research Data Sharing on Midway HPC Systems (Data Management Series #1)
+Date: Tuesday, May 6, 2025
+Presenters: Ashwini Naik and Debasmita Samaddar
+Data Management and Sharing for Performance Improvement and Compute Workflow Optimization (Data Management Series #2)
+Date: Wednesday, May 7, 2025
+Presenters: Trung Nguyen and Dossay Oryspayev
+Level: Introductory/Intermediate
+Unsupervised Learning in Computer Vision
+Date: Thursday, May 8, 2025
+Level: Intermediate
+Using Globus on RCC's Midway Clusters: Simplifying Data Transfer, Sharing, and Automation (Data Management Series #3)
+Date: Tuesday, May 13, 2025
+Time and Location: 1:00 - 4:30 PM, Zar Room
+Presenter:
+Pedram Esfahani and Globus
+Level: Introductory/Intermediate
+Using Singularity Containers for Research Reproducibility on Midway Cluster
+Date: Thursday, May 15, 2025
+Presenter: Aleksandr Lykhin
+Date: Tuesday, May 20, 2025
+Presenters: Hamid Dashti and Parmanand Sinha
+Date: Wednesday, May 21, 2025
+Time and Location: 1:00 - 3:00 PM, Zar Room
+Large Language Model Inference
+Thursday, May 22, 2025
+Level: Intermediate/Advanced
+Winter Workshops
+Introduction to the RCC
+Date: Tuesday, February 11, 2025
+Presenter: Pedram Esfahani
+Large Language Model Embeddings
+Date: Thursday, February 13, 2025
+Parallel programming with Python
+Date: Tuesday, February 18, 2025
+Date: Tuesday, February 25, 2025
+Mohsen Zand
+Running jobs on RCC systems using the Slurm workload manager and best practices
+Wednesday, February 26, 2025
+Time and Location: 1:30 - 3:00 PM, Zar Room
+Presenter: Dossay Oryspayev
+Code profiling and performance optimization
+Date: Thursday, February 27, 2025
+Interactive Data visualization with D3.js and React
+Date: Tuesday, March 4, 2025
+Date: Tuesday, October 8, 2024
+GPU computing basics
+Date: Thursday, October 10, 2024
+Trung Nguyen
+Introduction to quantum computing
+Date: Tuesday, October 15, 2024
+Presenter: Niladri Gomes
+Remote Code Development
+Date: Thursday, October 17, 2024
+Aleks Lykhin
+Date: Tuesday, October 22, 2024
+Introduction to Deep Learning Models in GIS
+Date: Tuesday, October 29, 2024
+Presenter: Parmanand Sinha
+Introduction to D3.js
+Date: Tuesday, November 12, 2024
+Data Visualization in R
+Date: Tuesday, November 19, 2024
+Using Slurm Workload Manager
+Date: Thursday, November 21, 2024
+Time and Location: 2:00 - 4:00 PM, Zoom
+Presenter: Dossay Oryspayev
+2023-2024 RCC Workshop Series
+Title
+Date
+Time & Location
+Presenter
+Level
+Materials
+Introduction to the Research Computing Center
+Jul 24th
+2:00 - 4:00 PM, Zar Room
+Pedram Esfahani
+Introductory
+Using Apptainer (Singularity) Containers on Midway Clusters
+Aug 1st
+Aleksandr Lykhin
+Running Jobs on RCC Systems Using the Slurm Workload Manager
+Aug 7th
+2:00 - 4:00 PM, Zoom
+Dossay Oryspayev
+Jan 30th
+Feb 1st
+Intermediate
+Running Interactive and Batch Jobs at the RCC
+Feb 15th
+Getting Started Using Commercial Cloud with Skyway
+Feb 20th
+An Introduction to Network Analysis and Visualization
+Feb 27th
+Parmanand Sinha
+Data Visualization Using ggplot2
+Feb 29th
+Youzhi Yu
+Advanced
+Achieving software portability using Aptainer/Singularity containers
+Mar 7th
+Debasmita Samaddar
+New Workshop?
+Processing and analysis of RNA-seq data using Galaxy and DESeq2, part 1
+Sep 14th
+2:30 - 4:00 PM, Zar Room
+Jared Bard
+Yes
+Not available
+Processing and analysis of RNA-seq data using Galaxy and DESeq2, part 2
+Sep 28th
+Peter Carbonetto
+Oct 12th
+2 - 4 PM, Zar Room
+Hakizumwami Birali Runesha
+Data Visualization in Python
+Oct 17th
+Cloud Days: Google and Generative AI Workshop
+Oct 25th
+10AM - 12PM, Zar Room
+Google
+Cloud Days: Artificial Intelligence & Machine Learning on AWS
+2 - 4PM, Zar Room
+AWS
+Cloud Days: Using Azure OpenAI for Research
+Oct 26th
+Microsoft Azure
+Introduction to version control systems - an overview of GIT and SVN repositories Nov 9th Machine Learning for Spatial Data Nov 14th Introduction to R Nov 16th Beagle 3 workshop Nov 29th Zoom Multiple Presenters Multiple Levels Recording link 2022-2023 RCC Workshop Series July 11th Running jobs on RCC systems using the SLURM batch scheduler and Best Practices July 18th Using Singularity/Apptainer on Midway Cluster July 27th Introduction to GIS and GeoComputation August 1st August 10th April 11th Analysis of Genetic Data 2: Mapping Genome-wide Associations April 25th Introduction to ArcGIS Pro and Arcpy May 9th Parallel Programming using MPI and OpenMP May 16th May 23rd May 30th Jan 24th Ross Hyman Feb 3rd Analysis of Genetic Data 1: Inferring population structure Feb 7th Writing Clean Code in Python Feb 9th Using GPUs with Python Feb 14th 1 - 3 PM, Virtual Trung Nguyen (+NVIDIA)
+Computational reproducibility through virtual environment and Containerization
+Feb 16th
+Running Machine Learning Pipelines on RCC High Performance Computing (HPC) Systems Feb 23rd J.D. Laurence-Chasen A note about experience levels The RCC communicates the expertise needed to get the most out of a workshop by labeling it with an experience level. An level workshop presupposes little or no familiarity with the topic at hand. An level workshop requires some degree of familiarity with the methods being used. An level workshop is for users who are already fluent with the methods and tools involved.
+Each workshop's description includes the workshop's experience level (Click on course title for details). If you are unsure whether a given workshop will be taught at too advanced or too basic a level for you, feel free to contact the RCC for information.
+Below is a small selection of workshops we have offered in previous years:
+3D Visualization Day: Amira and Avizo
+Advanced Tutorial on Stata
+Analysis of Genetic Data, Part 1
+Analysis of Genetic Data, Part 2
+Big-Data movement made easy: An Introduction to Globus-Online (CI - RCC)
+Computational Quantum Chemistry at the RCC
+Computational Tools for Bio/Chemists
+COMSOL 5.0 & Application Builder Workshop
+Data Visualization Strategies and Digital Cartography (D3)
+Debugging and Optimization on Midway with Allinea's DDT Parallel Debugger
+Designing Interactive Data Visualizations (D3/Javascript)
+Dissecting LAMMPS: An Open Development Environment for Particle Systems SimulationGPU Accelerations in MD Simulations and QM CalculationsGPU Computing with NVIDIAGPU-CUDA ProgrammingHands-on Parallel Programming with OpenMPHPC for Molecular Engineering Image Analysis in Python Intel Software for High-Performance Parallel Applications Intel Software Tools: Compilers, Libraries, and Parallelism Interactive Visualization with iPython and Jupyter Notebook Introduction to Data Visualization Introduction to GPU Computing with CUDA Introduction to Hadoop Introduction to Linux Introduction to Midway2
+Introduction to Python
+Introduction to R: the Power of the Data Frame
+Introduction to Stata
+Introduction to the Digital Humanities
+Introduction to Unix at the Research Computing Center
+Job Scheduling on Midway
+MATLAB Optimization
+MPI + OpenMP: A Hybrid Scheme of Parallel Programming and Computing
+Parallel Computing with MATLAB
+Parallel Programming and Optimization for Intel Architecture
+Parallel Programming Using MPI
+Practical Introduction to Midway
+Programming with SWIFT Scripts
+Project Management Tools at RCC
+Python for HPC
+Research Data Management Resources at UChicago
+Running and Optimizing Your Code on Midway
+Speed Up Your Python
+Stata: Data Management, Analysis, and Graphic Fundamentals
+Text Analysis and Visualization Strategies for Digital Humanists
+Understanding Image Segmentation
+VSCSE Data Intensive Summer School

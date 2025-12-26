@@ -1,0 +1,4 @@
+URL: https://rcc.uchicago.edu/grants-publications/for-PI-proposals
+Title: Sections Inputs for PI Proposals | Research Computing Center
+================================================================================
+The Research Computing Center regularly collaborates with principal investigators for their grant proposals, providing section inputs on the aims, methods, and scheduling needs for software development, hardware acquisition, database schema design, and more. We work on grant projects throughout the University of Chicago to meet the necessary proposal review needs, application requirements, and deadlines. To request support for grant writing inputs, please click here

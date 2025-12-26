@@ -1,0 +1,5 @@
+URL: https://rcc.uchicago.edu/support-and-services/new-faculty-program
+Title: New Faculty Program | Research Computing Center
+================================================================================
+The Research Computing Center (RCC) provides free access to research computing infrastructure to all faculty members of the University of Chicago. If you are an incoming or prospective faculty member of the University of Chicago, the RCC can help make your transition as seamless as possible by providing access to our high-performance computing and data storage resources in advance of your arrival on campus.
+Through the RCC's New Faculty Program, computational scientists are available to assist incoming faculty members to transfer your data and software to the RCC's Midway Compute Cluster and help evaluate options for purchasing dedicated compute nodes and storage through the RCC's To receive personalized support through the RCC's New Faculty Program, please with a brief description of your new position at the University of Chicago and your research computing requirements.

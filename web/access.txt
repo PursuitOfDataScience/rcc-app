@@ -1,0 +1,47 @@
+URL: https://beag3.rcc.uchicago.edu/access
+Title: Access/File System | Beagle3 - RCC
+================================================================================
+(773) 795-2667 help@rcc.uchicago.edu
+Access and File Systems
+Access
+Currently, connecting to the login nodes is possible via ssh from a terminal:
+ssh [CNetID]@beagle3.rcc.uchicago.edu
+Using ThinLinc to connect to the login nodes is possible as well. Please follow the instructions For connecting via ThinLinc using a web browser, the web address should be beagle3.rcc.uchicago.edu When using the desktop client, the server is beagle3.rcc.uchicago.edu .
+To start an interactive session on the Beagle3 compute nodes, the following command is necessary:
+sinteractive --partition=beagle3 --constraint=a100 --account=pi-<group>
+File Systems
+A user using Beagle3 will be also able to seamlessly access their storage (scratch and capacity) on Midway3 and vice versa. Individual Scratch Space on Beagle3 is available at /scratch/beagle3 with a total of 200TB storage space. The Soft-quota per user is 400GB and the hard limit is 1TB. The user scratch folder is meant to be the target for your compute job's I/O. The scratch file system was configured to have a larger block size of 16 MB, which means that continuous reading/writing of chunks of data will be more performant with this file system. The global parallel scratch space is accessible from all compute and login nodes.
+The /home directory and the /beagle directory are both part of the capacity file system.
+Home ( /home/$USER ): This is the user's home directory.
+beagle3 ( /beagle3/pi-): This is the group shared capacity storage file system space that is accessible to all group members of the pi- Unix group. Just as with running jobs on Midway, /beagle3 should be treated as a location for users to store data they intend to keep.
+NOTE
+Snapshots are available for the
+/home and
+/beagle3 filesystems. 7 daily and 4 weekly snapshots are kept for each filesystem. They are accessible at the path /gpfs3/cap/.snapshots/
+for /home and
+/gpfs4/cap/.snapshots/
+for /beagle3 on Beagle3. There are snapshots available for the
+/scratch file system. There is also no tape backup.
+The parallel storage is partitioned into two file systems that have different file block size configurations.
+Storage Quotas
+The following table lists the file systems and their default quotas.
+Default storage quotas:
+File Set
+Path
+Soft Quota
+Hard Quota
+Home
+/home/$USER
+30GB
+35GB
+Scratch
+/scratch/beagle3/$USER
+400GB
+1TB
+Project
+/project/pi-
+5TB
+6TB
+Local Scratch Directory ( /scratch/local )
+There is also a scratch space that resides on the local SSD of each node and can only be used for jobs that does not require distributed parallel I/O. The capacity of the local SSD is 960GB, but the actual amount of usable space will be less than this and may depend on the usage of other users utilizing the same node if your job resource request does not give you exclusive access to a node. There is presently no SLURM post script to clean up the local scratch, so please be mindful to clean up this space after any job.
+It is recommended that users use the local scratch space if they have high throughput I/O of many small files ( size < 4 MB) for jobs that are not distributed across multiple nodes

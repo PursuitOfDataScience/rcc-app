@@ -1,0 +1,55 @@
+URL: https://beag3.rcc.uchicago.edu/system-details
+Title: System Details | Beagle3 - RCC
+================================================================================
+(773) 795-2667 help@rcc.uchicago.edu
+Hardware Details for Beagle3
+System Technical Specifications
+Beagle3 is the newest addition to RCC's high end HPC systems. Beagle3 is primarily a GPU (Graphics Processing Unit) cluster. This new HPC system will facilitate a select user group from the University of Chicago community to benefit from advanced computing infrastructure that enables novel discoveries and innovations.
+Two login nodes are available for Beagle3. The key features of the Beagle3 hardware are listed as follows:
+44 GPU compute nodes (a total of 176 GPUs)
+22 nodes with 4x NVIDIA A100 GPUs
+22 nodes with 4x NVIDIA A40 GPUs
+4 Big Shared memory nodes with 512GB of memory per node and no GPUs ("beagle3-bigmemX")
+All nodes have HDR InfiniBand (100 Gbps) network cards.
+1 PB of usable high-capacity GPFS space
+A40 and A100 Specifications
+A40
+A100
+CUDA Cores
+10,752
+6,912
+Tensor Cores
+336
+432
+RT Cores
+GPU Memory
+48 GB
+40 GB
+GPU Memory Bandwidth
+696 GB/s
+1,555 GB/s
+Interconnect
+64 GB/s
+Peak FP32 TFLOPS
+37.4
+19.5
+Peak FP64 TFLOPS
+9.7
+Peak TF32 TFLOPS
+74.8
+156
+Choosing between A40 and A100
+The A40 has more CUDA cores and higher single precision floating point (FP32) performance. The A100 has more Tensor cores and higher tensor plating point (TF32) performance, making it more suitable for machine learning tasks. The A40 has no double-precision (FP64) hardware acceleration, so only the A100 should be used for applications that need to utilize double precision.
+The
+CPU specifications of the compute node on the Beagle3 platform are as follows:
+Architecture: x86_64
+CPU(s): 32
+Thread(s) per core: 1
+Core(s) per socket: 16
+Sockets: 2
+Model name: Intel(R) Xeon(R) Gold 6346 CPU @ 3.10GHz
+CPU MHz: 3600.000
+L1d cache: 48K
+L1i cache: 32K
+L2 cache: 1280K
+L3 cache: 36864K

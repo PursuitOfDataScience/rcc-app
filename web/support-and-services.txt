@@ -1,0 +1,6 @@
+URL: https://rcc.uchicago.edu/support-and-services
+Title: Support and Services | Research Computing Center
+================================================================================
+The RCC offers a comprehensive suite of programs and services. We use a bottom-up approach to supporting research as faculty needs drive the RCC's programs and services.
+RCC support and services include hardware and active data storage purchasing and management through the development of new codes, scripts, analyses, workflows, visualizations, and more through the comprehensive grant support assistance with data transfer to RCC systems and full access to all RCC resources through the workshops and trainings on a variety of topics relevant to research computing,
+support for and data sharing one-on-one partnerships with researchers on outreach programs , and a regularly maintained where researchers can find everything they need to know to utilize high-performance computing at the RCC.

@@ -1,0 +1,11 @@
+URL: https://rcc.uchicago.edu/about-rcc/vision-mission
+Title: Vision & Mission | Research Computing Center
+================================================================================
+Vision
+To transform and enable research, education, and discovery at UChicago.
+Mission
+To advance research and scholarship by providing access to high-end computing and data resources, training, and advanced technical support.
+Key mission statements:
+* Research - To enable and transform UChicago's research and scholarship enterprise through access to computing, data resources, and expertise.
+* Education - To equip faculty and students with vital computational research skills through customizable training and educational opportunities.
+* Discovery - To cultivate cutting-edge technologies and institutional collaborations that enable discovery and increase the competitiveness of our research and talent.

@@ -1,0 +1,6 @@
+URL: https://rcc.uchicago.edu/support-and-services/consulting-and-technical-support
+Title: Consulting and Technical Support | Research Computing Center
+================================================================================
+The Research Computing Center's (RCC) computational scientists provide one-on-one consulting and technical user support in the areas of scripting, code porting, optimization, parallelization, and more. User support is available by e-mail , over the phone at 773.795.COMP (2667), in our walk-in lab located in Suite 216 on the second floor of the Regenstein Library between 9am to 5pm, Monday through Friday, or by filling out the form below. You may also consult RCC's online The RCC walk-in lab is open to the university community for in-person consultation and support to researchers. The lab has several Linux workstations available for researchers to access the RCC software and computing resources.
+The RCC also provides visualization consulting for researchers. Please refer to the visualization page for more details, and to find out more.
+If the needs of your project or group exceed what can be reasonably provided by the RCC's in-person consultations, you may benefit from the

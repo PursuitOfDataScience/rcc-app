@@ -1,0 +1,12 @@
+URL: https://rcc.uchicago.edu/about-rcc/advisory-committees
+Title: Advisory Committees | Research Computing Center
+================================================================================
+The Research Computing Center (RCC) has committees to help guide its mission to support research and scholarship at the University of Chicago. The current committees are:
+The
+, which oversees the development and execution of a comprehensive University-wide research computing strategy and advises the vice provost for research on research computing challenges and opportunities;
+Data Visualization Initiative Advisory Committee
+, which promotes and advises data visualization services; and
+Resource Allocation Advisory Committee
+, which advises the RCC on the allocation of computing resources and services.
+Previous Committees:
+The Faculty Education Advisory Committee reviewed the RCC's education services and programs and training activities.
