@@ -659,490 +659,558 @@ USE WHEN: User asks about databases or specific data collections available on Mi
         "input_schema": {"type": "object", "properties": {}, "required": []}
     },
     # --- Web Content Tools (scraped from RCC website) ---
+    # About RCC section
     {
-        "name": "read_web_about",
-        "description": """Read web content about RCC overview and mission.
+        "name": "read_web_about_rcc",
+        "description": """Read general information about RCC from the website.
+        
+COVERS: RCC history, mission, how RCC was established (2010-2012), growth of user base,
+services offered (HPC, visualization, workshops, consulting), Midway cluster overview,
+RCC user lab in Regenstein Library.
 
-COVERS: RCC overview, services, mission statement, organizational information.
-
-USE WHEN: User asks about what RCC is, its mission, or general overview.""",
+USE WHEN: User asks general questions about RCC, its history, what services it provides,
+or wants an overview of the organization.""",
         "input_schema": {"type": "object", "properties": {}, "required": []}
     },
     {
-        "name": "read_web_campus_cluster",
-        "description": """Read web content about Campus Cluster Program.
+        "name": "read_web_advisory_committees",
+        "description": """Read about RCC advisory committees.
+        
+COVERS: Information about committees that advise RCC on strategy and operations.
 
-COVERS: Campus Cluster program details, how to participate, costs and benefits.
-
-USE WHEN: User asks about Campus Cluster, institutional purchases, or buying nodes.""",
+USE WHEN: User asks about RCC governance, advisory committees, or organizational structure.""",
         "input_schema": {"type": "object", "properties": {}, "required": []}
     },
     {
-        "name": "read_web_cluster_account_request",
-        "description": """Read web content about cluster account requests.
+        "name": "read_web_ai_spotlight",
+        "description": """Read about AI spotlight and Mind Bytes 2018.
+        
+COVERS: AI research highlights, Mind Bytes symposium information.
 
-COVERS: How to request cluster accounts, eligibility, application process.
-
-USE WHEN: User asks about getting an account, applying for access, or new user setup.""",
+USE WHEN: User asks about AI research at RCC or Mind Bytes events.""",
         "input_schema": {"type": "object", "properties": {}, "required": []}
     },
     {
-        "name": "read_web_cluster_news",
-        "description": """Read web content about cluster news and updates.
+        "name": "read_web_director_welcome",
+        "description": """Read the RCC Director's welcome message.
+        
+COVERS: Director's perspective on RCC, leadership vision, strategic priorities.
 
-COVERS: Recent cluster updates, announcements, maintenance notices.
-
-USE WHEN: User asks about recent changes, updates, or news about the cluster.""",
+USE WHEN: User asks about RCC leadership, director, or organizational vision.""",
         "input_schema": {"type": "object", "properties": {}, "required": []}
     },
     {
-        "name": "read_web_connect_to_cluster",
-        "description": """Read web content about connecting to clusters.
+        "name": "read_web_rcc_team",
+        "description": """Read about RCC staff and team members.
+        
+COVERS: List of RCC staff, computational scientists, system administrators,
+staff roles and expertise areas, contact information.
 
-COVERS: SSH connection, VPN requirements, login procedures, connection troubleshooting.
-
-USE WHEN: User asks about how to connect, login issues, or SSH setup.""",
+USE WHEN: User asks about RCC staff, who to contact for specific expertise,
+or wants to know about the RCC team.""",
         "input_schema": {"type": "object", "properties": {}, "required": []}
     },
     {
-        "name": "read_web_contact",
-        "description": """Read web content about RCC contact information.
+        "name": "read_web_user_policy",
+        "description": """Read RCC user policy from the website.
+        
+COVERS: Acceptable use policies, user responsibilities, terms of service.
 
-COVERS: Contact email, support channels, office location, how to get help.
-
-USE WHEN: User asks how to contact RCC, get support, or report issues.""",
+USE WHEN: User asks about usage policies, acceptable use, or user responsibilities.""",
         "input_schema": {"type": "object", "properties": {}, "required": []}
     },
     {
-        "name": "read_web_dl4",
-        "description": """Read web content about DL4 deep learning cluster.
+        "name": "read_web_oversight_committee",
+        "description": """Read about the Research Computing Oversight Committee.
+        
+COVERS: Committee members, role in RCC governance, oversight responsibilities.
 
-COVERS: DL4 cluster for deep learning, GPU resources, specifications.
-
-USE WHEN: User asks about DL4, deep learning clusters, or GPU compute.""",
+USE WHEN: User asks about RCC oversight, governance structure, or committee members.""",
         "input_schema": {"type": "object", "properties": {}, "required": []}
     },
     {
-        "name": "read_web_dm1",
-        "description": """Read web content about DM1 data mover system.
+        "name": "read_web_vision_mission",
+        "description": """Read RCC vision and mission statement.
+        
+COVERS: RCC mission to advance research, vision for transforming research at UChicago,
+key mission statements for research, education, and discovery.
 
-COVERS: DM1 data mover, data transfer services, large file transfers.
+USE WHEN: User asks about RCC's mission, vision, or strategic goals.""",
+        "input_schema": {"type": "object", "properties": {}, "required": []}
+    },
+    # Access and accounts
+    {
+        "name": "read_web_access",
+        "description": """Read about accessing RCC resources.
+        
+COVERS: How to get access to RCC, access requirements, eligibility.
 
-USE WHEN: User asks about data movers, transferring large data, or DM1.""",
+USE WHEN: User asks about getting access to RCC or eligibility requirements.""",
         "input_schema": {"type": "object", "properties": {}, "required": []}
     },
     {
-        "name": "read_web_documentation_menu",
-        "description": """Read web content about documentation menu structure.
+        "name": "read_web_accounts_allocations",
+        "description": """Read about RCC accounts and allocations from website.
+        
+COVERS: Account types, allocation process, how to request resources.
 
-COVERS: Documentation organization, available guides, menu navigation.
+USE WHEN: User asks about accounts or allocations from website perspective.""",
+        "input_schema": {"type": "object", "properties": {}, "required": []}
+    },
+    # Grants and publications
+    {
+        "name": "read_web_grants_publications",
+        "description": """Read overview of grants and publications support.
+        
+COVERS: Overview of how RCC supports grant proposals and publications.
 
-USE WHEN: User asks what documentation is available or how to find guides.""",
+USE WHEN: User asks about grant support or publication assistance overview.""",
         "input_schema": {"type": "object", "properties": {}, "required": []}
     },
     {
-        "name": "read_web_ecosystem",
-        "description": """Read web content about RCC ecosystem.
+        "name": "read_web_acknowledging_rcc",
+        "description": """Read how to acknowledge RCC in publications.
+        
+COVERS: Proper citation text for acknowledging RCC in papers, grant proposals,
+and other publications. Required acknowledgment language.
 
-COVERS: RCC computing ecosystem, integrated services, available systems.
-
-USE WHEN: User asks about the overall RCC environment or available systems.""",
+USE WHEN: User asks how to cite or acknowledge RCC in their publications or grants.""",
         "input_schema": {"type": "object", "properties": {}, "required": []}
     },
     {
-        "name": "read_web_events",
-        "description": """Read web content about RCC events.
+        "name": "read_web_facilities_resources",
+        "description": """Read facilities and resources documentation for grants.
+        
+COVERS: Boilerplate text describing RCC facilities for grant applications,
+technical specifications for proposals, resources documentation.
 
-COVERS: Upcoming events, workshops, training sessions, seminars.
-
-USE WHEN: User asks about events, workshops, or training opportunities.""",
+USE WHEN: User needs facilities description for a grant proposal or needs
+to document RCC resources in a formal application.""",
         "input_schema": {"type": "object", "properties": {}, "required": []}
     },
     {
-        "name": "read_web_file_system_basics",
-        "description": """Read web content about file system basics.
+        "name": "read_web_pi_proposals",
+        "description": """Read information for PI proposals.
+        
+COVERS: Information specifically for PIs writing grant proposals,
+how RCC can support proposals, what to include.
 
-COVERS: File system structure, basic navigation, directory organization.
-
-USE WHEN: User asks about file systems, directory structure, or navigation.""",
+USE WHEN: User is a PI preparing a grant proposal and needs RCC support info.""",
         "input_schema": {"type": "object", "properties": {}, "required": []}
     },
     {
-        "name": "read_web_file_transfer",
-        "description": """Read web content about file transfer methods.
+        "name": "read_web_grant_support",
+        "description": """Read about RCC grant support services.
+        
+COVERS: How RCC helps with grants - brainstorming ideas, solicitation search,
+piloting computational projects, hardware quotes, grant writing assistance,
+staff expertise (AI/ML, GIS, algorithm development, visualization),
+data repositories for sharing and reproducibility.
 
-COVERS: SCP, SFTP, rsync, Globus, data transfer tools and methods.
-
-USE WHEN: User asks about transferring files to/from cluster.""",
+USE WHEN: User asks about how RCC can help with grant proposals, what grant
+services RCC provides, or needs help with a grant application.""",
         "input_schema": {"type": "object", "properties": {}, "required": []}
     },
     {
-        "name": "read_web_glossary",
-        "description": """Read web content about RCC glossary and terminology.
+        "name": "read_web_hardware_quotes",
+        "description": """Read about hardware quotes for grants.
+        
+COVERS: How to get hardware quotes for grant proposals, pricing information,
+hardware specifications for budgets.
 
-COVERS: HPC terminology, definitions, acronyms, computing concepts.
-
-USE WHEN: User asks about terminology, definitions, or what terms mean.""",
+USE WHEN: User needs hardware quotes or pricing for a grant budget.""",
         "input_schema": {"type": "object", "properties": {}, "required": []}
     },
     {
-        "name": "read_web_gpus",
-        "description": """Read web content about GPU computing.
+        "name": "read_web_publications_list",
+        "description": """Read list of publications that used RCC resources.
+        
+COVERS: Comprehensive list of research publications that acknowledged RCC,
+papers across various disciplines that used Midway.
 
-COVERS: GPU types, CUDA, GPU job submission, GPU resources available.
-
-USE WHEN: User asks about GPUs, CUDA, or GPU computing resources.""",
+USE WHEN: User asks about research done on RCC, publications using Midway,
+or wants examples of RCC-supported research.""",
         "input_schema": {"type": "object", "properties": {}, "required": []}
     },
     {
-        "name": "read_web_home",
-        "description": """Read web content about RCC home page.
+        "name": "read_web_support_letters",
+        "description": """Read about support letters from RCC.
+        
+COVERS: How to request support letters from RCC for grant applications,
+what RCC can provide in terms of letters of support.
 
-COVERS: Main RCC website content, quick links, highlights.
+USE WHEN: User needs a letter of support from RCC for a grant application.""",
+        "input_schema": {"type": "object", "properties": {}, "required": []}
+    },
+    # Resources
+    {
+        "name": "read_web_resources",
+        "description": """Read overview of RCC resources.
+        
+COVERS: Overview of all RCC resources - compute, storage, software, networking.
 
-USE WHEN: User asks general questions about RCC or wants overview.""",
+USE WHEN: User wants a general overview of what resources RCC provides.""",
         "input_schema": {"type": "object", "properties": {}, "required": []}
     },
     {
-        "name": "read_web_home_directory",
-        "description": """Read web content about home directories.
+        "name": "read_web_hpc_resources",
+        "description": """Read about high-performance computing resources.
+        
+COVERS: Midway2 cluster details, CPU architectures (Broadwell, Skylake),
+tightly-coupled vs loosely-coupled nodes, shared memory nodes,
+Infiniband interconnect, GPU computing with K80 cards, Hadoop,
+emerging technologies, total cores and storage capacity.
 
-COVERS: Home directory location, quotas, permissions, purpose.
-
-USE WHEN: User asks about home directory, personal storage, or ~/ path.""",
+USE WHEN: User asks about HPC hardware, cluster specifications,
+node types, or computing capabilities.""",
         "input_schema": {"type": "object", "properties": {}, "required": []}
     },
     {
-        "name": "read_web_how_to_get_started",
-        "description": """Read web content about getting started.
+        "name": "read_web_hosted_data",
+        "description": """Read about hosted data resources.
+        
+COVERS: Data collections hosted at RCC, available datasets,
+research data resources.
 
-COVERS: New user guide, first steps, initial setup, onboarding.
-
-USE WHEN: User is new or asks how to get started with RCC.""",
+USE WHEN: User asks about data hosted at RCC or available datasets.""",
         "input_schema": {"type": "object", "properties": {}, "required": []}
     },
     {
-        "name": "read_web_job_arrays",
-        "description": """Read web content about job arrays.
+        "name": "read_web_networking",
+        "description": """Read about RCC networking infrastructure.
+        
+COVERS: Network connectivity, bandwidth, data transfer capabilities,
+interconnect technologies.
 
-COVERS: Slurm job arrays, array syntax, batch job arrays, parametric jobs.
-
-USE WHEN: User asks about job arrays, running multiple similar jobs.""",
+USE WHEN: User asks about network speed, connectivity, or data transfer rates.""",
         "input_schema": {"type": "object", "properties": {}, "required": []}
     },
     {
-        "name": "read_web_job_scheduling_policy",
-        "description": """Read web content about job scheduling policy.
+        "name": "read_web_software_resources",
+        "description": """Read about software resources at RCC.
+        
+COVERS: Overview of software available at RCC, software support,
+application availability.
 
-COVERS: Slurm scheduling policies, fairshare, priority, queue policies.
-
-USE WHEN: User asks about scheduling priority, fairshare, or queue policies.""",
+USE WHEN: User asks about what software is available at RCC (overview).""",
         "input_schema": {"type": "object", "properties": {}, "required": []}
     },
     {
-        "name": "read_web_manage_files",
-        "description": """Read web content about file management.
+        "name": "read_web_storage_backup",
+        "description": """Read about storage and backup resources.
+        
+COVERS: RCC storage systems, persistent storage, high-performance scratch,
+home directories, project space, backup and data recovery,
+filesystem snapshots, Globus Online endpoint access.
 
-COVERS: File operations, permissions, organizing data, best practices.
+USE WHEN: User asks about storage options, backup systems, or data recovery
+from the resources perspective.""",
+        "input_schema": {"type": "object", "properties": {}, "required": []}
+    },
+    # Support and services
+    {
+        "name": "read_web_support_services",
+        "description": """Read overview of RCC support and services.
+        
+COVERS: Walk-in lab location (Suite 216, Regenstein Library), hours (9am-5pm Mon-Fri),
+consulting services, technical support, available services overview.
 
-USE WHEN: User asks about managing files, organizing data, or file operations.""",
+USE WHEN: User wants to know what support services RCC offers, walk-in hours,
+or how to get in-person help.""",
         "input_schema": {"type": "object", "properties": {}, "required": []}
     },
     {
-        "name": "read_web_manage_jobs",
-        "description": """Read web content about job management.
+        "name": "read_web_cpp",
+        "description": """Read about the Cluster Partnership Program (CPP).
+        
+COVERS: How to purchase dedicated compute and storage through CPP,
+hardware options (CPU nodes, large memory nodes, GPU nodes),
+storage options (GPFS, CDS), pricing model, what CPP includes
+(hosting, maintenance, support), how to contact for CPP.
 
-COVERS: Job monitoring, canceling jobs, job status, squeue, scancel.
-
-USE WHEN: User asks about managing jobs, checking status, or job control.""",
+USE WHEN: User asks about buying dedicated hardware, CPP program,
+purchasing compute nodes, or expanding beyond shared resources.""",
         "input_schema": {"type": "object", "properties": {}, "required": []}
     },
     {
-        "name": "read_web_midway2",
-        "description": """Read web content about Midway2 cluster.
+        "name": "read_web_consultant_partnership",
+        "description": """Read about the Consultant Partnership Program.
+        
+COVERS: How to hire RCC computational scientists or application developers,
+purchasing FTE time from RCC staff, extended consulting services.
 
-COVERS: Midway2 specifications, hardware, partitions, availability.
-
-USE WHEN: User asks specifically about Midway2 cluster.""",
+USE WHEN: User asks about hiring RCC staff, dedicated consulting,
+or long-term computational support partnerships.""",
         "input_schema": {"type": "object", "properties": {}, "required": []}
     },
     {
-        "name": "read_web_midway3",
-        "description": """Read web content about Midway3 cluster.
+        "name": "read_web_consulting_support",
+        "description": """Read about consulting and technical support.
+        
+COVERS: RCC consulting services, technical support offerings, walk-in lab,
+in-person consultation options, how to get help with research computing problems.
 
-COVERS: Midway3 specifications, hardware, partitions, availability.
-
-USE WHEN: User asks specifically about Midway3 cluster.""",
+USE WHEN: User asks about consulting services, technical support options,
+or walk-in sessions.""",
         "input_schema": {"type": "object", "properties": {}, "required": []}
     },
     {
-        "name": "read_web_midway_getting_started",
-        "description": """Read web content about getting started on Midway.
+        "name": "read_web_data_management",
+        "description": """Read about data management services.
+        
+COVERS: Data management and sharing plan assistance (NIH requirements),
+data lifecycle management, data curation, metadata preparation,
+de-identification services, data access portals, links to UChicago
+data management resources (Library, URA).
 
-COVERS: Midway-specific onboarding, first job, basic workflow.
-
-USE WHEN: User asks how to get started on Midway specifically.""",
+USE WHEN: User asks about data management plans, NIH data sharing requirements,
+or needs help with data management for grants.""",
         "input_schema": {"type": "object", "properties": {}, "required": []}
     },
     {
-        "name": "read_web_midway_partitions_and_qos",
-        "description": """Read web content about Midway partitions and QoS.
+        "name": "read_web_data_sharing",
+        "description": """Read about data sharing services.
+        
+COVERS: How RCC helps with data sharing, data sharing platforms,
+making data available to collaborators.
 
-COVERS: Available partitions, QoS settings, partition limits, caslake, broadwl.
-
-USE WHEN: User asks about partitions, QoS, or which partition to use.""",
+USE WHEN: User asks about sharing data with collaborators or data sharing services.""",
         "input_schema": {"type": "object", "properties": {}, "required": []}
     },
     {
-        "name": "read_web_module_system",
-        "description": """Read web content about module system.
+        "name": "read_web_midway2_services",
+        "description": """Read about Midway2 services specifically.
+        
+COVERS: Midway2 cluster information, services specific to Midway2.
 
-COVERS: Environment modules, module commands, loading software.
-
-USE WHEN: User asks about modules, loading software, or module commands.""",
+USE WHEN: User asks specifically about Midway2 services.""",
         "input_schema": {"type": "object", "properties": {}, "required": []}
     },
     {
-        "name": "read_web_mpi_jobs",
-        "description": """Read web content about MPI jobs.
+        "name": "read_web_new_faculty",
+        "description": """Read about the New Faculty Program.
+        
+COVERS: Special programs and allocations for new UChicago faculty,
+how new faculty can get started with RCC, onboarding support.
 
-COVERS: MPI programming, parallel jobs, srun, mpirun, distributed computing.
-
-USE WHEN: User asks about MPI, parallel computing, or multi-node jobs.""",
+USE WHEN: User is a new faculty member or asks about new faculty programs.""",
         "input_schema": {"type": "object", "properties": {}, "required": []}
     },
     {
-        "name": "read_web_news",
-        "description": """Read web content about RCC news.
+        "name": "read_web_outreach",
+        "description": """Read about RCC outreach activities.
+        
+COVERS: RCC outreach programs, community engagement, educational outreach.
 
-COVERS: RCC announcements, news updates, important notices.
-
-USE WHEN: User asks about RCC news or recent announcements.""",
+USE WHEN: User asks about RCC outreach or community programs.""",
         "input_schema": {"type": "object", "properties": {}, "required": []}
     },
     {
-        "name": "read_web_ondemand",
-        "description": """Read web content about Open OnDemand.
+        "name": "read_web_workshops_training",
+        "description": """Read about RCC workshops and training programs.
+        
+COVERS: Workshop schedule (2025-2026), workshop topics (intro to RCC,
+distributed data processing, AI/deep learning, Open OnDemand),
+in-person hands-on training, industry expert sessions,
+vendor training courses.
 
-COVERS: Open OnDemand web portal, browser-based access, web interface.
+USE WHEN: User asks about RCC workshops, training sessions, when workshops
+are held, or how to learn to use RCC resources.""",
+        "input_schema": {"type": "object", "properties": {}, "required": []}
+    },
+    # Other pages
+    {
+        "name": "read_web_faqs",
+        "description": """Read frequently asked questions from RCC website.
+        
+COVERS: Common questions and answers about RCC services.
 
-USE WHEN: User asks about OnDemand, web portal, or browser access.""",
+USE WHEN: User has a general question that might be in the FAQ.""",
         "input_schema": {"type": "object", "properties": {}, "required": []}
     },
     {
-        "name": "read_web_pi_group_management",
-        "description": """Read web content about PI group management.
+        "name": "read_web_system_details",
+        "description": """Read system details and specifications.
+        
+COVERS: Technical details about RCC systems, hardware specifications.
 
-COVERS: PI responsibilities, adding users, group management, allocations.
-
-USE WHEN: User asks about PI duties, managing group members, or allocations.""",
-        "input_schema": {"type": "object", "properties": {}, "required": []}
-    },
-    {
-        "name": "read_web_project_directory",
-        "description": """Read web content about project directories.
-
-COVERS: Project space, shared group storage, /project filesystem.
-
-USE WHEN: User asks about project directories, shared storage, or /project.""",
-        "input_schema": {"type": "object", "properties": {}, "required": []}
-    },
-    {
-        "name": "read_web_research_allocation_request",
-        "description": """Read web content about research allocation requests.
-
-COVERS: Requesting allocations, compute time, research proposals.
-
-USE WHEN: User asks about getting allocations or requesting compute time.""",
-        "input_schema": {"type": "object", "properties": {}, "required": []}
-    },
-    {
-        "name": "read_web_sacct_examples",
-        "description": """Read web content about sacct examples.
-
-COVERS: Job accounting, sacct command, job history, usage reports.
-
-USE WHEN: User asks about job history, sacct, or accounting information.""",
-        "input_schema": {"type": "object", "properties": {}, "required": []}
-    },
-    {
-        "name": "read_web_scratch_directory",
-        "description": """Read web content about scratch directories.
-
-COVERS: Scratch space, temporary storage, /scratch filesystem, cleanup.
-
-USE WHEN: User asks about scratch space, temporary files, or high-speed storage.""",
-        "input_schema": {"type": "object", "properties": {}, "required": []}
-    },
-    {
-        "name": "read_web_sensitive_data",
-        "description": """Read web content about sensitive data handling.
-
-COVERS: Data security, compliance, protected data, HIPAA, restricted data.
-
-USE WHEN: User asks about sensitive data, security, or compliance.""",
-        "input_schema": {"type": "object", "properties": {}, "required": []}
-    },
-    {
-        "name": "read_web_service_catalog",
-        "description": """Read web content about service catalog.
-
-COVERS: Available services, service descriptions, what RCC offers.
-
-USE WHEN: User asks what services RCC provides or wants service overview.""",
-        "input_schema": {"type": "object", "properties": {}, "required": []}
-    },
-    {
-        "name": "read_web_simple_script_examples",
-        "description": """Read web content about simple script examples.
-
-COVERS: Basic job scripts, sbatch examples, starter templates.
-
-USE WHEN: User asks for simple job script examples or templates.""",
-        "input_schema": {"type": "object", "properties": {}, "required": []}
-    },
-    {
-        "name": "read_web_skyway",
-        "description": """Read web content about Skyway cloud bursting.
-
-COVERS: Skyway cloud integration, AWS, Google Cloud, cloud bursting.
-
-USE WHEN: User asks about cloud computing, Skyway, or cloud bursting.""",
-        "input_schema": {"type": "object", "properties": {}, "required": []}
-    },
-    {
-        "name": "read_web_slas",
-        "description": """Read web content about Service Level Agreements.
-
-COVERS: SLAs, service guarantees, uptime commitments, support levels.
-
-USE WHEN: User asks about SLAs, service guarantees, or support commitments.""",
-        "input_schema": {"type": "object", "properties": {}, "required": []}
-    },
-    {
-        "name": "read_web_software_installation_request",
-        "description": """Read web content about software installation requests.
-
-COVERS: Requesting software, installation process, software availability.
-
-USE WHEN: User asks about getting new software installed.""",
-        "input_schema": {"type": "object", "properties": {}, "required": []}
-    },
-    {
-        "name": "read_web_ssd",
-        "description": """Read web content about SSD storage.
-
-COVERS: SSD storage, high-speed local storage, node-local SSDs.
-
-USE WHEN: User asks about SSD storage or high-speed local disk.""",
-        "input_schema": {"type": "object", "properties": {}, "required": []}
-    },
-    {
-        "name": "read_web_storage",
-        "description": """Read web content about storage overview.
-
-COVERS: Storage systems overview, storage types, data management.
-
-USE WHEN: User asks general questions about storage options.""",
-        "input_schema": {"type": "object", "properties": {}, "required": []}
-    },
-    {
-        "name": "read_web_storage_service_request",
-        "description": """Read web content about storage service requests.
-
-COVERS: Requesting storage, additional space, storage purchases.
-
-USE WHEN: User asks about getting more storage or storage requests.""",
-        "input_schema": {"type": "object", "properties": {}, "required": []}
-    },
-    {
-        "name": "read_web_submit_jobs",
-        "description": """Read web content about submitting jobs.
-
-COVERS: sbatch, job submission, batch jobs, Slurm submission.
-
-USE WHEN: User asks how to submit jobs or about sbatch.""",
-        "input_schema": {"type": "object", "properties": {}, "required": []}
-    },
-    {
-        "name": "read_web_support",
-        "description": """Read web content about RCC support.
-
-COVERS: Getting help, support options, troubleshooting resources.
-
-USE WHEN: User asks how to get help or support.""",
-        "input_schema": {"type": "object", "properties": {}, "required": []}
-    },
-    {
-        "name": "read_web_system_information_commands",
-        "description": """Read web content about system information commands.
-
-COVERS: System commands, checking resources, cluster info commands.
-
-USE WHEN: User asks about system commands or checking cluster info.""",
-        "input_schema": {"type": "object", "properties": {}, "required": []}
-    },
-    {
-        "name": "read_web_teaching_resources",
-        "description": """Read web content about teaching resources.
-
-COVERS: Using RCC for teaching, educational allocations, course support.
-
-USE WHEN: User asks about teaching with RCC or educational use.""",
-        "input_schema": {"type": "object", "properties": {}, "required": []}
-    },
-    {
-        "name": "read_web_team",
-        "description": """Read web content about RCC team.
-
-COVERS: RCC staff, team members, who works at RCC.
-
-USE WHEN: User asks about RCC staff or team.""",
-        "input_schema": {"type": "object", "properties": {}, "required": []}
-    },
-    {
-        "name": "read_web_thinlinc",
-        "description": """Read web content about ThinLinc.
-
-COVERS: ThinLinc remote desktop, GUI access, graphical applications.
-
-USE WHEN: User asks about ThinLinc, remote desktop, or GUI access.""",
-        "input_schema": {"type": "object", "properties": {}, "required": []}
-    },
-    {
-        "name": "read_web_user_guide",
-        "description": """Read web content about user guide overview.
-
-COVERS: User guide structure, documentation overview, how to use docs.
-
-USE WHEN: User asks about the user guide or documentation structure.""",
-        "input_schema": {"type": "object", "properties": {}, "required": []}
-    },
-    {
-        "name": "read_web_visualization",
-        "description": """Read web content about visualization.
-
-COVERS: Visualization tools, graphics, plotting, visual analysis.
-
-USE WHEN: User asks about visualization, graphics, or plotting tools.""",
-        "input_schema": {"type": "object", "properties": {}, "required": []}
-    },
-    {
-        "name": "read_web_what_is_slurm",
-        "description": """Read web content about what Slurm is.
-
-COVERS: Slurm introduction, job scheduler basics, what is Slurm.
-
-USE WHEN: User asks what Slurm is or for Slurm introduction.""",
+USE WHEN: User asks about specific system specifications or technical details.""",
         "input_schema": {"type": "object", "properties": {}, "required": []}
     },
     {
         "name": "read_web_workshops",
-        "description": """Read web content about RCC workshops.
+        "description": """Read workshops information page.
+        
+COVERS: General workshops information.
 
-COVERS: Workshop schedule, training sessions, hands-on courses.
+USE WHEN: User asks about workshops (alternative to workshops_training).""",
+        "input_schema": {"type": "object", "properties": {}, "required": []}
+    },
+    {
+        "name": "read_web_workshops_events",
+        "description": """Read about workshops and events.
+        
+COVERS: Upcoming and past workshops, events calendar, event details.
 
-USE WHEN: User asks about workshops, training, or learning opportunities.""",
+USE WHEN: User asks about upcoming events or workshop schedule.""",
+        "input_schema": {"type": "object", "properties": {}, "required": []}
+    },
+    {
+        "name": "read_web_data_viz_committee",
+        "description": """Read about Data Visualization Initiative Advisory Committee.
+        
+COVERS: Data visualization advisory committee, visualization initiatives.
+
+USE WHEN: User asks about data visualization initiatives or related committees.""",
+        "input_schema": {"type": "object", "properties": {}, "required": []}
+    },
+    # Research showcases
+    {
+        "name": "read_web_bayesian_forest",
+        "description": """Read research showcase: Bayesian Forest Cities project.
+        
+COVERS: Case study of research using RCC resources, Bayesian analysis,
+urban forestry research.
+
+USE WHEN: User asks about research examples or this specific project.""",
+        "input_schema": {"type": "object", "properties": {}, "required": []}
+    },
+    {
+        "name": "read_web_big_data_worms",
+        "description": """Read research showcase: Big Data, Sleeping Worms, and Electronic Chef.
+        
+COVERS: Research case studies, interdisciplinary research examples,
+how RCC supports diverse research projects.
+
+USE WHEN: User asks about research examples or diverse RCC use cases.""",
+        "input_schema": {"type": "object", "properties": {}, "required": []}
+    },
+    {
+        "name": "read_web_our_work",
+        "description": """Read about RCC's work and research support.
+        
+COVERS: Examples of RCC work, research projects supported, impact stories.
+
+USE WHEN: User asks about what kind of work RCC does or research impact.""",
+        "input_schema": {"type": "object", "properties": {}, "required": []}
+    },
+    {
+        "name": "read_web_tools_resources",
+        "description": """Read about tools and resources available.
+        
+COVERS: Overview of tools and resources for researchers.
+
+USE WHEN: User asks about what tools are available at RCC.""",
+        "input_schema": {"type": "object", "properties": {}, "required": []}
+    },
+    # Additional pages
+    {
+        "name": "read_web_index",
+        "description": """Read the RCC homepage/index page.
+        
+COVERS: Main RCC website landing page content, overview of RCC.
+
+USE WHEN: User asks for general RCC overview or homepage content.""",
+        "input_schema": {"type": "object", "properties": {}, "required": []}
+    },
+    {
+        "name": "read_web_midway2",
+        "description": """Read about Midway2 cluster from website.
+        
+COVERS: Midway2 cluster overview and information from main website.
+
+USE WHEN: User asks about Midway2 specifically.""",
+        "input_schema": {"type": "object", "properties": {}, "required": []}
+    },
+    {
+        "name": "read_web_news_events",
+        "description": """Read news and events page.
+        
+COVERS: RCC news, announcements, upcoming events.
+
+USE WHEN: User asks about RCC news or events.""",
+        "input_schema": {"type": "object", "properties": {}, "required": []}
+    },
+    {
+        "name": "read_web_software",
+        "description": """Read software overview page from website.
+        
+COVERS: Overview of software available at RCC from main website.
+
+USE WHEN: User asks about software availability (overview).""",
+        "input_schema": {"type": "object", "properties": {}, "required": []}
+    },
+    {
+        "name": "read_web_team",
+        "description": """Read about the RCC team page.
+        
+COVERS: RCC team members, staff directory, expertise areas.
+
+USE WHEN: User asks about RCC staff or team members.""",
+        "input_schema": {"type": "object", "properties": {}, "required": []}
+    },
+    {
+        "name": "read_web_publications",
+        "description": """Read publications page overview.
+        
+COVERS: Information about publications and research output.
+
+USE WHEN: User asks about RCC publications overview.""",
+        "input_schema": {"type": "object", "properties": {}, "required": []}
+    },
+    {
+        "name": "read_web_publications_page",
+        "description": """Read the publications landing page.
+        
+COVERS: Publications information and links.
+
+USE WHEN: User asks about research publications.""",
+        "input_schema": {"type": "object", "properties": {}, "required": []}
+    },
+    {
+        "name": "read_web_user_guide_page",
+        "description": """Read user guide overview from website.
+        
+COVERS: Overview and links to user guide documentation.
+
+USE WHEN: User asks about user guide or documentation overview.""",
+        "input_schema": {"type": "object", "properties": {}, "required": []}
+    },
+    {
+        "name": "read_web_takecourse",
+        "description": """Read about taking courses/training.
+        
+COVERS: Course and training information.
+
+USE WHEN: User asks about taking RCC courses.""",
+        "input_schema": {"type": "object", "properties": {}, "required": []}
+    },
+    # Medical/specialized research pages
+    {
+        "name": "read_web_incidence",
+        "description": """Read incidence research page (medical research project).
+        
+COVERS: Specialized medical research project information.
+
+USE WHEN: User asks about medical incidence research projects.""",
+        "input_schema": {"type": "object", "properties": {}, "required": []}
+    },
+    {
+        "name": "read_web_mpmri",
+        "description": """Read mpMRI research page (multiparametric MRI project).
+        
+COVERS: Multiparametric MRI research project information.
+
+USE WHEN: User asks about mpMRI or MRI research projects.""",
+        "input_schema": {"type": "object", "properties": {}, "required": []}
+    },
+    {
+        "name": "read_web_pirads",
+        "description": """Read PI-RADS research page (prostate imaging).
+        
+COVERS: PI-RADS prostate imaging research project information.
+
+USE WHEN: User asks about PI-RADS or prostate imaging research.""",
         "input_schema": {"type": "object", "properties": {}, "required": []}
     }
 ]
