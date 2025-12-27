@@ -16,7 +16,7 @@ if not API_KEY:
     st.error("❌ ANTHROPIC_API_KEY environment variable not set.")
     st.stop()
 
-MODEL = "MiniMax-M2.1-lightning"
+MODEL = "MiniMax-M2.1"
 DOCS_BASE_PATH = "./docs"
 WEB_BASE_PATH = "./web"
 
