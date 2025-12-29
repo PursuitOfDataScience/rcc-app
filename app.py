@@ -1286,25 +1286,26 @@ st.markdown("""
     
     /* Main container styling */
     .main .block-container {
-        padding-top: 2rem;
+        padding-top: 0.5rem;
         padding-bottom: 0;
         max-width: 900px;
     }
     
-    /* Welcome screen styles */
+    /* Welcome screen styles - fit on one screen */
     .welcome-container {
         display: flex;
         flex-direction: column;
         align-items: center;
         justify-content: center;
-        min-height: 60vh;
+        min-height: 35vh;
         text-align: center;
-        padding: 2rem;
+        padding: 1rem;
+        margin-top: 2rem;
     }
     
     .welcome-icon {
-        font-size: 4rem;
-        margin-bottom: 1.5rem;
+        font-size: 3.5rem;
+        margin-bottom: 1rem;
         animation: float 3s ease-in-out infinite;
     }
     
@@ -1314,7 +1315,7 @@ st.markdown("""
     }
     
     .welcome-title {
-        font-size: 2.5rem;
+        font-size: 2.2rem;
         font-weight: 600;
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         -webkit-background-clip: text;
@@ -1365,18 +1366,19 @@ st.markdown("""
         margin-right: 8px;
     }
     
-    /* Chat input styling - wider and shorter */
+    /* Chat input styling - larger like Claude AI */
     .stChatInput {
         max-width: 800px !important;
         margin: 0 auto !important;
     }
     
     .stChatInput > div {
-        border-radius: 24px !important;
+        border-radius: 20px !important;
         border: 2px solid #e5e7eb !important;
         background: #ffffff !important;
         box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08) !important;
         transition: all 0.2s ease !important;
+        min-height: 56px !important;
     }
     
     .stChatInput > div:focus-within {
@@ -1386,17 +1388,33 @@ st.markdown("""
     
     .stChatInput textarea {
         font-size: 1rem !important;
-        padding: 12px 20px !important;
-        min-height: 24px !important;
-        max-height: 120px !important;
+        padding: 16px 20px !important;
+        min-height: 56px !important;
+        max-height: 200px !important;
+        line-height: 1.5 !important;
     }
     
-    /* User message - right aligned bubble */
+    /* Position send button at bottom-right */
+    .stChatInput button {
+        position: absolute !important;
+        bottom: 8px !important;
+        right: 8px !important;
+        border-radius: 12px !important;
+    }
+    
+    /* User message - right aligned bubble with hover actions */
     .user-container {
         display: flex;
         justify-content: flex-end;
         margin-bottom: 1.5rem;
         padding-right: 1rem;
+        position: relative;
+    }
+    
+    .user-message-wrapper {
+        position: relative;
+        max-width: 70%;
+        min-width: 60px;
     }
     
     .user-bubble {
@@ -1406,9 +1424,40 @@ st.markdown("""
         border-radius: 20px 20px 4px 20px;
         font-size: 0.95rem;
         line-height: 1.6;
-        max-width: 70%;
-        min-width: 60px;
         box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+    }
+    
+    /* Hover actions for user messages */
+    .user-actions {
+        display: none;
+        position: absolute;
+        bottom: -28px;
+        right: 0;
+        gap: 8px;
+        z-index: 10;
+    }
+    
+    .user-message-wrapper:hover .user-actions {
+        display: flex;
+    }
+    
+    .user-action-btn {
+        background: #f3f4f6;
+        border: 1px solid #e5e7eb;
+        border-radius: 6px;
+        padding: 4px 10px;
+        font-size: 0.75rem;
+        color: #6b7280;
+        cursor: pointer;
+        transition: all 0.15s ease;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+    }
+    
+    .user-action-btn:hover {
+        background: #e5e7eb;
+        color: #374151;
     }
     
     /* Assistant message styling */
@@ -1463,29 +1512,27 @@ st.markdown("""
         border-color: #667eea !important;
     }
     
-    /* Clear button styling - top right */
-    .clear-btn-container {
+    /* Clear button - fixed at top right, aligned with GitHub logo */
+    .fixed-clear-btn {
         position: fixed;
-        top: 1rem;
-        right: 1rem;
-        z-index: 1000;
+        top: 14px;
+        right: 80px;
+        z-index: 9999;
     }
     
-    /* Style the clear button specifically */
-    [data-testid="stButton"][key="clear_btn"] button,
-    div[data-testid="column"]:last-child .stButton > button {
+    .fixed-clear-btn button {
         background: #fee2e2 !important;
         border: 1px solid #fca5a5 !important;
         color: #dc2626 !important;
         border-radius: 8px !important;
-        padding: 8px 16px !important;
-        font-size: 0.85rem !important;
-        min-height: auto !important;
-        height: auto !important;
+        padding: 6px 14px !important;
+        font-size: 0.8rem !important;
+        cursor: pointer;
         transition: all 0.2s ease !important;
+        white-space: nowrap;
     }
     
-    div[data-testid="column"]:last-child .stButton > button:hover {
+    .fixed-clear-btn button:hover {
         background: #fecaca !important;
         border-color: #f87171 !important;
         transform: translateY(-1px) !important;
@@ -1620,14 +1667,72 @@ const targetNode = doc.querySelector('[data-testid="stAppViewBlockContainer"]');
 if (targetNode) {
     observer.observe(targetNode, { childList: true, subtree: true });
 }
+
+// Copy message to clipboard
+window.copyMessage = function(msgId) {
+    const msgElement = doc.getElementById(msgId);
+    if (msgElement) {
+        const text = msgElement.innerText;
+        navigator.clipboard.writeText(text).then(function() {
+            // Show brief feedback
+            const btn = event.target.closest('.user-action-btn');
+            if (btn) {
+                const originalText = btn.innerHTML;
+                btn.innerHTML = '<span>✓</span> Copied!';
+                setTimeout(() => { btn.innerHTML = originalText; }, 1500);
+            }
+        });
+    }
+};
+
+// Edit message - trigger Streamlit rerun with edit state
+window.editMessage = function(msgIndex) {
+    // Store the edit index in sessionStorage and trigger a rerun
+    sessionStorage.setItem('editMsgIndex', msgIndex);
+    // Find and click a hidden button or use Streamlit's mechanism
+    const hiddenInput = doc.querySelector('input[data-testid="stHiddenInput"]');
+    if (hiddenInput) {
+        hiddenInput.value = 'edit_' + msgIndex;
+        hiddenInput.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+    // Fallback: reload with query param
+    const url = new URL(window.parent.location.href);
+    url.searchParams.set('edit', msgIndex);
+    window.parent.location.href = url.toString();
+};
+
+// Clear conversation
+window.clearConversation = function() {
+    const url = new URL(window.parent.location.href);
+    url.searchParams.set('clear', 'true');
+    window.parent.location.href = url.toString();
+};
 </script>
 """, height=0)
+
+# Handle URL query params for clear and edit
+query_params = st.query_params
+if query_params.get("clear") == "true":
+    st.session_state.messages = []
+    st.session_state.processing = False
+    st.query_params.clear()
+    st.rerun()
+
+if "edit" in query_params:
+    try:
+        edit_index = int(query_params.get("edit"))
+        st.session_state.editing_index = edit_index
+        st.query_params.clear()
+    except (ValueError, TypeError):
+        pass
 
 # Initialize session state
 if "messages" not in st.session_state:
     st.session_state.messages = []
 if "processing" not in st.session_state:
     st.session_state.processing = False
+if "editing_index" not in st.session_state:
+    st.session_state.editing_index = None
 if "client" not in st.session_state:
     try:
         st.session_state.client = get_client()
@@ -1710,12 +1815,24 @@ def format_tool_names(tool_names):
     return ", ".join(parts)
 
 
-def render_user_message(content):
-    """Render user message on the right with modern bubble style."""
+def render_user_message(content, msg_index=None):
+    """Render user message on the right with modern bubble style and hover actions."""
     escaped = content.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;').replace('\n', '<br>')
+    # Create unique IDs for JavaScript
+    msg_id = f"user_msg_{msg_index}" if msg_index is not None else "user_msg"
     st.markdown(f'''
     <div class="user-container">
-        <div class="user-bubble">{escaped}</div>
+        <div class="user-message-wrapper">
+            <div class="user-bubble" id="{msg_id}">{escaped}</div>
+            <div class="user-actions">
+                <button class="user-action-btn" onclick="copyMessage('{msg_id}')">
+                    <span>📋</span> Copy
+                </button>
+                <button class="user-action-btn" onclick="editMessage({msg_index})">
+                    <span>✏️</span> Edit
+                </button>
+            </div>
+        </div>
     </div>
     ''', unsafe_allow_html=True)
 
@@ -1731,15 +1848,13 @@ def render_assistant_message(content, tool_names=None):
     st.markdown('</div>', unsafe_allow_html=True)
 
 
-# Clear Conversation button - top right corner (only show in conversation mode)
+# Clear Conversation button - fixed at top right (only show in conversation mode)
 if len(st.session_state.messages) > 0:
-    # Create columns to position button on the right
-    col1, col2, col3 = st.columns([6, 1, 1])
-    with col3:
-        if st.button("🗑️ Clear", key="clear_btn", use_container_width=True):
-            st.session_state.messages = []
-            st.session_state.processing = False
-            st.rerun()
+    st.markdown('''
+    <div class="fixed-clear-btn">
+        <button onclick="clearConversation()">🗑️ Clear Conversation</button>
+    </div>
+    ''', unsafe_allow_html=True)
 
 # Example questions for the welcome screen
 EXAMPLE_QUESTIONS = [
@@ -1776,17 +1891,16 @@ if not has_messages:
                 st.rerun()
     
     st.markdown("</div>", unsafe_allow_html=True)
-    
-    # Spacer to push input toward bottom
-    st.markdown("<div style='height: 80px;'></div>", unsafe_allow_html=True)
 
 else:
     # Conversation Mode - show chat history
     st.markdown('<div class="chat-messages">', unsafe_allow_html=True)
     
+    msg_index = 0
     for message in st.session_state.messages:
         if message["role"] == "user" and isinstance(message["content"], str):
-            render_user_message(message["content"])
+            render_user_message(message["content"], msg_index)
+            msg_index += 1
         elif message["role"] == "assistant" and message.get("is_final"):
             display_text = extract_display_text(message["content"])
             tool_names = message.get("tool_names", [])
@@ -1796,7 +1910,7 @@ else:
     st.markdown('</div>', unsafe_allow_html=True)
 
 # Chat input - with better placeholder
-prompt = st.chat_input("Ask a question about RCC...", disabled=st.session_state.processing)
+prompt = st.chat_input("Ask any question about RCC...", disabled=st.session_state.processing)
 
 if prompt:
     st.session_state.messages.append({"role": "user", "content": prompt})
