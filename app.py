@@ -1277,10 +1277,12 @@ has_conversation = len(st.session_state.get("messages", [])) > 0
 # Custom CSS - Modern ChatGPT/Claude-like design
 st.markdown("""
 <style>
-    /* Hide Streamlit branding */
+    /* Hide Streamlit branding and sidebar */
     .stDeployButton {display: none;}
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
+    [data-testid="stSidebar"] {display: none;}
+    [data-testid="stSidebarCollapsedControl"] {display: none;}
     
     /* Main container styling */
     .main .block-container {
@@ -1461,29 +1463,34 @@ st.markdown("""
         border-color: #667eea !important;
     }
     
-    /* Sidebar styling */
-    .css-1d391kg {
-        background: #f8fafc;
+    /* Clear button styling - top right */
+    .clear-btn-container {
+        position: fixed;
+        top: 1rem;
+        right: 1rem;
+        z-index: 1000;
     }
     
-    [data-testid="stSidebar"] {
-        background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
+    /* Style the clear button specifically */
+    [data-testid="stButton"][key="clear_btn"] button,
+    div[data-testid="column"]:last-child .stButton > button {
+        background: #fee2e2 !important;
+        border: 1px solid #fca5a5 !important;
+        color: #dc2626 !important;
+        border-radius: 8px !important;
+        padding: 8px 16px !important;
+        font-size: 0.85rem !important;
+        min-height: auto !important;
+        height: auto !important;
+        transition: all 0.2s ease !important;
     }
     
-    [data-testid="stSidebar"] .stButton > button {
-        width: 100%;
-        border-radius: 8px;
-        border: 1px solid #e2e8f0;
-        background: white;
-        transition: all 0.2s ease;
+    div[data-testid="column"]:last-child .stButton > button:hover {
+        background: #fecaca !important;
+        border-color: #f87171 !important;
+        transform: translateY(-1px) !important;
     }
-    
-    [data-testid="stSidebar"] .stButton > button:hover {
-        background: #fee2e2;
-        border-color: #fca5a5;
-        color: #dc2626;
-    }
-    
+
     /* Example question buttons - beautiful card style */
     .main .stButton > button {
         background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%) !important;
@@ -1560,11 +1567,12 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# JavaScript for auto-focus on keypress
+# JavaScript for auto-focus on keypress and auto-scroll
 components.html("""
 <script>
 const doc = window.parent.document;
 
+// Auto-focus on keypress
 doc.addEventListener('keydown', function(e) {
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
         return;
@@ -1584,6 +1592,34 @@ doc.addEventListener('keydown', function(e) {
         chatInput.focus();
     }
 });
+
+// Auto-scroll to bottom when page loads (for new messages)
+function scrollToBottom() {
+    const mainContent = doc.querySelector('[data-testid="stAppViewBlockContainer"]');
+    if (mainContent) {
+        mainContent.scrollTop = mainContent.scrollHeight;
+    }
+    // Also try scrolling the main window
+    window.parent.scrollTo(0, window.parent.document.body.scrollHeight);
+}
+
+// Scroll on initial load
+setTimeout(scrollToBottom, 100);
+
+// Also observe for new content and scroll
+const observer = new MutationObserver(function(mutations) {
+    // Check if there are chat messages
+    const chatMessages = doc.querySelector('.chat-messages');
+    if (chatMessages) {
+        scrollToBottom();
+    }
+});
+
+// Start observing
+const targetNode = doc.querySelector('[data-testid="stAppViewBlockContainer"]');
+if (targetNode) {
+    observer.observe(targetNode, { childList: true, subtree: true });
+}
 </script>
 """, height=0)
 
@@ -1695,30 +1731,15 @@ def render_assistant_message(content, tool_names=None):
     st.markdown('</div>', unsafe_allow_html=True)
 
 
-# Sidebar - minimal and clean
-with st.sidebar:
-    st.markdown("### 📚 RCC Assistant")
-    st.markdown("---")
-    st.markdown("""
-    <div style="font-size: 0.85rem; color: #6b7280; line-height: 1.6;">
-    AI-powered assistant for UChicago's Research Computing Center.
-    </div>
-    """, unsafe_allow_html=True)
-    st.markdown("")
-    st.markdown("**Quick Topics:**")
-    st.markdown("""
-    - Accounts & Access
-    - SSH & Connections
-    - Slurm Jobs
-    - Storage & Quotas
-    - Python, R, MATLAB
-    - GPU Computing
-    """)
-    st.markdown("---")
-    if st.button("🗑️ Clear Conversation", use_container_width=True):
-        st.session_state.messages = []
-        st.session_state.processing = False
-        st.rerun()
+# Clear Conversation button - top right corner (only show in conversation mode)
+if len(st.session_state.messages) > 0:
+    # Create columns to position button on the right
+    col1, col2, col3 = st.columns([6, 1, 1])
+    with col3:
+        if st.button("🗑️ Clear", key="clear_btn", use_container_width=True):
+            st.session_state.messages = []
+            st.session_state.processing = False
+            st.rerun()
 
 # Example questions for the welcome screen
 EXAMPLE_QUESTIONS = [
@@ -1739,10 +1760,6 @@ if not has_messages:
     <div class="welcome-container">
         <div class="welcome-icon">🖥️</div>
         <h1 class="welcome-title">What can I help you with?</h1>
-        <p class="welcome-subtitle">
-            Ask me anything about UChicago's Research Computing Center — 
-            from connecting to Midway to running GPU jobs.
-        </p>
     </div>
     """, unsafe_allow_html=True)
     
@@ -1788,17 +1805,13 @@ if prompt:
 
 # Process request
 if st.session_state.processing:
-    # Show the user's message immediately if in conversation
-    if has_messages:
-        user_msg = st.session_state.messages[-1]
-        if user_msg["role"] == "user":
-            render_user_message(user_msg["content"])
-    
     with st.spinner(""):
-        # Custom spinner message
+        # Custom spinner message - aligned left like assistant messages
         st.markdown("""
-        <div style="text-align: center; color: #6b7280; font-size: 0.9rem; margin: 1rem 0;">
-            🔍 Searching documentation...
+        <div class="assistant-wrapper">
+            <div style="display: flex; align-items: center; color: #6b7280; font-size: 0.9rem; padding: 0.5rem 0;">
+                <span style="margin-right: 8px;">🔍</span> Searching documentation...
+            </div>
         </div>
         """, unsafe_allow_html=True)
         # Build API messages from session state
