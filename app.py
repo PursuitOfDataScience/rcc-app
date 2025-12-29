@@ -1310,10 +1310,10 @@ st.markdown("""
         flex-direction: column;
         align-items: center;
         justify-content: center;
-        min-height: 35vh;
+        min-height: 30vh;
         text-align: center;
         padding: 1rem;
-        margin-top: 2rem;
+        margin-top: 1rem;
     }
     
     .welcome-icon {
@@ -1518,37 +1518,74 @@ st.markdown("""
     /* Add padding at bottom for fixed input */
     .chat-messages {
         padding-bottom: 120px;
+        padding-top: 0;
+        margin-top: 0;
     }
     
-    /* Spinner styling */
+    /* Spinner styling - aligned with search text */
     .stSpinner > div {
         border-color: #667eea !important;
     }
     
-    /* Clear button - fixed at top right, aligned with GitHub logo */
-    .fixed-clear-btn {
+    .stSpinner {
+        display: inline-flex !important;
+        align-items: center !important;
+    }
+    
+    /* Search status aligned container */
+    .search-status {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        color: #6b7280;
+        font-size: 0.9rem;
+        padding: 0.5rem 0;
+        margin-left: 1rem;
+    }
+    
+    .search-status .spinner {
+        width: 18px;
+        height: 18px;
+        border: 2px solid #e5e7eb;
+        border-top-color: #667eea;
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+    }
+    
+    @keyframes spin {
+        to { transform: rotate(360deg); }
+    }
+    
+    /* Clear button - proper styling - minimal row height */
+    .clear-btn-container {
         position: fixed;
         top: 14px;
         right: 80px;
         z-index: 9999;
     }
     
-    .fixed-clear-btn button {
+    /* Style clear button directly */
+    [data-testid="stButton"][data-testid-prefix*="clear"] button,
+    button[kind="secondary"]:has(p:contains("Clear")) {
         background: #fee2e2 !important;
         border: 1px solid #fca5a5 !important;
         color: #dc2626 !important;
         border-radius: 8px !important;
-        padding: 6px 14px !important;
+        padding: 4px 12px !important;
         font-size: 0.8rem !important;
-        cursor: pointer;
-        transition: all 0.2s ease !important;
-        white-space: nowrap;
+        min-height: auto !important;
+        height: auto !important;
     }
     
-    .fixed-clear-btn button:hover {
-        background: #fecaca !important;
-        border-color: #f87171 !important;
-        transform: translateY(-1px) !important;
+    /* Ensure the columns row for clear button is minimal height */
+    .stColumns:first-of-type {
+        margin-bottom: 0 !important;
+        gap: 0 !important;
+    }
+    
+    /* Compact the clear button row */
+    .element-container:has([data-testid="stButton"]) {
+        margin-bottom: 0 !important;
     }
 
     /* Example question buttons - beautiful card style */
@@ -1654,33 +1691,53 @@ doc.addEventListener('keydown', function(e) {
     }
 });
 
-// Auto-scroll to bottom when page loads (for new messages)
+// Aggressive auto-scroll to bottom
 function scrollToBottom() {
-    const mainContent = doc.querySelector('[data-testid="stAppViewBlockContainer"]');
-    if (mainContent) {
-        mainContent.scrollTop = mainContent.scrollHeight;
-    }
-    // Also try scrolling the main window
-    parentWindow.scrollTo(0, doc.body.scrollHeight);
+    // Try multiple scroll targets
+    const scrollTargets = [
+        doc.querySelector('[data-testid="stAppViewBlockContainer"]'),
+        doc.querySelector('.main'),
+        doc.querySelector('[data-testid="stVerticalBlock"]'),
+        doc.documentElement,
+        doc.body
+    ];
+    
+    scrollTargets.forEach(function(target) {
+        if (target) {
+            target.scrollTop = target.scrollHeight;
+        }
+    });
+    
+    // Also use window scroll
+    parentWindow.scrollTo({
+        top: doc.body.scrollHeight,
+        behavior: 'auto'
+    });
 }
 
-// Scroll on initial load
-setTimeout(scrollToBottom, 100);
+// Scroll on initial load with multiple attempts
+setTimeout(scrollToBottom, 50);
+setTimeout(scrollToBottom, 150);
+setTimeout(scrollToBottom, 300);
+setTimeout(scrollToBottom, 500);
 
-// Also observe for new content and scroll
+// Observe for new content and scroll aggressively
 const observer = new MutationObserver(function(mutations) {
-    // Check if there are chat messages
-    const chatMessages = doc.querySelector('.chat-messages');
-    if (chatMessages) {
-        scrollToBottom();
-    }
+    scrollToBottom();
 });
 
-// Start observing
+// Start observing with more options
 const targetNode = doc.querySelector('[data-testid="stAppViewBlockContainer"]');
 if (targetNode) {
-    observer.observe(targetNode, { childList: true, subtree: true });
+    observer.observe(targetNode, { 
+        childList: true, 
+        subtree: true,
+        characterData: true
+    });
 }
+
+// Also observe body for changes
+observer.observe(doc.body, { childList: true, subtree: true });
 
 // Apply welcome-mode class if no chat messages (for hiding scrollbar)
 function checkWelcomeMode() {
@@ -1694,17 +1751,27 @@ function checkWelcomeMode() {
 }
 checkWelcomeMode();
 
-// Define functions on parent window so onclick handlers can access them
+// Copy message function - accessible globally
 parentWindow.copyMessage = function(msgId) {
     const msgElement = doc.getElementById(msgId);
     if (msgElement) {
         const text = msgElement.innerText;
         navigator.clipboard.writeText(text).then(function() {
-            console.log('Copied to clipboard');
+            // Show visual feedback
+            const btn = doc.querySelector('[onclick*="copyMessage(\\''+msgId+'\\')"]');
+            if (btn) {
+                const originalText = btn.innerHTML;
+                btn.innerHTML = '<span>✓</span> Copied!';
+                setTimeout(function() {
+                    btn.innerHTML = originalText;
+                }, 1500);
+            }
         }).catch(function(err) {
             // Fallback for older browsers
             const textArea = doc.createElement('textarea');
             textArea.value = text;
+            textArea.style.position = 'fixed';
+            textArea.style.left = '-9999px';
             doc.body.appendChild(textArea);
             textArea.select();
             doc.execCommand('copy');
@@ -1713,18 +1780,30 @@ parentWindow.copyMessage = function(msgId) {
     }
 };
 
-// Edit message - trigger Streamlit rerun with edit state
+// Edit message function - this will store the message for editing
 parentWindow.editMessage = function(msgIndex) {
-    const url = new URL(parentWindow.location.href);
-    url.searchParams.set('edit', msgIndex);
-    parentWindow.location.href = url.toString();
-};
-
-// Clear conversation - redirect with clear param
-parentWindow.clearConversation = function() {
-    const url = new URL(parentWindow.location.href);
-    url.searchParams.set('clear', 'true');
-    parentWindow.location.href = url.toString();
+    // Get the message text
+    const msgElement = doc.getElementById('user_msg_' + msgIndex);
+    if (msgElement) {
+        const text = msgElement.innerText;
+        // Focus chat input and set its value
+        const chatInput = doc.querySelector('textarea[data-testid="stChatInputTextArea"]');
+        if (chatInput) {
+            chatInput.focus();
+            chatInput.value = text;
+            // Trigger input event to notify Streamlit
+            chatInput.dispatchEvent(new Event('input', { bubbles: true }));
+            // Show feedback
+            const btn = doc.querySelector('[onclick*="editMessage(' + msgIndex + ')"]');
+            if (btn) {
+                const originalText = btn.innerHTML;
+                btn.innerHTML = '<span>✓</span> Copied to input';
+                setTimeout(function() {
+                    btn.innerHTML = originalText;
+                }, 1500);
+            }
+        }
+    }
 };
 </script>
 """, height=0)
@@ -1867,14 +1946,6 @@ def render_assistant_message(content, tool_names=None):
     st.markdown('</div>', unsafe_allow_html=True)
 
 
-# Clear Conversation button - fixed at top right (only show in conversation mode)
-if len(st.session_state.messages) > 0:
-    st.markdown('''
-    <div class="fixed-clear-btn">
-        <button onclick="window.parent.clearConversation()">🗑️ Clear Conversation</button>
-    </div>
-    ''', unsafe_allow_html=True)
-
 # Example questions for the welcome screen
 EXAMPLE_QUESTIONS = [
     ("🚀", "How do I connect to Midway via SSH?"),
@@ -1912,7 +1983,15 @@ if not has_messages:
     st.markdown("</div>", unsafe_allow_html=True)
 
 else:
-    # Conversation Mode - show chat history
+    # Conversation Mode - show chat history with clear button
+    # Clear button at top right using sidebar-like positioning
+    _, _, clear_col = st.columns([8, 1, 1])
+    with clear_col:
+        if st.button("🗑️ Clear", key="clear_chat", help="Clear conversation"):
+            st.session_state.messages = []
+            st.session_state.processing = False
+            st.rerun()
+    
     st.markdown('<div class="chat-messages">', unsafe_allow_html=True)
     
     msg_index = 0
@@ -1938,21 +2017,49 @@ if prompt:
 
 # Process request
 if st.session_state.processing:
-    with st.spinner(""):
-        # Custom spinner message - aligned left like assistant messages
-        st.markdown("""
-        <div class="assistant-wrapper">
-            <div style="display: flex; align-items: center; color: #6b7280; font-size: 0.9rem; padding: 0.5rem 0;">
-                <span style="margin-right: 8px;">🔍</span> Searching documentation...
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-        # Build API messages from session state
-        api_messages = []
-        for m in st.session_state.messages:
-            api_messages.append({"role": m["role"], "content": m["content"]})
-        
-        try:
+    # Custom spinner message - properly aligned
+    st.markdown("""
+    <div class="search-status">
+        <div class="spinner"></div>
+        <span>🔍 Searching documentation...</span>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Build API messages from session state
+    api_messages = []
+    for m in st.session_state.messages:
+        api_messages.append({"role": m["role"], "content": m["content"]})
+    
+    try:
+        stream = st.session_state.client.messages.stream(
+            model=MODEL,
+            max_tokens=8192,
+            system=SYSTEM_PROMPT,
+            messages=api_messages,
+            tools=TOOLS
+        )
+        response_text, tool_use_blocks, response = collect_stream_response(stream)
+        all_tool_names = [tb["name"] for tb in tool_use_blocks]
+
+        # Handle tool calls - keep looping until no more tools
+        while tool_use_blocks:
+            # Add to API messages only (not display)
+            api_messages.append({"role": "assistant", "content": response.content})
+
+            # Execute tools
+            tool_results = []
+            for tool_block in tool_use_blocks:
+                result = execute_tool(tool_block["name"], tool_block["input"])
+                tool_results.append({
+                    "type": "tool_result",
+                    "tool_use_id": tool_block["id"],
+                    "content": result
+                })
+
+            # Add tool results to API messages only
+            api_messages.append({"role": "user", "content": tool_results})
+
+            # Get next response
             stream = st.session_state.client.messages.stream(
                 model=MODEL,
                 max_tokens=8192,
@@ -1961,50 +2068,21 @@ if st.session_state.processing:
                 tools=TOOLS
             )
             response_text, tool_use_blocks, response = collect_stream_response(stream)
-            all_tool_names = [tb["name"] for tb in tool_use_blocks]
+            all_tool_names.extend([tb["name"] for tb in tool_use_blocks])
 
-            # Handle tool calls - keep looping until no more tools
-            while tool_use_blocks:
-                # Add to API messages only (not display)
-                api_messages.append({"role": "assistant", "content": response.content})
+        # Only add the FINAL assistant response to session state for display
+        if response and response.content:
+            st.session_state.messages.append({
+                "role": "assistant",
+                "content": response.content,
+                "tool_names": all_tool_names,
+                "is_final": True
+            })
 
-                # Execute tools
-                tool_results = []
-                for tool_block in tool_use_blocks:
-                    result = execute_tool(tool_block["name"], tool_block["input"])
-                    tool_results.append({
-                        "type": "tool_result",
-                        "tool_use_id": tool_block["id"],
-                        "content": result
-                    })
-
-                # Add tool results to API messages only
-                api_messages.append({"role": "user", "content": tool_results})
-
-                # Get next response
-                stream = st.session_state.client.messages.stream(
-                    model=MODEL,
-                    max_tokens=8192,
-                    system=SYSTEM_PROMPT,
-                    messages=api_messages,
-                    tools=TOOLS
-                )
-                response_text, tool_use_blocks, response = collect_stream_response(stream)
-                all_tool_names.extend([tb["name"] for tb in tool_use_blocks])
-
-            # Only add the FINAL assistant response to session state for display
-            if response and response.content:
-                st.session_state.messages.append({
-                    "role": "assistant",
-                    "content": response.content,
-                    "tool_names": all_tool_names,
-                    "is_final": True
-                })
-
-        except Exception as e:
-            st.error(f"Error: {e}")
-            if st.session_state.messages and st.session_state.messages[-1]["role"] == "user":
-                st.session_state.messages.pop()
-        finally:
-            st.session_state.processing = False
-            st.rerun()
+    except Exception as e:
+        st.error(f"Error: {e}")
+        if st.session_state.messages and st.session_state.messages[-1]["role"] == "user":
+            st.session_state.messages.pop()
+    finally:
+        st.session_state.processing = False
+        st.rerun()
