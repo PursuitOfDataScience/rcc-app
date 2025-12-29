@@ -599,12 +599,43 @@ def format_tool_names(tool_names):
     return ", ".join(f"{n} (×{c})" if c > 1 else n for n, c in tool_counts.items())
 
 
-def strip_markdown_links(text):
-    """Remove markdown links that could cause broken navigation, keeping the link text."""
+# Base URL for the actual RCC documentation website
+RCC_DOCS_BASE_URL = "https://rcc-uchicago.github.io/user-guide/"
+
+def fix_markdown_links(text):
+    """Convert broken internal links to real RCC documentation URLs."""
     import re
-    # Only replace markdown links [text](url) with just the text
-    # Be careful to only match actual URLs (http/https or relative paths ending in .md/.html)
-    text = re.sub(r'\[([^\]]+)\]\((https?://[^)]+|[^)]+\.(?:md|html))\)', r'\1', text)
+    
+    def replace_link(match):
+        link_text = match.group(1)
+        link_target = match.group(2)
+        
+        # If it's already a proper http/https URL, keep it
+        if link_target.startswith(('http://', 'https://')):
+            return match.group(0)
+        
+        # Check if it's a tool name reference (like read_sbatch_doc)
+        if link_target in DOC_PATHS:
+            # Convert to real RCC docs URL (remove .md extension for web)
+            doc_path = DOC_PATHS[link_target].replace('.md', '')
+            return f'[{link_text}]({RCC_DOCS_BASE_URL}{doc_path}/)'
+        
+        # Check if it's a direct path reference (like slurm/sbatch.md)
+        for tool_name, doc_path in DOC_PATHS.items():
+            if link_target == doc_path or link_target == doc_path.replace('.md', ''):
+                clean_path = doc_path.replace('.md', '')
+                return f'[{link_text}]({RCC_DOCS_BASE_URL}{clean_path}/)'
+        
+        # For any other relative links (like advance.md), try to construct URL
+        if link_target.endswith('.md'):
+            clean_path = link_target.replace('.md', '')
+            return f'[{link_text}]({RCC_DOCS_BASE_URL}{clean_path}/)'
+        
+        # If we can't resolve it, just return the link text without link
+        return link_text
+    
+    # Match markdown links: [text](url)
+    text = re.sub(r'\[([^\]]+)\]\(([^)]+)\)', replace_link, text)
     return text
 
 
@@ -616,8 +647,8 @@ def render_user_message(content):
 
 def render_assistant_message(content, tool_names=None):
     """Render assistant message."""
-    # Strip markdown links to prevent broken link behavior
-    content = strip_markdown_links(content)
+    # Fix markdown links to point to real RCC documentation
+    content = fix_markdown_links(content)
     st.markdown('<div class="assistant-wrapper">', unsafe_allow_html=True)
     with st.chat_message("assistant"):
         if tool_names:
