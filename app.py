@@ -1265,8 +1265,8 @@ When answering questions:
 
 # --- Streamlit App Configuration ---
 st.set_page_config(
-    page_title="RCC User Guide",
-    page_icon="📚",
+    page_title="Sage",
+    page_icon="🧠",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
@@ -1284,11 +1284,35 @@ st.markdown("""
     [data-testid="stSidebar"] {display: none;}
     [data-testid="stSidebarCollapsedControl"] {display: none;}
     
-    /* Main container styling */
+    /* Main container styling - remove top padding */
     .main .block-container {
-        padding-top: 0.5rem;
+        padding-top: 0 !important;
         padding-bottom: 0;
         max-width: 900px;
+    }
+    
+    /* Remove header space */
+    .stApp > header {
+        height: 0 !important;
+        min-height: 0 !important;
+    }
+    
+    [data-testid="stHeader"] {
+        height: 0 !important;
+        min-height: 0 !important;
+    }
+    
+    /* Remove top margin from main content */
+    .main > div:first-child {
+        padding-top: 0 !important;
+    }
+    
+    [data-testid="stAppViewContainer"] {
+        padding-top: 0 !important;
+    }
+    
+    [data-testid="stVerticalBlock"] {
+        gap: 0 !important;
     }
     
     /* Hide scrollbar in welcome mode - applied via has_conversation check */
@@ -1444,7 +1468,7 @@ st.markdown("""
     .user-actions {
         display: none;
         position: absolute;
-        bottom: -28px;
+        bottom: -32px;
         right: 0;
         gap: 8px;
         z-index: 10;
@@ -1454,7 +1478,7 @@ st.markdown("""
         display: flex;
     }
     
-    .user-action-btn {
+    .action-btn {
         background: #f3f4f6;
         border: 1px solid #e5e7eb;
         border-radius: 6px;
@@ -1466,11 +1490,18 @@ st.markdown("""
         display: flex;
         align-items: center;
         gap: 4px;
+        text-decoration: none;
     }
     
-    .user-action-btn:hover {
+    .action-btn:hover {
         background: #e5e7eb;
         color: #374151;
+    }
+    
+    .action-btn.copied {
+        background: #d1fae5;
+        color: #059669;
+        border-color: #6ee7b7;
     }
     
     /* Assistant message styling */
@@ -1518,21 +1549,11 @@ st.markdown("""
     /* Add padding at bottom for fixed input */
     .chat-messages {
         padding-bottom: 120px;
-        padding-top: 0;
+        padding-top: 0.5rem;
         margin-top: 0;
     }
     
-    /* Spinner styling - aligned with search text */
-    .stSpinner > div {
-        border-color: #667eea !important;
-    }
-    
-    .stSpinner {
-        display: inline-flex !important;
-        align-items: center !important;
-    }
-    
-    /* Search status aligned container */
+    /* Animated searching text */
     .search-status {
         display: flex;
         align-items: center;
@@ -1543,17 +1564,20 @@ st.markdown("""
         margin-left: 1rem;
     }
     
-    .search-status .spinner {
-        width: 18px;
-        height: 18px;
-        border: 2px solid #e5e7eb;
-        border-top-color: #667eea;
-        border-radius: 50%;
-        animation: spin 0.8s linear infinite;
+    .search-text {
+        background: linear-gradient(90deg, #667eea, #764ba2, #667eea);
+        background-size: 200% 100%;
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        animation: shimmer 2s ease-in-out infinite;
+        font-weight: 500;
     }
     
-    @keyframes spin {
-        to { transform: rotate(360deg); }
+    @keyframes shimmer {
+        0% { background-position: 100% 0; }
+        50% { background-position: 0% 0; }
+        100% { background-position: 100% 0; }
     }
     
     /* Clear button - proper styling - minimal row height */
@@ -1632,11 +1656,6 @@ st.markdown("""
         to { opacity: 1; transform: translateY(0); }
     }
     
-    /* Loading state improvements */
-    .stSpinner {
-        text-align: center;
-    }
-    
     /* Dark mode support */
     @media (prefers-color-scheme: dark) {
         .welcome-subtitle {
@@ -1660,151 +1679,176 @@ st.markdown("""
             color: #7dd3fc;
             border-color: #0369a1;
         }
+        
+        .action-btn {
+            background: #374151;
+            border-color: #4b5563;
+            color: #d1d5db;
+        }
+        
+        .action-btn:hover {
+            background: #4b5563;
+            color: #f3f4f6;
+        }
     }
 </style>
 """, unsafe_allow_html=True)
 
-# JavaScript for auto-focus on keypress and auto-scroll
+# JavaScript for auto-focus on keypress and auto-scroll - with fixed copy/edit functions
 components.html("""
 <script>
-const doc = window.parent.document;
-const parentWindow = window.parent;
+(function() {
+    const doc = window.parent.document;
+    const parentWindow = window.parent;
 
-// Auto-focus on keypress
-doc.addEventListener('keydown', function(e) {
-    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
-        return;
-    }
-    if (e.ctrlKey || e.altKey || e.metaKey) {
-        return;
-    }
-    const ignoreKeys = ['Escape', 'Tab', 'CapsLock', 'Shift', 'Control', 'Alt', 'Meta', 
-                        'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
-                        'F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8', 'F9', 'F10', 'F11', 'F12'];
-    if (ignoreKeys.includes(e.key)) {
-        return;
-    }
-    
-    const chatInput = doc.querySelector('textarea[data-testid="stChatInputTextArea"]');
-    if (chatInput) {
-        chatInput.focus();
-    }
-});
-
-// Aggressive auto-scroll to bottom
-function scrollToBottom() {
-    // Try multiple scroll targets
-    const scrollTargets = [
-        doc.querySelector('[data-testid="stAppViewBlockContainer"]'),
-        doc.querySelector('.main'),
-        doc.querySelector('[data-testid="stVerticalBlock"]'),
-        doc.documentElement,
-        doc.body
-    ];
-    
-    scrollTargets.forEach(function(target) {
-        if (target) {
-            target.scrollTop = target.scrollHeight;
+    // Auto-focus on keypress
+    doc.addEventListener('keydown', function(e) {
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
+            return;
         }
-    });
-    
-    // Also use window scroll
-    parentWindow.scrollTo({
-        top: doc.body.scrollHeight,
-        behavior: 'auto'
-    });
-}
-
-// Scroll on initial load with multiple attempts
-setTimeout(scrollToBottom, 50);
-setTimeout(scrollToBottom, 150);
-setTimeout(scrollToBottom, 300);
-setTimeout(scrollToBottom, 500);
-
-// Observe for new content and scroll aggressively
-const observer = new MutationObserver(function(mutations) {
-    scrollToBottom();
-});
-
-// Start observing with more options
-const targetNode = doc.querySelector('[data-testid="stAppViewBlockContainer"]');
-if (targetNode) {
-    observer.observe(targetNode, { 
-        childList: true, 
-        subtree: true,
-        characterData: true
-    });
-}
-
-// Also observe body for changes
-observer.observe(doc.body, { childList: true, subtree: true });
-
-// Apply welcome-mode class if no chat messages (for hiding scrollbar)
-function checkWelcomeMode() {
-    const chatMessages = doc.querySelector('.chat-messages');
-    const body = doc.body;
-    if (!chatMessages) {
-        body.classList.add('welcome-mode');
-    } else {
-        body.classList.remove('welcome-mode');
-    }
-}
-checkWelcomeMode();
-
-// Copy message function - accessible globally
-parentWindow.copyMessage = function(msgId) {
-    const msgElement = doc.getElementById(msgId);
-    if (msgElement) {
-        const text = msgElement.innerText;
-        navigator.clipboard.writeText(text).then(function() {
-            // Show visual feedback
-            const btn = doc.querySelector('[onclick*="copyMessage(\\''+msgId+'\\')"]');
-            if (btn) {
-                const originalText = btn.innerHTML;
-                btn.innerHTML = '<span>✓</span> Copied!';
-                setTimeout(function() {
-                    btn.innerHTML = originalText;
-                }, 1500);
-            }
-        }).catch(function(err) {
-            // Fallback for older browsers
-            const textArea = doc.createElement('textarea');
-            textArea.value = text;
-            textArea.style.position = 'fixed';
-            textArea.style.left = '-9999px';
-            doc.body.appendChild(textArea);
-            textArea.select();
-            doc.execCommand('copy');
-            doc.body.removeChild(textArea);
-        });
-    }
-};
-
-// Edit message function - this will store the message for editing
-parentWindow.editMessage = function(msgIndex) {
-    // Get the message text
-    const msgElement = doc.getElementById('user_msg_' + msgIndex);
-    if (msgElement) {
-        const text = msgElement.innerText;
-        // Focus chat input and set its value
+        if (e.ctrlKey || e.altKey || e.metaKey) {
+            return;
+        }
+        const ignoreKeys = ['Escape', 'Tab', 'CapsLock', 'Shift', 'Control', 'Alt', 'Meta', 
+                            'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
+                            'F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8', 'F9', 'F10', 'F11', 'F12'];
+        if (ignoreKeys.includes(e.key)) {
+            return;
+        }
+        
         const chatInput = doc.querySelector('textarea[data-testid="stChatInputTextArea"]');
         if (chatInput) {
             chatInput.focus();
-            chatInput.value = text;
-            // Trigger input event to notify Streamlit
-            chatInput.dispatchEvent(new Event('input', { bubbles: true }));
-            // Show feedback
-            const btn = doc.querySelector('[onclick*="editMessage(' + msgIndex + ')"]');
-            if (btn) {
-                const originalText = btn.innerHTML;
-                btn.innerHTML = '<span>✓</span> Copied to input';
-                setTimeout(function() {
-                    btn.innerHTML = originalText;
-                }, 1500);
+        }
+    });
+
+    // Aggressive auto-scroll to bottom
+    function scrollToBottom() {
+        const scrollTargets = [
+            doc.querySelector('[data-testid="stAppViewBlockContainer"]'),
+            doc.querySelector('.main'),
+            doc.querySelector('[data-testid="stVerticalBlock"]'),
+            doc.documentElement,
+            doc.body
+        ];
+        
+        scrollTargets.forEach(function(target) {
+            if (target) {
+                target.scrollTop = target.scrollHeight;
             }
+        });
+        
+        parentWindow.scrollTo({
+            top: doc.body.scrollHeight,
+            behavior: 'auto'
+        });
+    }
+
+    // Scroll on initial load with multiple attempts
+    setTimeout(scrollToBottom, 50);
+    setTimeout(scrollToBottom, 150);
+    setTimeout(scrollToBottom, 300);
+    setTimeout(scrollToBottom, 500);
+
+    // Observe for new content and scroll aggressively
+    const observer = new MutationObserver(function(mutations) {
+        scrollToBottom();
+    });
+
+    const targetNode = doc.querySelector('[data-testid="stAppViewBlockContainer"]');
+    if (targetNode) {
+        observer.observe(targetNode, { 
+            childList: true, 
+            subtree: true,
+            characterData: true
+        });
+    }
+
+    observer.observe(doc.body, { childList: true, subtree: true });
+
+    // Apply welcome-mode class if no chat messages
+    function checkWelcomeMode() {
+        const chatMessages = doc.querySelector('.chat-messages');
+        const body = doc.body;
+        if (!chatMessages) {
+            body.classList.add('welcome-mode');
+        } else {
+            body.classList.remove('welcome-mode');
         }
     }
-};
+    checkWelcomeMode();
+
+    // Define global functions for copy and edit
+    parentWindow.copyUserMessage = function(msgIndex) {
+        const msgElement = doc.getElementById('user_msg_' + msgIndex);
+        if (msgElement) {
+            const text = msgElement.innerText;
+            navigator.clipboard.writeText(text).then(function() {
+                // Show visual feedback
+                const btn = doc.getElementById('copy_btn_' + msgIndex);
+                if (btn) {
+                    btn.classList.add('copied');
+                    btn.innerHTML = '<span>✓</span> Copied!';
+                    setTimeout(function() {
+                        btn.classList.remove('copied');
+                        btn.innerHTML = '<span>📋</span> Copy';
+                    }, 1500);
+                }
+            }).catch(function(err) {
+                // Fallback for older browsers
+                const textArea = doc.createElement('textarea');
+                textArea.value = text;
+                textArea.style.position = 'fixed';
+                textArea.style.left = '-9999px';
+                doc.body.appendChild(textArea);
+                textArea.select();
+                try {
+                    doc.execCommand('copy');
+                    const btn = doc.getElementById('copy_btn_' + msgIndex);
+                    if (btn) {
+                        btn.classList.add('copied');
+                        btn.innerHTML = '<span>✓</span> Copied!';
+                        setTimeout(function() {
+                            btn.classList.remove('copied');
+                            btn.innerHTML = '<span>📋</span> Copy';
+                        }, 1500);
+                    }
+                } catch(e) {}
+                doc.body.removeChild(textArea);
+            });
+        }
+    };
+
+    parentWindow.editUserMessage = function(msgIndex) {
+        const msgElement = doc.getElementById('user_msg_' + msgIndex);
+        if (msgElement) {
+            const text = msgElement.innerText;
+            const chatInput = doc.querySelector('textarea[data-testid="stChatInputTextArea"]');
+            if (chatInput) {
+                // Set native value
+                const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set;
+                nativeInputValueSetter.call(chatInput, text);
+                
+                // Trigger input event
+                const inputEvent = new Event('input', { bubbles: true });
+                chatInput.dispatchEvent(inputEvent);
+                
+                // Focus the input
+                chatInput.focus();
+                
+                // Show feedback
+                const btn = doc.getElementById('edit_btn_' + msgIndex);
+                if (btn) {
+                    const originalText = btn.innerHTML;
+                    btn.innerHTML = '<span>✓</span> Copied!';
+                    setTimeout(function() {
+                        btn.innerHTML = originalText;
+                    }, 1500);
+                }
+            }
+        }
+    };
+})();
 </script>
 """, height=0)
 
@@ -1916,17 +1960,16 @@ def format_tool_names(tool_names):
 def render_user_message(content, msg_index=None):
     """Render user message on the right with modern bubble style and hover actions."""
     escaped = content.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;').replace('\n', '<br>')
-    # Create unique IDs for JavaScript
     msg_id = f"user_msg_{msg_index}" if msg_index is not None else "user_msg"
     st.markdown(f'''
     <div class="user-container">
         <div class="user-message-wrapper">
             <div class="user-bubble" id="{msg_id}">{escaped}</div>
             <div class="user-actions">
-                <button class="user-action-btn" onclick="window.parent.copyMessage('{msg_id}')">
+                <button class="action-btn" id="copy_btn_{msg_index}" onclick="window.parent.copyUserMessage({msg_index})">
                     <span>📋</span> Copy
                 </button>
-                <button class="user-action-btn" onclick="window.parent.editMessage({msg_index})">
+                <button class="action-btn" id="edit_btn_{msg_index}" onclick="window.parent.editUserMessage({msg_index})">
                     <span>✏️</span> Edit
                 </button>
             </div>
@@ -1963,7 +2006,7 @@ if not has_messages:
     # Welcome Screen - centered, beautiful landing
     st.markdown("""
     <div class="welcome-container">
-        <div class="welcome-icon">🖥️</div>
+        <div class="welcome-icon">🧠</div>
         <h1 class="welcome-title">What can I help you with?</h1>
     </div>
     """, unsafe_allow_html=True)
@@ -1984,7 +2027,6 @@ if not has_messages:
 
 else:
     # Conversation Mode - show chat history with clear button
-    # Clear button at top right using sidebar-like positioning
     _, _, clear_col = st.columns([8, 1, 1])
     with clear_col:
         if st.button("🗑️ Clear", key="clear_chat", help="Clear conversation"):
@@ -2017,11 +2059,10 @@ if prompt:
 
 # Process request
 if st.session_state.processing:
-    # Custom spinner message - properly aligned
+    # Animated searching text - no spinner
     st.markdown("""
     <div class="search-status">
-        <div class="spinner"></div>
-        <span>🔍 Searching documentation...</span>
+        <span class="search-text">🔍 Searching documentation...</span>
     </div>
     """, unsafe_allow_html=True)
     
