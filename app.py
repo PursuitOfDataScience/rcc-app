@@ -671,7 +671,7 @@ has_messages = len(st.session_state.messages) > 0
 
 if not has_messages:
     # Welcome screen
-    st.markdown('<div class="welcome-container"><div class="welcome-icon">💻</div><h1 class="welcome-title">What can I help you with?</h1></div>', unsafe_allow_html=True)
+    st.markdown('<div class="welcome-container"><div class="welcome-icon">📚 ➡️ 🎯</div><h1 class="welcome-title">What can I help you with?</h1></div>', unsafe_allow_html=True)
     
     cols = st.columns(2)
     for i, (icon, question) in enumerate(EXAMPLES):
@@ -714,7 +714,8 @@ if st.session_state.processing:
         "🧠 Contemplating...",
         "✨ Vibing...",
         "⏳ Brewing...",
-        "🎨 Crafting..."
+        "🎨 Crafting...",
+        "🔧 Tinkering..."
     ]
     status_text = random.choice(status_messages)
     st.markdown(f'<div class="search-status"><span class="search-text">{status_text}</span></div>', unsafe_allow_html=True)
