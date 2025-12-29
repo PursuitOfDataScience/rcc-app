@@ -1268,63 +1268,294 @@ st.set_page_config(
     page_title="RCC User Guide",
     page_icon="📚",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="collapsed"
 )
 
-# Custom CSS
+# Check if we have messages (conversation started)
+has_conversation = len(st.session_state.get("messages", [])) > 0
+
+# Custom CSS - Modern ChatGPT/Claude-like design
 st.markdown("""
 <style>
+    /* Hide Streamlit branding */
     .stDeployButton {display: none;}
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
     
-    .cool-title {
-        font-family: 'Courier New', monospace;
+    /* Main container styling */
+    .main .block-container {
+        padding-top: 2rem;
+        padding-bottom: 0;
+        max-width: 900px;
+    }
+    
+    /* Welcome screen styles */
+    .welcome-container {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        min-height: 60vh;
+        text-align: center;
+        padding: 2rem;
+    }
+    
+    .welcome-icon {
+        font-size: 4rem;
+        margin-bottom: 1.5rem;
+        animation: float 3s ease-in-out infinite;
+    }
+    
+    @keyframes float {
+        0%, 100% { transform: translateY(0px); }
+        50% { transform: translateY(-10px); }
+    }
+    
+    .welcome-title {
         font-size: 2.5rem;
-        font-weight: bold;
-        background: linear-gradient(90deg, #00d4ff, #0099cc, #00d4ff);
-        background-size: 200% auto;
+        font-weight: 600;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
-        animation: shine 3s linear infinite;
-        margin: 0;
-        padding: 1rem 0;
+        background-clip: text;
+        margin-bottom: 0.5rem;
+        line-height: 1.2;
     }
     
-    @keyframes shine {
-        to {background-position: 200% center;}
+    .welcome-subtitle {
+        font-size: 1.1rem;
+        color: #6b7280;
+        margin-bottom: 2rem;
+        max-width: 500px;
     }
     
-    /* User message container - right aligned */
+    /* Example questions grid */
+    .examples-container {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 12px;
+        width: 100%;
+        max-width: 700px;
+        margin-top: 1rem;
+    }
+    
+    .example-btn {
+        background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        padding: 16px 20px;
+        text-align: left;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        color: #374151;
+        font-size: 0.9rem;
+        line-height: 1.4;
+    }
+    
+    .example-btn:hover {
+        background: linear-gradient(135deg, #eef2ff 0%, #e0e7ff 100%);
+        border-color: #a5b4fc;
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.15);
+    }
+    
+    .example-icon {
+        margin-right: 8px;
+    }
+    
+    /* Chat input styling - wider and shorter */
+    .stChatInput {
+        max-width: 800px !important;
+        margin: 0 auto !important;
+    }
+    
+    .stChatInput > div {
+        border-radius: 24px !important;
+        border: 2px solid #e5e7eb !important;
+        background: #ffffff !important;
+        box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08) !important;
+        transition: all 0.2s ease !important;
+    }
+    
+    .stChatInput > div:focus-within {
+        border-color: #667eea !important;
+        box-shadow: 0 4px 20px rgba(102, 126, 234, 0.2) !important;
+    }
+    
+    .stChatInput textarea {
+        font-size: 1rem !important;
+        padding: 12px 20px !important;
+        min-height: 24px !important;
+        max-height: 120px !important;
+    }
+    
+    /* User message - right aligned bubble */
     .user-container {
         display: flex;
         justify-content: flex-end;
         margin-bottom: 1.5rem;
+        padding-right: 1rem;
     }
     
     .user-bubble {
-        background: linear-gradient(135deg, #1a4d6e, #0d3347);
-        color: #e0f0f8;
-        padding: 12px 16px;
-        border-radius: 14px 14px 4px 14px;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 14px 20px;
+        border-radius: 20px 20px 4px 20px;
         font-size: 0.95rem;
-        line-height: 1.5;
-        max-width: 50%;
-        min-width: 100px;
+        line-height: 1.6;
+        max-width: 70%;
+        min-width: 60px;
+        box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
     }
     
-    /* Assistant message spacing */
+    /* Assistant message styling */
     .assistant-wrapper {
-        margin-bottom: 1.5rem;
+        margin-bottom: 2rem;
+        padding-left: 1rem;
     }
     
-    .tool-used {
-        font-size: 0.8rem;
-        color: #666;
-        margin-bottom: 6px;
+    /* Override Streamlit chat message */
+    .stChatMessage {
+        background: transparent !important;
+        border: none !important;
+        padding: 0 !important;
     }
     
-    /* Add gap before chat input */
-    .stChatInput {
-        margin-top: 2rem !important;
+    .stChatMessage [data-testid="chatAvatarIcon-assistant"] {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+    }
+    
+    /* Tool reference badge */
+    .tool-badge {
+        display: inline-block;
+        background: #f0f9ff;
+        color: #0369a1;
+        padding: 4px 10px;
+        border-radius: 12px;
+        font-size: 0.75rem;
+        margin-bottom: 8px;
+        border: 1px solid #bae6fd;
+    }
+    
+    /* Conversation mode - move input to bottom */
+    .conversation-mode .stChatInput {
+        position: fixed;
+        bottom: 0;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 100%;
+        max-width: 800px;
+        padding: 1rem 2rem 1.5rem 2rem;
+        background: linear-gradient(to top, #ffffff 80%, transparent);
+        z-index: 1000;
+    }
+    
+    /* Add padding at bottom for fixed input */
+    .chat-messages {
+        padding-bottom: 120px;
+    }
+    
+    /* Spinner styling */
+    .stSpinner > div {
+        border-color: #667eea !important;
+    }
+    
+    /* Sidebar styling */
+    .css-1d391kg {
+        background: #f8fafc;
+    }
+    
+    [data-testid="stSidebar"] {
+        background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
+    }
+    
+    [data-testid="stSidebar"] .stButton > button {
+        width: 100%;
+        border-radius: 8px;
+        border: 1px solid #e2e8f0;
+        background: white;
+        transition: all 0.2s ease;
+    }
+    
+    [data-testid="stSidebar"] .stButton > button:hover {
+        background: #fee2e2;
+        border-color: #fca5a5;
+        color: #dc2626;
+    }
+    
+    /* Example question buttons - beautiful card style */
+    .main .stButton > button {
+        background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%) !important;
+        border: 1px solid #e2e8f0 !important;
+        border-radius: 16px !important;
+        padding: 16px 20px !important;
+        text-align: left !important;
+        font-size: 0.9rem !important;
+        font-weight: 400 !important;
+        color: #374151 !important;
+        height: auto !important;
+        min-height: 60px !important;
+        line-height: 1.4 !important;
+        transition: all 0.25s ease !important;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05) !important;
+    }
+    
+    .main .stButton > button:hover {
+        background: linear-gradient(135deg, #eef2ff 0%, #e0e7ff 100%) !important;
+        border-color: #a5b4fc !important;
+        transform: translateY(-3px) !important;
+        box-shadow: 0 8px 25px rgba(102, 126, 234, 0.2) !important;
+        color: #4338ca !important;
+    }
+    
+    .main .stButton > button:active {
+        transform: translateY(-1px) !important;
+    }
+    
+    /* Hide default button focus outline */
+    .main .stButton > button:focus {
+        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.3) !important;
+    }
+    
+    /* Smooth page transitions */
+    .main {
+        animation: fadeIn 0.3s ease;
+    }
+    
+    @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(10px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+    
+    /* Loading state improvements */
+    .stSpinner {
+        text-align: center;
+    }
+    
+    /* Dark mode support */
+    @media (prefers-color-scheme: dark) {
+        .welcome-subtitle {
+            color: #9ca3af;
+        }
+        
+        .main .stButton > button {
+            background: linear-gradient(135deg, #1f2937 0%, #111827 100%) !important;
+            border-color: #374151 !important;
+            color: #e5e7eb !important;
+        }
+        
+        .main .stButton > button:hover {
+            background: linear-gradient(135deg, #312e81 0%, #1e1b4b 100%) !important;
+            border-color: #6366f1 !important;
+            color: #c7d2fe !important;
+        }
+        
+        .tool-badge {
+            background: #1e3a5f;
+            color: #7dd3fc;
+            border-color: #0369a1;
+        }
     }
 </style>
 """, unsafe_allow_html=True)
@@ -1444,8 +1675,8 @@ def format_tool_names(tool_names):
 
 
 def render_user_message(content):
-    """Render user message on the right with fixed width."""
-    escaped = content.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+    """Render user message on the right with modern bubble style."""
+    escaped = content.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;').replace('\n', '<br>')
     st.markdown(f'''
     <div class="user-container">
         <div class="user-bubble">{escaped}</div>
@@ -1459,51 +1690,96 @@ def render_assistant_message(content, tool_names=None):
     with st.chat_message("assistant"):
         if tool_names:
             tools_str = format_tool_names(tool_names)
-            st.caption(f"📚 Referenced: {tools_str}")
+            st.markdown(f'<span class="tool-badge">📚 {tools_str}</span>', unsafe_allow_html=True)
         st.markdown(content)
     st.markdown('</div>', unsafe_allow_html=True)
 
 
-# Sidebar
+# Sidebar - minimal and clean
 with st.sidebar:
-    st.markdown("## 📚 RCC User Guide")
+    st.markdown("### 📚 RCC Assistant")
     st.markdown("---")
-    st.markdown("### About")
-    st.markdown("AI assistant for UChicago's Midway Computing Clusters.")
-    st.markdown("---")
-    st.markdown("### Topics")
     st.markdown("""
-    - 🔑 Accounts & Access
-    - 🖥️ Connecting (SSH, ThinLinc, etc.)
-    - ⚙️ Running Jobs (Slurm)
-    - 💾 Storage & Quotas
-    - 📦 Software & Modules
-    - 🐍 Python, R, MATLAB
-    - 🎮 GPU Computing
-    - 🧬 Scientific Software
+    <div style="font-size: 0.85rem; color: #6b7280; line-height: 1.6;">
+    AI-powered assistant for UChicago's Research Computing Center.
+    </div>
+    """, unsafe_allow_html=True)
+    st.markdown("")
+    st.markdown("**Quick Topics:**")
+    st.markdown("""
+    - Accounts & Access
+    - SSH & Connections
+    - Slurm Jobs
+    - Storage & Quotas
+    - Python, R, MATLAB
+    - GPU Computing
     """)
     st.markdown("---")
-    if st.button("🗑️ Clear Chat"):
+    if st.button("🗑️ Clear Conversation", use_container_width=True):
         st.session_state.messages = []
         st.session_state.processing = False
         st.rerun()
 
-# Title
-st.markdown('<h1 class="cool-title">RCC USER GUIDE</h1>', unsafe_allow_html=True)
-st.markdown("---")
+# Example questions for the welcome screen
+EXAMPLE_QUESTIONS = [
+    ("🚀", "How do I connect to Midway via SSH?"),
+    ("💾", "What are the storage quotas on Midway?"),
+    ("⚙️", "How do I submit a batch job with sbatch?"),
+    ("🐍", "How do I set up a Python environment?"),
+    ("🎮", "How do I run PyTorch on GPUs?"),
+    ("📊", "How do I check my allocation balance?"),
+]
 
-# Chat history - only display user prompts and final assistant responses
-for message in st.session_state.messages:
-    if message["role"] == "user" and isinstance(message["content"], str):
-        render_user_message(message["content"])
-    elif message["role"] == "assistant" and message.get("is_final"):
-        display_text = extract_display_text(message["content"])
-        tool_names = message.get("tool_names", [])
-        if display_text:
-            render_assistant_message(display_text, tool_names if tool_names else None)
+# Determine if we're in welcome mode or conversation mode
+has_messages = len(st.session_state.messages) > 0
 
-# Chat input
-prompt = st.chat_input("Ask me anything about RCC...", disabled=st.session_state.processing)
+if not has_messages:
+    # Welcome Screen - centered, beautiful landing
+    st.markdown("""
+    <div class="welcome-container">
+        <div class="welcome-icon">🖥️</div>
+        <h1 class="welcome-title">What can I help you with?</h1>
+        <p class="welcome-subtitle">
+            Ask me anything about UChicago's Research Computing Center — 
+            from connecting to Midway to running GPU jobs.
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Example questions as clickable buttons
+    st.markdown("<div style='max-width: 700px; margin: 0 auto;'>", unsafe_allow_html=True)
+    
+    cols = st.columns(2)
+    for i, (icon, question) in enumerate(EXAMPLE_QUESTIONS):
+        col_idx = i % 2
+        with cols[col_idx]:
+            if st.button(f"{icon}  {question}", key=f"example_{i}", use_container_width=True):
+                st.session_state.messages.append({"role": "user", "content": question})
+                st.session_state.processing = True
+                st.rerun()
+    
+    st.markdown("</div>", unsafe_allow_html=True)
+    
+    # Spacer to push input toward bottom
+    st.markdown("<div style='height: 80px;'></div>", unsafe_allow_html=True)
+
+else:
+    # Conversation Mode - show chat history
+    st.markdown('<div class="chat-messages">', unsafe_allow_html=True)
+    
+    for message in st.session_state.messages:
+        if message["role"] == "user" and isinstance(message["content"], str):
+            render_user_message(message["content"])
+        elif message["role"] == "assistant" and message.get("is_final"):
+            display_text = extract_display_text(message["content"])
+            tool_names = message.get("tool_names", [])
+            if display_text:
+                render_assistant_message(display_text, tool_names if tool_names else None)
+    
+    st.markdown('</div>', unsafe_allow_html=True)
+
+# Chat input - with better placeholder
+prompt = st.chat_input("Ask a question about RCC...", disabled=st.session_state.processing)
 
 if prompt:
     st.session_state.messages.append({"role": "user", "content": prompt})
@@ -1512,7 +1788,19 @@ if prompt:
 
 # Process request
 if st.session_state.processing:
-    with st.spinner("Searching documentation..."):
+    # Show the user's message immediately if in conversation
+    if has_messages:
+        user_msg = st.session_state.messages[-1]
+        if user_msg["role"] == "user":
+            render_user_message(user_msg["content"])
+    
+    with st.spinner(""):
+        # Custom spinner message
+        st.markdown("""
+        <div style="text-align: center; color: #6b7280; font-size: 0.9rem; margin: 1rem 0;">
+            🔍 Searching documentation...
+        </div>
+        """, unsafe_allow_html=True)
         # Build API messages from session state
         api_messages = []
         for m in st.session_state.messages:
