@@ -600,12 +600,11 @@ def format_tool_names(tool_names):
 
 
 def strip_markdown_links(text):
-    """Remove markdown links, keeping only the link text."""
+    """Remove markdown links that could cause broken navigation, keeping the link text."""
     import re
-    # Replace [text](url) with just text
-    text = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', text)
-    # Also remove any raw URLs that might cause issues
-    text = re.sub(r'<(https?://[^>]+)>', r'\1', text)
+    # Only replace markdown links [text](url) with just the text
+    # Be careful to only match actual URLs (http/https or relative paths ending in .md/.html)
+    text = re.sub(r'\[([^\]]+)\]\((https?://[^)]+|[^)]+\.(?:md|html))\)', r'\1', text)
     return text
 
 
