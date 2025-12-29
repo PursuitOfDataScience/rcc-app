@@ -504,6 +504,18 @@ components.html("""
 <script>
 (function() {
     const doc = window.parent.document;
+    
+    // Auto-scroll to bottom on page load
+    setTimeout(function() {
+        const mainContent = doc.querySelector('[data-testid="stAppViewBlockContainer"]') || 
+                           doc.querySelector('.main') || 
+                           doc.querySelector('[data-testid="stVerticalBlock"]');
+        if (mainContent) {
+            window.parent.scrollTo({ top: doc.body.scrollHeight, behavior: 'smooth' });
+        }
+    }, 100);
+    
+    // Auto-focus on keypress
     doc.addEventListener('keydown', function(e) {
         if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
         if (e.ctrlKey || e.altKey || e.metaKey) return;
@@ -616,7 +628,7 @@ has_messages = len(st.session_state.messages) > 0
 
 if not has_messages:
     # Welcome screen
-    st.markdown('<div class="welcome-container"><div class="welcome-icon">🤖</div><h1 class="welcome-title">What can I help you with?</h1></div>', unsafe_allow_html=True)
+    st.markdown('<div class="welcome-container"><div class="welcome-icon">💻</div><h1 class="welcome-title">What can I help you with?</h1></div>', unsafe_allow_html=True)
     
     cols = st.columns(2)
     for i, (icon, question) in enumerate(EXAMPLES):
@@ -654,7 +666,7 @@ if prompt:
 
 # Process
 if st.session_state.processing:
-    st.markdown('<div class="search-status"><span class="search-text">🔍 Searching documentation...</span></div>', unsafe_allow_html=True)
+    st.markdown('<div class="search-status"><span class="search-text">🧠 Contemplating...</span></div>', unsafe_allow_html=True)
     
     api_messages = [{"role": m["role"], "content": m["content"]} for m in st.session_state.messages]
     
