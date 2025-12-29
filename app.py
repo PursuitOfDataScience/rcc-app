@@ -257,9 +257,14 @@ st.markdown("""
     [data-testid="stSidebar"], [data-testid="stSidebarCollapsedControl"] {display: none !important;}
     
     .main .block-container {
-        padding-top: 1rem;
+        padding-top: 0.25rem;
         padding-bottom: 0;
         max-width: 900px;
+    }
+    
+    /* Reduce vertical gaps */
+    [data-testid="stVerticalBlock"] > div {
+        margin-bottom: 0 !important;
     }
     
     /* Welcome screen */
@@ -287,22 +292,35 @@ st.markdown("""
         background-clip: text;
     }
     
-    /* Chat input */
+    /* Chat input - wider and shorter like Claude */
+    .stChatInput {
+        max-width: 800px !important;
+        margin: 0 auto !important;
+    }
+    
     .stChatInput > div {
-        border-radius: 20px !important;
+        border-radius: 24px !important;
         border: 2px solid #e5e7eb !important;
-        box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08) !important;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1) !important;
+        min-height: 60px !important;
     }
     
     .stChatInput > div:focus-within {
         border-color: #667eea !important;
+        box-shadow: 0 4px 20px rgba(102, 126, 234, 0.25) !important;
+    }
+    
+    .stChatInput textarea {
+        font-size: 1rem !important;
+        padding: 18px 24px !important;
+        line-height: 1.4 !important;
     }
     
     /* User message */
     .user-message {
         display: flex;
         justify-content: flex-end;
-        margin: 1rem 0 1.5rem 0;
+        margin: 0.75rem 0 1.25rem 0;
         padding-right: 1rem;
     }
     
@@ -319,7 +337,7 @@ st.markdown("""
     
     /* Assistant message */
     .assistant-wrapper {
-        margin: 1rem 0 1.5rem 0;
+        margin: 0.75rem 0 1.25rem 0;
     }
     
     .stChatMessage {
@@ -330,6 +348,44 @@ st.markdown("""
     
     .stChatMessage [data-testid="chatAvatarIcon-assistant"] {
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+    }
+    
+    /* Hide link icons/anchors in markdown headers - very aggressive */
+    .stMarkdown a.header-anchor,
+    .stMarkdown h1 a, .stMarkdown h2 a, .stMarkdown h3 a,
+    .stMarkdown h4 a, .stMarkdown h5 a, .stMarkdown h6 a,
+    .stChatMessage a[href^="#"],
+    a.anchor-link, .anchor-link,
+    [data-testid="stChatMessage"] a[href*="#"],
+    .stMarkdown a:has(svg),
+    a:empty, a[href=""],
+    .stMarkdown a[href^="#"],
+    [data-testid="stMarkdownContainer"] a[href^="#"],
+    .element-container a[href^="#"],
+    h1 a[href^="#"], h2 a[href^="#"], h3 a[href^="#"],
+    h4 a[href^="#"], h5 a[href^="#"], h6 a[href^="#"],
+    .stMarkdown h1 > a, .stMarkdown h2 > a, .stMarkdown h3 > a,
+    .stMarkdown h4 > a, .stMarkdown h5 > a, .stMarkdown h6 > a,
+    a[data-header-anchor], [class*="anchor"],
+    a[aria-hidden="true"] {
+        display: none !important;
+        visibility: hidden !important;
+        opacity: 0 !important;
+        width: 0 !important;
+        height: 0 !important;
+        pointer-events: none !important;
+    }
+    
+    /* Hide any link icon next to headers */
+    .stMarkdown h1::after, .stMarkdown h2::after, .stMarkdown h3::after,
+    .stMarkdown h4::after, .stMarkdown h5::after, .stMarkdown h6::after {
+        display: none !important;
+    }
+    
+    /* Prevent header links from showing on hover */
+    .stMarkdown h1:hover a, .stMarkdown h2:hover a, .stMarkdown h3:hover a,
+    .stMarkdown h4:hover a, .stMarkdown h5:hover a, .stMarkdown h6:hover a {
+        display: none !important;
     }
     
     /* Tool badge */
@@ -347,6 +403,7 @@ st.markdown("""
     /* Chat container */
     .chat-container {
         padding-bottom: 80px;
+        margin-top: 0.25rem;
     }
     
     /* Searching animation */
@@ -393,6 +450,12 @@ st.markdown("""
         box-shadow: 0 6px 20px rgba(102, 126, 234, 0.15) !important;
     }
     
+    /* Clear button compact */
+    .clear-btn {
+        margin: 0 !important;
+        padding: 0 !important;
+    }
+    
     @media (prefers-color-scheme: dark) {
         .tool-badge {
             background: #1e3a5f;
@@ -407,6 +470,26 @@ st.markdown("""
     }
 </style>
 """, unsafe_allow_html=True)
+
+# JavaScript for auto-focus on any keypress
+import streamlit.components.v1 as components
+components.html("""
+<script>
+(function() {
+    const doc = window.parent.document;
+    doc.addEventListener('keydown', function(e) {
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+        if (e.ctrlKey || e.altKey || e.metaKey) return;
+        const ignore = ['Escape', 'Tab', 'CapsLock', 'Shift', 'Control', 'Alt', 'Meta', 
+                        'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
+                        'F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8', 'F9', 'F10', 'F11', 'F12'];
+        if (ignore.includes(e.key)) return;
+        const input = doc.querySelector('textarea[data-testid="stChatInputTextArea"]');
+        if (input) input.focus();
+    });
+})();
+</script>
+""", height=0)
 
 # Session state
 if "messages" not in st.session_state:
@@ -516,8 +599,8 @@ if not has_messages:
                 st.session_state.processing = True
                 st.rerun()
 else:
-    # Chat mode
-    col1, col2 = st.columns([9, 1])
+    # Chat mode - compact clear button
+    col1, col2 = st.columns([15, 1])
     with col2:
         if st.button("🗑️", key="clear", help="Clear"):
             st.session_state.messages = []
