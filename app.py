@@ -6,6 +6,7 @@ A chatbot that answers questions using RCC documentation (RAG-only, no command-l
 import os
 import sys
 import json
+import random
 import anthropic
 import streamlit as st
 
@@ -598,6 +599,16 @@ def format_tool_names(tool_names):
     return ", ".join(f"{n} (×{c})" if c > 1 else n for n, c in tool_counts.items())
 
 
+def strip_markdown_links(text):
+    """Remove markdown links, keeping only the link text."""
+    import re
+    # Replace [text](url) with just text
+    text = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', text)
+    # Also remove any raw URLs that might cause issues
+    text = re.sub(r'<(https?://[^>]+)>', r'\1', text)
+    return text
+
+
 def render_user_message(content):
     """Render user message."""
     escaped = content.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;').replace('\n', '<br>')
@@ -606,6 +617,8 @@ def render_user_message(content):
 
 def render_assistant_message(content, tool_names=None):
     """Render assistant message."""
+    # Strip markdown links to prevent broken link behavior
+    content = strip_markdown_links(content)
     st.markdown('<div class="assistant-wrapper">', unsafe_allow_html=True)
     with st.chat_message("assistant"):
         if tool_names:
@@ -666,7 +679,15 @@ if prompt:
 
 # Process
 if st.session_state.processing:
-    st.markdown('<div class="search-status"><span class="search-text">🧠 Contemplating...</span></div>', unsafe_allow_html=True)
+    # Randomly choose between cool status messages
+    status_messages = [
+        "🧠 Contemplating...",
+        "✨ Vibing...",
+        "⏳ Brewing...",
+        "🎨 Crafting..."
+    ]
+    status_text = random.choice(status_messages)
+    st.markdown(f'<div class="search-status"><span class="search-text">{status_text}</span></div>', unsafe_allow_html=True)
     
     api_messages = [{"role": m["role"], "content": m["content"]} for m in st.session_state.messages]
     
