@@ -248,7 +248,7 @@ TOPICS: Accounts, SSH, Slurm jobs, storage, Python, R, MATLAB, GPUs, containers,
 
 
 # --- Streamlit App ---
-st.set_page_config(page_title="Sage", page_icon="🧠", layout="wide", initial_sidebar_state="collapsed")
+st.set_page_config(page_title="Sage", page_icon="🤖", layout="wide", initial_sidebar_state="collapsed")
 
 # CSS
 st.markdown("""
@@ -257,7 +257,7 @@ st.markdown("""
     [data-testid="stSidebar"], [data-testid="stSidebarCollapsedControl"] {display: none !important;}
     
     .main .block-container {
-        padding-top: 0.25rem;
+        padding-top: 0.1rem;
         padding-bottom: 0;
         max-width: 900px;
     }
@@ -311,17 +311,26 @@ st.markdown("""
     }
     
     .stChatInput textarea {
-        font-size: 1rem !important;
+        font-size: 1.1rem !important;
         padding: 18px 24px !important;
         line-height: 1.4 !important;
+    }
+    
+    .stChatInput textarea::placeholder {
+        font-size: 1.1rem !important;
+        color: #9ca3af !important;
     }
     
     /* User message */
     .user-message {
         display: flex;
         justify-content: flex-end;
-        margin: 0.75rem 0 1.25rem 0;
+        margin: 0.5rem 0 1rem 0;
         padding-right: 1rem;
+    }
+    
+    .user-message:first-child {
+        margin-top: 0.25rem;
     }
     
     .user-bubble {
@@ -337,7 +346,7 @@ st.markdown("""
     
     /* Assistant message */
     .assistant-wrapper {
-        margin: 0.75rem 0 1.25rem 0;
+        margin: 0.5rem 0 1rem 0;
     }
     
     .stChatMessage {
@@ -400,10 +409,28 @@ st.markdown("""
         border: 1px solid #bae6fd;
     }
     
-    /* Chat container */
+    /* Chat container - minimal top margin */
     .chat-container {
         padding-bottom: 80px;
-        margin-top: 0.25rem;
+        margin-top: 0;
+    }
+    
+    /* Clear button row - very compact */
+    .stColumns {
+        margin-bottom: 0 !important;
+        gap: 0 !important;
+    }
+    
+    /* Reduce gap after clear button */
+    [data-testid="stHorizontalBlock"] {
+        margin-bottom: 0.25rem !important;
+    }
+    
+    /* Make clear button small */
+    [data-testid="stHorizontalBlock"] button {
+        padding: 0.25rem 0.5rem !important;
+        min-height: unset !important;
+        height: auto !important;
     }
     
     /* Searching animation */
@@ -589,7 +616,7 @@ has_messages = len(st.session_state.messages) > 0
 
 if not has_messages:
     # Welcome screen
-    st.markdown('<div class="welcome-container"><div class="welcome-icon">🧠</div><h1 class="welcome-title">What can I help you with?</h1></div>', unsafe_allow_html=True)
+    st.markdown('<div class="welcome-container"><div class="welcome-icon">🤖</div><h1 class="welcome-title">What can I help you with?</h1></div>', unsafe_allow_html=True)
     
     cols = st.columns(2)
     for i, (icon, question) in enumerate(EXAMPLES):
@@ -599,8 +626,8 @@ if not has_messages:
                 st.session_state.processing = True
                 st.rerun()
 else:
-    # Chat mode - compact clear button
-    col1, col2 = st.columns([15, 1])
+    # Chat mode - compact clear button at top right
+    _, col2 = st.columns([20, 1])
     with col2:
         if st.button("🗑️", key="clear", help="Clear"):
             st.session_state.messages = []
