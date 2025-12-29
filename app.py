@@ -1291,6 +1291,19 @@ st.markdown("""
         max-width: 900px;
     }
     
+    /* Hide scrollbar in welcome mode - applied via has_conversation check */
+    .welcome-mode {
+        overflow: hidden !important;
+        height: 100vh !important;
+    }
+    
+    .welcome-mode .main,
+    .welcome-mode [data-testid="stAppViewContainer"],
+    .welcome-mode [data-testid="stAppViewBlockContainer"] {
+        overflow: hidden !important;
+        max-height: 100vh !important;
+    }
+    
     /* Welcome screen styles - fit on one screen */
     .welcome-container {
         display: flex;
@@ -1618,6 +1631,7 @@ st.markdown("""
 components.html("""
 <script>
 const doc = window.parent.document;
+const parentWindow = window.parent;
 
 // Auto-focus on keypress
 doc.addEventListener('keydown', function(e) {
@@ -1647,7 +1661,7 @@ function scrollToBottom() {
         mainContent.scrollTop = mainContent.scrollHeight;
     }
     // Also try scrolling the main window
-    window.parent.scrollTo(0, window.parent.document.body.scrollHeight);
+    parentWindow.scrollTo(0, doc.body.scrollHeight);
 }
 
 // Scroll on initial load
@@ -1668,44 +1682,49 @@ if (targetNode) {
     observer.observe(targetNode, { childList: true, subtree: true });
 }
 
-// Copy message to clipboard
-window.copyMessage = function(msgId) {
+// Apply welcome-mode class if no chat messages (for hiding scrollbar)
+function checkWelcomeMode() {
+    const chatMessages = doc.querySelector('.chat-messages');
+    const body = doc.body;
+    if (!chatMessages) {
+        body.classList.add('welcome-mode');
+    } else {
+        body.classList.remove('welcome-mode');
+    }
+}
+checkWelcomeMode();
+
+// Define functions on parent window so onclick handlers can access them
+parentWindow.copyMessage = function(msgId) {
     const msgElement = doc.getElementById(msgId);
     if (msgElement) {
         const text = msgElement.innerText;
         navigator.clipboard.writeText(text).then(function() {
-            // Show brief feedback
-            const btn = event.target.closest('.user-action-btn');
-            if (btn) {
-                const originalText = btn.innerHTML;
-                btn.innerHTML = '<span>✓</span> Copied!';
-                setTimeout(() => { btn.innerHTML = originalText; }, 1500);
-            }
+            console.log('Copied to clipboard');
+        }).catch(function(err) {
+            // Fallback for older browsers
+            const textArea = doc.createElement('textarea');
+            textArea.value = text;
+            doc.body.appendChild(textArea);
+            textArea.select();
+            doc.execCommand('copy');
+            doc.body.removeChild(textArea);
         });
     }
 };
 
 // Edit message - trigger Streamlit rerun with edit state
-window.editMessage = function(msgIndex) {
-    // Store the edit index in sessionStorage and trigger a rerun
-    sessionStorage.setItem('editMsgIndex', msgIndex);
-    // Find and click a hidden button or use Streamlit's mechanism
-    const hiddenInput = doc.querySelector('input[data-testid="stHiddenInput"]');
-    if (hiddenInput) {
-        hiddenInput.value = 'edit_' + msgIndex;
-        hiddenInput.dispatchEvent(new Event('input', { bubbles: true }));
-    }
-    // Fallback: reload with query param
-    const url = new URL(window.parent.location.href);
+parentWindow.editMessage = function(msgIndex) {
+    const url = new URL(parentWindow.location.href);
     url.searchParams.set('edit', msgIndex);
-    window.parent.location.href = url.toString();
+    parentWindow.location.href = url.toString();
 };
 
-// Clear conversation
-window.clearConversation = function() {
-    const url = new URL(window.parent.location.href);
+// Clear conversation - redirect with clear param
+parentWindow.clearConversation = function() {
+    const url = new URL(parentWindow.location.href);
     url.searchParams.set('clear', 'true');
-    window.parent.location.href = url.toString();
+    parentWindow.location.href = url.toString();
 };
 </script>
 """, height=0)
@@ -1825,10 +1844,10 @@ def render_user_message(content, msg_index=None):
         <div class="user-message-wrapper">
             <div class="user-bubble" id="{msg_id}">{escaped}</div>
             <div class="user-actions">
-                <button class="user-action-btn" onclick="copyMessage('{msg_id}')">
+                <button class="user-action-btn" onclick="window.parent.copyMessage('{msg_id}')">
                     <span>📋</span> Copy
                 </button>
-                <button class="user-action-btn" onclick="editMessage({msg_index})">
+                <button class="user-action-btn" onclick="window.parent.editMessage({msg_index})">
                     <span>✏️</span> Edit
                 </button>
             </div>
@@ -1852,7 +1871,7 @@ def render_assistant_message(content, tool_names=None):
 if len(st.session_state.messages) > 0:
     st.markdown('''
     <div class="fixed-clear-btn">
-        <button onclick="clearConversation()">🗑️ Clear Conversation</button>
+        <button onclick="window.parent.clearConversation()">🗑️ Clear Conversation</button>
     </div>
     ''', unsafe_allow_html=True)
 
