@@ -1171,6 +1171,7 @@ if prompt:
     st.session_state.messages.append(msg_to_store)
     st.session_state.processing = True
     st.session_state.uploaded_file_data = None
+    st.session_state.uploader_key += 1  # Reset file uploader to clear attachment
     
     st.rerun()
 
