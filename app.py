@@ -403,13 +403,19 @@ st.markdown("""
     [data-testid="stSidebar"], [data-testid="stSidebarCollapsedControl"] {display: none !important;}
     
     .main .block-container {
-        padding-top: 0.1rem;
+        padding-top: 0 !important;
         padding-bottom: 0;
         max-width: 900px;
     }
     
     [data-testid="stVerticalBlock"] > div {
         margin-bottom: 0 !important;
+        padding-bottom: 0 !important;
+    }
+    
+    /* Reduce spacing in main area */
+    [data-testid="stMainBlockContainer"] {
+        padding-top: 1rem !important;
     }
     
     /* Welcome screen */
@@ -418,23 +424,25 @@ st.markdown("""
         flex-direction: column;
         align-items: center;
         justify-content: center;
-        min-height: 30vh;
+        min-height: 20vh;
         text-align: center;
-        padding: 1rem;
+        padding: 0.5rem;
+        margin-top: 5vh;
     }
     
     .welcome-icon {
-        font-size: 3.5rem;
-        margin-bottom: 0.5rem;
+        font-size: 2.5rem;
+        margin-bottom: 0.3rem;
     }
     
     .welcome-title {
-        font-size: 2rem;
+        font-size: 1.8rem;
         font-weight: 600;
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         background-clip: text;
+        margin-bottom: 0.5rem;
     }
     
     /* Input container with paperclip */
@@ -502,13 +510,13 @@ st.markdown("""
     .main .stButton > button {
         background: linear-gradient(135deg, #fff 0%, #f8fafc 100%) !important;
         border: 1px solid #e2e8f0 !important;
-        border-radius: 14px !important;
-        padding: 14px 18px !important;
+        border-radius: 12px !important;
+        padding: 10px 14px !important;
         text-align: left !important;
-        font-size: 0.85rem !important;
+        font-size: 0.8rem !important;
         color: #374151 !important;
         height: auto !important;
-        min-height: 50px !important;
+        min-height: 40px !important;
         transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
         opacity: 0;
         transform: translateY(20px);
@@ -671,20 +679,43 @@ st.markdown("""
     }
     
     /* Hide the default file uploader completely */
-    .hidden-uploader {
-        position: absolute;
-        width: 1px;
-        height: 1px;
-        padding: 0;
-        margin: -1px;
-        overflow: hidden;
-        clip: rect(0, 0, 0, 0);
-        white-space: nowrap;
-        border: 0;
+    [data-testid="stFileUploader"] {
+        position: fixed !important;
+        top: -9999px !important;
+        left: -9999px !important;
+        width: 1px !important;
+        height: 1px !important;
+        opacity: 0 !important;
+        pointer-events: none !important;
+        visibility: hidden !important;
     }
     
-    .hidden-uploader > div {
+    [data-testid="stFileUploader"] > div,
+    [data-testid="stFileUploader"] section,
+    [data-testid="stFileUploaderDropzone"] {
         display: none !important;
+    }
+    
+    /* Keep the actual input functional but invisible */
+    [data-testid="stFileUploader"] input[type="file"] {
+        position: fixed !important;
+        top: 0 !important;
+        left: 0 !important;
+        width: 1px !important;
+        height: 1px !important;
+        opacity: 0 !important;
+        pointer-events: auto !important;
+        visibility: visible !important;
+    }
+    
+    /* Remove scrollbar on landing page */
+    html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
+        overflow-x: hidden !important;
+    }
+    
+    .no-scroll {
+        overflow: hidden !important;
+        height: 100vh !important;
     }
     
     /* Attachment preview */
@@ -754,8 +785,30 @@ components.html("""
 (function() {
     const doc = window.parent.document;
     
+    // Control scrollbar based on page state
+    function updateScrollBehavior() {
+        const chatContainer = doc.querySelector('.chat-container');
+        const appContainer = doc.querySelector('[data-testid="stAppViewContainer"]');
+        const mainContainer = doc.querySelector('[data-testid="stMain"]');
+        
+        if (chatContainer) {
+            // In chat mode - allow scrolling
+            if (appContainer) appContainer.style.overflow = 'auto';
+            if (mainContainer) mainContainer.style.overflow = 'auto';
+            doc.body.style.overflow = 'auto';
+        } else {
+            // On landing page - no scrolling
+            if (appContainer) appContainer.style.overflow = 'hidden';
+            if (mainContainer) mainContainer.style.overflow = 'hidden';
+            doc.body.style.overflow = 'hidden';
+        }
+    }
+    
     // Wait for DOM to be ready
     function init() {
+        // Update scroll behavior
+        updateScrollBehavior();
+        
         // Find the chat input container
         const chatInput = doc.querySelector('[data-testid="stChatInput"]');
         if (!chatInput) {
@@ -839,9 +892,12 @@ components.html("""
         }
     });
     
-    // Auto-scroll and auto-focus
+    // Auto-scroll only in chat mode
     setTimeout(function() {
-        window.parent.scrollTo({ top: doc.body.scrollHeight, behavior: 'smooth' });
+        const chatContainer = doc.querySelector('.chat-container');
+        if (chatContainer) {
+            window.parent.scrollTo({ top: doc.body.scrollHeight, behavior: 'smooth' });
+        }
     }, 100);
     
     doc.addEventListener('keydown', function(e) {
@@ -860,6 +916,7 @@ components.html("""
     
     // Re-init on DOM changes (for when Streamlit reruns)
     const observer = new MutationObserver(function() {
+        updateScrollBehavior();
         if (!doc.getElementById('paperclip-btn')) {
             init();
         }
@@ -1057,14 +1114,12 @@ else:
     st.markdown('</div>', unsafe_allow_html=True)
 
 # Hidden file uploader (triggered by paperclip button)
-st.markdown('<div class="hidden-uploader">', unsafe_allow_html=True)
 uploaded_file = st.file_uploader(
     "Upload file",
     type=['pdf', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'txt', 'md', 'py', 'json', 'csv'],
     key="file_uploader",
     label_visibility="collapsed"
 )
-st.markdown('</div>', unsafe_allow_html=True)
 
 if uploaded_file is not None and st.session_state.uploaded_file_data is None:
     file_data = process_uploaded_file(uploaded_file)
