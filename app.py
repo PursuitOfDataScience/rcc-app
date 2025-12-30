@@ -583,6 +583,7 @@ st.markdown("""
         display: flex !important;
         align-items: center !important;
         padding-left: 50px !important;
+        position: relative !important;
     }
     
     .stChatInput > div:focus-within {
@@ -807,24 +808,42 @@ st.markdown("""
         height: 100vh !important;
     }
     
-    /* Attachment preview */
-    .attachment-preview {
+    /* Attachment badge inside chat input */
+    .attachment-badge-input {
         display: inline-flex;
         align-items: center;
-        gap: 8px;
+        gap: 6px;
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         color: white;
-        padding: 8px 14px;
-        border-radius: 14px;
-        font-size: 0.85rem;
-        box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+        padding: 5px 10px;
+        border-radius: 10px;
+        font-size: 0.8rem;
+        margin-right: 8px;
+        white-space: nowrap;
+        max-width: 200px;
+        overflow: hidden;
+        text-overflow: ellipsis;
     }
     
-    /* Style buttons outside of examples-container to be simple */
-    .main .stButton > button:not(.examples-container .stButton > button) {
-        opacity: 1 !important;
-        transform: none !important;
-        animation: none !important;
+    .attachment-badge-input .remove-x {
+        cursor: pointer;
+        opacity: 0.8;
+        font-size: 14px;
+        margin-left: 4px;
+        font-weight: bold;
+    }
+    
+    .attachment-badge-input .remove-x:hover {
+        opacity: 1;
+    }
+    
+    /* Hide the remove button completely */
+    .hidden-remove-btn {
+        position: absolute !important;
+        left: -9999px !important;
+        top: -9999px !important;
+        visibility: hidden !important;
+        display: none !important;
     }
     
     @media (prefers-color-scheme: dark) {
@@ -844,7 +863,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# JavaScript for paperclip button, paste handling, and auto-focus
+# JavaScript for paperclip button, attachment badge, paste handling, and auto-focus
 import streamlit.components.v1 as components
 components.html("""
 <script>
@@ -858,24 +877,92 @@ components.html("""
         const mainContainer = doc.querySelector('[data-testid="stMain"]');
         
         if (chatContainer) {
-            // In chat mode - allow scrolling
             if (appContainer) appContainer.style.overflow = 'auto';
             if (mainContainer) mainContainer.style.overflow = 'auto';
             doc.body.style.overflow = 'auto';
         } else {
-            // On landing page - no scrolling
             if (appContainer) appContainer.style.overflow = 'hidden';
             if (mainContainer) mainContainer.style.overflow = 'hidden';
             doc.body.style.overflow = 'hidden';
         }
     }
     
+    // Show/update attachment badge inside chat input
+    function updateAttachmentBadge() {
+        const attachmentInfo = doc.getElementById('attachment-info');
+        const chatInput = doc.querySelector('[data-testid="stChatInput"]');
+        if (!chatInput) return;
+        
+        const inputWrapper = chatInput.querySelector('div');
+        if (!inputWrapper) return;
+        
+        // Remove existing badge if any
+        const existingBadge = doc.getElementById('attachment-badge');
+        if (existingBadge) {
+            existingBadge.remove();
+        }
+        
+        // If there's an attachment, create the badge
+        if (attachmentInfo) {
+            const filename = attachmentInfo.getAttribute('data-filename');
+            const icon = attachmentInfo.getAttribute('data-icon');
+            
+            const badge = doc.createElement('div');
+            badge.id = 'attachment-badge';
+            badge.className = 'attachment-badge-input';
+            badge.innerHTML = `<span>${icon}</span><span style="overflow:hidden;text-overflow:ellipsis;">${filename}</span><span class="remove-x">✕</span>`;
+            badge.style.cssText = `
+                display: inline-flex;
+                align-items: center;
+                gap: 6px;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white;
+                padding: 5px 10px;
+                border-radius: 10px;
+                font-size: 0.8rem;
+                margin-left: 50px;
+                margin-right: 8px;
+                white-space: nowrap;
+                max-width: 200px;
+                position: absolute;
+                left: 4px;
+                top: 50%;
+                transform: translateY(-50%);
+                z-index: 1001;
+            `;
+            
+            // Click handler for remove
+            badge.querySelector('.remove-x').onclick = function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                // Find and click the hidden remove button
+                const removeBtn = doc.querySelector('.hidden-remove-btn button');
+                if (removeBtn) {
+                    removeBtn.click();
+                }
+            };
+            
+            chatInput.appendChild(badge);
+            
+            // Adjust textarea padding to make room for badge
+            const textarea = chatInput.querySelector('textarea');
+            if (textarea) {
+                textarea.style.paddingLeft = '220px';
+            }
+        } else {
+            // No attachment - reset textarea padding
+            const textarea = chatInput.querySelector('textarea');
+            if (textarea) {
+                textarea.style.paddingLeft = '';
+            }
+        }
+    }
+    
     // Wait for DOM to be ready
     function init() {
-        // Update scroll behavior
         updateScrollBehavior();
+        updateAttachmentBadge();
         
-        // Find the chat input container
         const chatInput = doc.querySelector('[data-testid="stChatInput"]');
         if (!chatInput) {
             setTimeout(init, 100);
@@ -883,13 +970,16 @@ components.html("""
         }
         
         // Check if paperclip already exists
-        if (doc.getElementById('paperclip-btn')) return;
+        if (doc.getElementById('paperclip-btn')) {
+            updateAttachmentBadge();
+            return;
+        }
         
         // Create paperclip button
         const paperclipBtn = doc.createElement('button');
         paperclipBtn.id = 'paperclip-btn';
         paperclipBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>';
-        paperclipBtn.title = 'Attach file';
+        paperclipBtn.title = 'Attach file (PDF, TXT, MD, PY, JSON, CSV)';
         paperclipBtn.style.cssText = `
             position: absolute;
             left: 12px;
@@ -917,19 +1007,15 @@ components.html("""
             this.style.color = '#9ca3af';
         };
         
-        // Position the chat input container relatively
         chatInput.style.position = 'relative';
         
-        // Add padding to the input to make room for the button
         const inputWrapper = chatInput.querySelector('div');
         if (inputWrapper) {
             inputWrapper.style.paddingLeft = '50px';
         }
         
-        // Insert paperclip button
         chatInput.insertBefore(paperclipBtn, chatInput.firstChild);
         
-        // Click handler for paperclip
         paperclipBtn.onclick = function(e) {
             e.preventDefault();
             e.stopPropagation();
@@ -938,25 +1024,9 @@ components.html("""
                 fileInput.click();
             }
         };
+        
+        updateAttachmentBadge();
     }
-    
-    // Handle paste for images
-    doc.addEventListener('paste', function(e) {
-        const items = e.clipboardData.items;
-        for (let i = 0; i < items.length; i++) {
-            if (items[i].type.indexOf('image') !== -1) {
-                const file = items[i].getAsFile();
-                const fileInput = doc.querySelector('input[type="file"]');
-                if (fileInput && file) {
-                    const dt = new DataTransfer();
-                    dt.items.add(file);
-                    fileInput.files = dt.files;
-                    fileInput.dispatchEvent(new Event('change', { bubbles: true }));
-                }
-                break;
-            }
-        }
-    });
     
     // Auto-scroll only in chat mode
     setTimeout(function() {
@@ -980,11 +1050,13 @@ components.html("""
     // Initialize
     init();
     
-    // Re-init on DOM changes (for when Streamlit reruns)
+    // Re-init on DOM changes
     const observer = new MutationObserver(function() {
         updateScrollBehavior();
         if (!doc.getElementById('paperclip-btn')) {
             init();
+        } else {
+            updateAttachmentBadge();
         }
     });
     observer.observe(doc.body, { childList: true, subtree: true });
@@ -1195,29 +1267,22 @@ if uploaded_file is not None and st.session_state.uploaded_file_data is None:
     file_data = process_uploaded_file(uploaded_file)
     st.session_state.uploaded_file_data = file_data
 
-# Attachment preview (shown above the input when a file is attached)
+# Hidden element to pass attachment info to JavaScript
 if st.session_state.uploaded_file_data and st.session_state.uploaded_file_data.get("type") != "error":
     file_data = st.session_state.uploaded_file_data
     icon = get_file_icon(file_data.get("filename", "file"))
     filename = file_data.get("filename", "file")
+    st.markdown(f'<div id="attachment-info" data-filename="{filename}" data-icon="{icon}" style="display:none;"></div>', unsafe_allow_html=True)
     
-    # Use columns to keep attachment and remove button together
-    att_col1, att_col2, att_col3 = st.columns([1, 6, 1])
-    with att_col2:
-        st.markdown(f'''
-        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 0.5rem;">
-            <div class="attachment-preview">
-                <span>{icon}</span>
-                <span>{filename}</span>
-            </div>
-        </div>
-        ''', unsafe_allow_html=True)
-        if st.button("✕ Remove", key="remove_attachment"):
-            st.session_state.uploaded_file_data = None
-            st.session_state.uploader_key += 1
-            st.rerun()
+    # Hidden remove button (triggered by JavaScript)
+    st.markdown('<div class="hidden-remove-btn">', unsafe_allow_html=True)
+    if st.button("remove_attachment_hidden", key="remove_attachment"):
+        st.session_state.uploaded_file_data = None
+        st.session_state.uploader_key += 1
+        st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
 
-# Chat input (paperclip button is added via JavaScript)
+# Chat input (paperclip button and attachment badge added via JavaScript)
 prompt = st.chat_input("Ask any question about RCC...", disabled=st.session_state.processing)
 
 if prompt:
