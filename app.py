@@ -415,7 +415,27 @@ st.markdown("""
     
     /* Reduce spacing in main area */
     [data-testid="stMainBlockContainer"] {
-        padding-top: 1rem !important;
+        padding-top: 0.5rem !important;
+    }
+    
+    /* Trash button styling */
+    .trash-container .stButton > button {
+        background: transparent !important;
+        border: 1px solid #374151 !important;
+        border-radius: 8px !important;
+        padding: 6px 10px !important;
+        min-height: 36px !important;
+        min-width: 36px !important;
+        opacity: 1 !important;
+        transform: none !important;
+        animation: none !important;
+    }
+    
+    .trash-container .stButton > button:hover {
+        background: rgba(239, 68, 68, 0.1) !important;
+        border-color: #ef4444 !important;
+        transform: none !important;
+        box-shadow: none !important;
     }
     
     /* Welcome screen */
@@ -553,7 +573,7 @@ st.markdown("""
     .user-message {
         display: flex;
         justify-content: flex-end;
-        margin: 0.5rem 0 1rem 0;
+        margin: 0.3rem 0 0.8rem 0;
         padding-right: 1rem;
     }
     
@@ -581,7 +601,7 @@ st.markdown("""
     
     /* Assistant message */
     .assistant-wrapper {
-        margin: 0.5rem 0 1rem 0;
+        margin: 0.3rem 0 0.8rem 0;
     }
     
     .stChatMessage {
@@ -618,6 +638,21 @@ st.markdown("""
     .chat-container {
         padding-bottom: 140px;
         margin-top: 0;
+        padding-top: 0;
+    }
+    
+    /* Trash button container */
+    .trash-container {
+        display: flex;
+        justify-content: flex-end;
+        padding: 0.5rem 1rem 0 0;
+        margin-bottom: 0.5rem;
+    }
+    
+    .trash-container button {
+        padding: 8px !important;
+        min-width: 40px !important;
+        min-height: 40px !important;
     }
     
     /* Status animation */
@@ -1094,15 +1129,15 @@ if not has_messages:
                 st.rerun()
 
 else:
-    # Chat mode
-    _, col2 = st.columns([20, 1])
-    with col2:
-        if st.button("🗑️", key="clear", help="Clear"):
-            st.session_state.messages = []
-            st.session_state.processing = False
-            st.session_state.uploaded_file_data = None
-            st.session_state.uploader_key += 1  # Reset the file uploader
-            st.rerun()
+    # Chat mode - trash button at top right
+    st.markdown('<div class="trash-container">', unsafe_allow_html=True)
+    if st.button("🗑️", key="clear", help="Clear chat"):
+        st.session_state.messages = []
+        st.session_state.processing = False
+        st.session_state.uploaded_file_data = None
+        st.session_state.uploader_key += 1  # Reset the file uploader
+        st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
     
     st.markdown('<div class="chat-container">', unsafe_allow_html=True)
     for msg in st.session_state.messages:
