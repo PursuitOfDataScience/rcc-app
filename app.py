@@ -491,15 +491,15 @@ st.markdown("""
     
     /* Examples grid wrapper */
     .examples-grid-wrapper {
-        max-width: 750px;
+        max-width: 680px;
         margin: 0 auto;
         padding: 0 1rem;
     }
     
     /* Style the Streamlit columns in examples grid */
     .examples-grid-wrapper [data-testid="stHorizontalBlock"] {
-        gap: 1rem !important;
-        margin-bottom: 0.75rem !important;
+        gap: 0.75rem !important;
+        margin-bottom: 0.6rem !important;
     }
     
     /* Style the example buttons */
@@ -507,7 +507,7 @@ st.markdown("""
         background: linear-gradient(145deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0.03) 100%) !important;
         border: 1px solid rgba(255,255,255,0.12) !important;
         border-radius: 16px !important;
-        padding: 14px 18px !important;
+        padding: 12px 16px !important;
         text-align: center !important;
         font-size: 0.88rem !important;
         color: #e5e7eb !important;
@@ -830,9 +830,9 @@ components.html("""
                 background: linear-gradient(145deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0.03) 100%) !important;
                 border: 1px solid rgba(255,255,255,0.15) !important;
                 border-radius: 16px !important;
-                padding: 16px 20px !important;
+                padding: 12px 16px !important;
                 text-align: center !important;
-                font-size: 0.9rem !important;
+                font-size: 0.88rem !important;
                 color: #e5e7eb !important;
                 height: auto !important;
                 min-height: auto !important;
@@ -867,8 +867,8 @@ components.html("""
             // Check if this block contains example buttons
             const hasExampleBtn = block.querySelector('.stButton button[data-animated="true"]');
             if (hasExampleBtn) {
-                block.style.gap = '1rem';
-                block.style.marginBottom = '0.75rem';
+                block.style.gap = '0.75rem';
+                block.style.marginBottom = '0.6rem';
             }
         });
     }
@@ -890,33 +890,56 @@ components.html("""
         });
         
         if (!chipButton || !chipContainer) return;
-        if (chipContainer.dataset.positioned === 'true') return;
+        if (chipButton.dataset.styled === 'true') return;
         
-        chipContainer.dataset.positioned = 'true';
+        chipButton.dataset.styled = 'true';
         
-        // Style the button as a chip
+        // Style the button as a compact chip - DON'T move it, just style it
         chipButton.style.cssText = `
             background: linear-gradient(135deg, rgba(34, 197, 94, 0.2) 0%, rgba(34, 197, 94, 0.1) 100%) !important;
             border: 1px solid rgba(34, 197, 94, 0.4) !important;
-            border-radius: 20px !important;
-            padding: 8px 16px !important;
+            border-radius: 16px !important;
+            padding: 6px 14px !important;
             color: #22c55e !important;
-            font-size: 0.85rem !important;
-            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1) !important;
+            font-size: 0.8rem !important;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1) !important;
+            width: auto !important;
+            min-width: auto !important;
+            display: inline-flex !important;
+            align-items: center !important;
+            cursor: pointer !important;
         `;
         
-        // Create a container right above chat input if not exists
-        let posContainer = doc.getElementById('attachment-position-container');
-        if (!posContainer) {
-            posContainer = doc.createElement('div');
-            posContainer.id = 'attachment-position-container';
-            posContainer.style.cssText = 'max-width:800px;margin:0 auto 8px auto;padding:0 1rem;display:flex;';
-            chatInput.parentNode.insertBefore(posContainer, chatInput);
+        // Style the container to align left with the chat input
+        const stButtonContainer = chipContainer.closest('[data-testid="stVerticalBlock"]') || chipContainer.parentElement;
+        if (stButtonContainer) {
+            stButtonContainer.style.cssText = `
+                max-width: 800px !important;
+                margin: 0 auto 8px auto !important;
+                padding: 0 1rem !important;
+                display: flex !important;
+                justify-content: flex-start !important;
+            `;
         }
         
-        // Move the entire stButton container
-        posContainer.innerHTML = '';
-        posContainer.appendChild(chipContainer);
+        // Make sure the stButton wrapper doesn't force full width
+        chipContainer.style.cssText = `
+            width: auto !important;
+            display: inline-block !important;
+        `;
+        
+        // Add hover effect for the X functionality visual feedback
+        chipButton.addEventListener('mouseenter', function() {
+            this.style.background = 'linear-gradient(135deg, rgba(239, 68, 68, 0.2) 0%, rgba(239, 68, 68, 0.1) 100%)';
+            this.style.borderColor = 'rgba(239, 68, 68, 0.5)';
+            this.style.color = '#ef4444';
+        });
+        
+        chipButton.addEventListener('mouseleave', function() {
+            this.style.background = 'linear-gradient(135deg, rgba(34, 197, 94, 0.2) 0%, rgba(34, 197, 94, 0.1) 100%)';
+            this.style.borderColor = 'rgba(34, 197, 94, 0.4)';
+            this.style.color = '#22c55e';
+        });
     }
     
     function init() {
