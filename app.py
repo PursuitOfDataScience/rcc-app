@@ -2,7 +2,7 @@
 """
 RCC User Guide AI Assistant - Streamlit App
 A chatbot that answers questions using RCC documentation (RAG-only, no command-line tools).
-Now with file upload support for PDFs and images via paperclip button.
+File upload support for PDFs and text files via sidebar.
 """
 import os
 import sys
@@ -562,13 +562,6 @@ st.markdown("""
         }
     }
     
-    /* Input container with paperclip */
-    .input-container {
-        max-width: 800px;
-        margin: 0 auto;
-        position: relative;
-    }
-    
     /* Chat input */
     .stChatInput {
         max-width: 800px !important;
@@ -584,7 +577,6 @@ st.markdown("""
         min-height: 56px !important;
         display: flex !important;
         align-items: center !important;
-        padding-left: 50px !important;
         position: relative !important;
         z-index: 100 !important;
     }
@@ -733,120 +725,9 @@ st.markdown("""
         100% { background-position: 100% 0; }
     }
     
-    /* Paperclip button styling */
-    .paperclip-container {
-        position: relative;
-        max-width: 800px;
-        margin: 0 auto;
-    }
-    
-    .paperclip-btn {
-        position: absolute;
-        left: 12px;
-        top: 50%;
-        transform: translateY(-50%);
-        z-index: 1000;
-        background: transparent;
-        border: none;
-        cursor: pointer;
-        padding: 8px;
-        border-radius: 50%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        transition: all 0.2s ease;
-        color: #9ca3af;
-    }
-    
-    .paperclip-btn:hover {
-        background: rgba(102, 126, 234, 0.1);
-        color: #667eea;
-    }
-    
-    .paperclip-btn svg {
-        width: 20px;
-        height: 20px;
-    }
-    
-    /* Attachment bar - positioned above chat input */
-    .attachment-bar {
-        position: fixed;
-        bottom: 80px;
-        left: 50%;
-        transform: translateX(-50%);
-        max-width: 800px;
-        width: calc(100% - 2rem);
-        padding: 0 10px;
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        z-index: 99;
-    }
-    
-    .attachment-chip {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        padding: 6px 12px;
-        border-radius: 12px;
-        font-size: 0.85rem;
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
-    }
-    
-    .attachment-remove-text {
-        color: #9ca3af;
-        cursor: pointer;
-        font-size: 1.1rem;
-        padding: 4px 8px;
-        border-radius: 4px;
-        transition: all 0.2s;
-    }
-    
-    .attachment-remove-text:hover {
-        color: #ef4444;
-        background: rgba(239, 68, 68, 0.1);
-    }
-    
-    /* Hide the remove_hidden button */
-    .hidden-remove-btn {
-        position: fixed !important;
-        left: -9999px !important;
-        top: -9999px !important;
-        visibility: hidden !important;
-        opacity: 0 !important;
-    }
-    
-    /* Hide file uploader completely */
+    /* Hide file uploader - it's in sidebar now */
     [data-testid="stFileUploader"] {
-        position: fixed !important;
-        top: -9999px !important;
-        left: -9999px !important;
-        height: 0 !important;
-        width: 0 !important;
-        overflow: hidden !important;
-        margin: 0 !important;
-        padding: 0 !important;
-        z-index: -1 !important;
-    }
-    
-    [data-testid="stFileUploader"] > div,
-    [data-testid="stFileUploader"] > section,
-    [data-testid="stFileUploader"] label,
-    [data-testid="stFileUploaderDropzone"],
-    [data-testid="stFileUploaderDropzoneInstructions"] {
-        display: none !important;
-        visibility: hidden !important;
-    }
-    
-    /* Keep file input accessible for JavaScript click */
-    [data-testid="stFileUploader"] input[type="file"] {
-        position: fixed !important;
-        top: 0 !important;
-        left: 0 !important;
-        opacity: 0 !important;
-        pointer-events: auto !important;
+        /* visible in sidebar, hidden elsewhere */
     }
     
     /* Remove scrollbar on landing page */
@@ -867,18 +748,11 @@ st.markdown("""
             color: #7dd3fc;
             border-color: #0369a1;
         }
-        .paperclip-btn {
-            color: #6b7280;
-        }
-        .paperclip-btn:hover {
-            color: #a5b4fc;
-            background: rgba(165, 180, 252, 0.1);
-        }
     }
 </style>
 """, unsafe_allow_html=True)
 
-# JavaScript for paperclip button and auto-focus
+# JavaScript for scroll control and auto-focus
 import streamlit.components.v1 as components
 components.html("""
 <script>
@@ -901,64 +775,6 @@ components.html("""
         }
     }
     
-    function setupRemoveButton() {
-        const removeText = doc.querySelector('.attachment-remove-text');
-        if (removeText && !removeText.hasAttribute('data-listener')) {
-            removeText.setAttribute('data-listener', 'true');
-            removeText.onclick = function() {
-                // Find the hidden remove button and click it
-                const buttons = doc.querySelectorAll('button');
-                for (let btn of buttons) {
-                    if (btn.innerText.includes('remove_hidden')) {
-                        btn.click();
-                        break;
-                    }
-                }
-            };
-        }
-    }
-    
-    function init() {
-        updateScrollBehavior();
-        setupRemoveButton();
-        
-        const chatInput = doc.querySelector('[data-testid="stChatInput"]');
-        if (!chatInput) {
-            setTimeout(init, 100);
-            return;
-        }
-        
-        if (doc.getElementById('paperclip-btn')) {
-            setupRemoveButton();
-            return;
-        }
-        
-        const paperclipBtn = doc.createElement('button');
-        paperclipBtn.id = 'paperclip-btn';
-        paperclipBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>';
-        paperclipBtn.title = 'Attach file';
-        paperclipBtn.style.cssText = 'position:absolute;left:12px;top:50%;transform:translateY(-50%);z-index:1000;background:transparent;border:none;cursor:pointer;padding:8px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#9ca3af;';
-        
-        paperclipBtn.onmouseover = function() { this.style.background='rgba(102,126,234,0.1)'; this.style.color='#667eea'; };
-        paperclipBtn.onmouseout = function() { this.style.background='transparent'; this.style.color='#9ca3af'; };
-        
-        chatInput.style.position = 'relative';
-        
-        const inputWrapper = chatInput.querySelector('div');
-        if (inputWrapper) inputWrapper.style.paddingLeft = '50px';
-        
-        chatInput.insertBefore(paperclipBtn, chatInput.firstChild);
-        
-        paperclipBtn.onclick = function(e) {
-            e.preventDefault();
-            e.stopPropagation();
-            const fileInput = doc.querySelector('input[type="file"]');
-            if (fileInput) fileInput.click();
-        };
-        
-        setupRemoveButton();
-    }
-    
     setTimeout(function() {
         const chatContainer = doc.querySelector('.chat-container');
         if (chatContainer) {
@@ -975,12 +791,10 @@ components.html("""
         if (input) input.focus();
     });
     
-    init();
+    updateScrollBehavior();
     
     const observer = new MutationObserver(function() {
         updateScrollBehavior();
-        setupRemoveButton();
-        if (!doc.getElementById('paperclip-btn')) init();
     });
     observer.observe(doc.body, { childList: true, subtree: true });
 })();
@@ -1178,41 +992,30 @@ else:
                 render_assistant_message(text, msg.get("tool_names"))
     st.markdown('</div>', unsafe_allow_html=True)
 
-# Hidden file uploader (CSS hides it, JavaScript triggers it)
-uploaded_file = st.file_uploader(
-    "x",
-    type=['pdf', 'txt', 'md', 'py', 'json', 'csv'],
-    key=f"file_uploader_{st.session_state.uploader_key}",
-    label_visibility="collapsed"
-)
-
-if uploaded_file is not None and st.session_state.uploaded_file_data is None:
-    file_data = process_uploaded_file(uploaded_file)
-    st.session_state.uploaded_file_data = file_data
-
-# Show attachment bar ABOVE the chat input
-if st.session_state.uploaded_file_data and st.session_state.uploaded_file_data.get("type") != "error":
-    file_data = st.session_state.uploaded_file_data
-    icon = get_file_icon(file_data.get("filename", "file"))
-    filename = file_data.get("filename", "file")
+# File uploader in sidebar
+with st.sidebar:
+    st.markdown("### 📎 Attach a file")
+    uploaded_file = st.file_uploader(
+        "Upload",
+        type=['pdf', 'txt', 'md', 'py', 'json', 'csv'],
+        key=f"file_uploader_{st.session_state.uploader_key}",
+        label_visibility="collapsed"
+    )
     
-    # Attachment chip with X button on same line
-    st.markdown(f'''
-    <div class="attachment-bar">
-        <span class="attachment-chip">{icon} {filename}</span>
-        <span class="attachment-remove-text">✕</span>
-    </div>
-    ''', unsafe_allow_html=True)
+    if uploaded_file is not None and st.session_state.uploaded_file_data is None:
+        file_data = process_uploaded_file(uploaded_file)
+        st.session_state.uploaded_file_data = file_data
     
-    # Hidden button that gets triggered by JS
-    st.markdown('<div class="hidden-remove-btn">', unsafe_allow_html=True)
-    if st.button("remove_hidden", key="remove_attachment"):
-        st.session_state.uploaded_file_data = None
-        st.session_state.uploader_key += 1
-        st.rerun()
-    st.markdown('</div>', unsafe_allow_html=True)
+    if st.session_state.uploaded_file_data and st.session_state.uploaded_file_data.get("type") != "error":
+        file_data = st.session_state.uploaded_file_data
+        icon = get_file_icon(file_data.get("filename", "file"))
+        st.success(f"{icon} {file_data.get('filename', 'file')}")
+        if st.button("🗑️ Remove", key="remove_attachment"):
+            st.session_state.uploaded_file_data = None
+            st.session_state.uploader_key += 1
+            st.rerun()
 
-# Chat input - comes AFTER attachment bar
+# Chat input
 prompt = st.chat_input("Ask any question about RCC...", disabled=st.session_state.processing)
 
 if prompt:
