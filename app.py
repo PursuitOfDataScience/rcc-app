@@ -408,9 +408,24 @@ st.markdown("""
         max-width: 900px;
     }
     
+    /* Kill all Streamlit default spacing */
     [data-testid="stVerticalBlock"] > div {
         margin-bottom: 0 !important;
         padding-bottom: 0 !important;
+    }
+    
+    [data-testid="stVerticalBlock"] {
+        gap: 0 !important;
+    }
+    
+    .stMarkdown {
+        margin: 0 !important;
+        padding: 0 !important;
+    }
+    
+    .element-container {
+        margin: 0 !important;
+        padding: 0 !important;
     }
     
     /* Reduce spacing in main area */
@@ -418,9 +433,16 @@ st.markdown("""
         padding-top: 0.5rem !important;
     }
     
-    /* Trash button styling */
-    .trash-container .stButton > button {
-        background: transparent !important;
+    /* Trash button - position fixed at top right of chat area */
+    .trash-btn-wrapper {
+        position: fixed;
+        top: 10px;
+        right: 20px;
+        z-index: 1000;
+    }
+    
+    .trash-btn-wrapper .stButton > button {
+        background: rgba(31, 41, 55, 0.8) !important;
         border: 1px solid #374151 !important;
         border-radius: 8px !important;
         padding: 6px 10px !important;
@@ -429,10 +451,11 @@ st.markdown("""
         opacity: 1 !important;
         transform: none !important;
         animation: none !important;
+        backdrop-filter: blur(8px);
     }
     
-    .trash-container .stButton > button:hover {
-        background: rgba(239, 68, 68, 0.1) !important;
+    .trash-btn-wrapper .stButton > button:hover {
+        background: rgba(239, 68, 68, 0.2) !important;
         border-color: #ef4444 !important;
         transform: none !important;
         box-shadow: none !important;
@@ -573,8 +596,12 @@ st.markdown("""
     .user-message {
         display: flex;
         justify-content: flex-end;
-        margin: 0.3rem 0 0.8rem 0;
+        margin: 0 0 0.8rem 0;
         padding-right: 1rem;
+    }
+    
+    .user-message:first-child {
+        margin-top: 0;
     }
     
     .user-bubble, .user-bubble-with-attachment {
@@ -638,21 +665,12 @@ st.markdown("""
     .chat-container {
         padding-bottom: 140px;
         margin-top: 0;
-        padding-top: 0;
+        padding-top: 0.5rem;
     }
     
-    /* Trash button container */
-    .trash-container {
-        display: flex;
-        justify-content: flex-end;
-        padding: 0.5rem 1rem 0 0;
-        margin-bottom: 0.5rem;
-    }
-    
-    .trash-container button {
-        padding: 8px !important;
-        min-width: 40px !important;
-        min-height: 40px !important;
+    .chat-container > div:first-child {
+        margin-top: 0 !important;
+        padding-top: 0 !important;
     }
     
     /* Status animation */
@@ -1129,8 +1147,8 @@ if not has_messages:
                 st.rerun()
 
 else:
-    # Chat mode - trash button at top right
-    st.markdown('<div class="trash-container">', unsafe_allow_html=True)
+    # Chat mode - trash button fixed at top right
+    st.markdown('<div class="trash-btn-wrapper">', unsafe_allow_html=True)
     if st.button("🗑️", key="clear", help="Clear chat"):
         st.session_state.messages = []
         st.session_state.processing = False
