@@ -910,22 +910,39 @@ components.html("""
             cursor: pointer !important;
         `;
         
-        // Style the container to align left with the chat input
+        // Style the container to align left with the chat input - minimal margin
         const stButtonContainer = chipContainer.closest('[data-testid="stVerticalBlock"]') || chipContainer.parentElement;
         if (stButtonContainer) {
             stButtonContainer.style.cssText = `
                 max-width: 800px !important;
-                margin: 0 auto 8px auto !important;
+                margin: 0 auto 4px auto !important;
                 padding: 0 1rem !important;
                 display: flex !important;
                 justify-content: flex-start !important;
             `;
         }
         
+        // Also find and remove gap from parent elements
+        let parent = chipContainer.parentElement;
+        while (parent && parent !== doc.body) {
+            if (parent.style) {
+                parent.style.gap = '0';
+                parent.style.marginBottom = '0';
+                parent.style.paddingBottom = '0';
+            }
+            // Only go up a few levels
+            if (parent.getAttribute && parent.getAttribute('data-testid') === 'stVerticalBlock') {
+                parent.style.gap = '0';
+                break;
+            }
+            parent = parent.parentElement;
+        }
+        
         // Make sure the stButton wrapper doesn't force full width
         chipContainer.style.cssText = `
             width: auto !important;
             display: inline-block !important;
+            margin-bottom: 0 !important;
         `;
         
         // Add hover effect for the X functionality visual feedback
@@ -949,6 +966,13 @@ components.html("""
         positionAttachmentChip();
     }
     
+    // Run init multiple times with delays to catch late-rendering elements
+    init();
+    setTimeout(init, 100);
+    setTimeout(init, 300);
+    setTimeout(init, 600);
+    setTimeout(init, 1000);
+    
     // Auto-scroll in chat mode
     setTimeout(function() {
         const chatContainer = doc.querySelector('.chat-container');
@@ -966,8 +990,6 @@ components.html("""
         const input = doc.querySelector('textarea[data-testid="stChatInputTextArea"]');
         if (input) input.focus();
     });
-    
-    init();
     
     // Re-run on DOM changes
     const observer = new MutationObserver(function() {
