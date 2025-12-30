@@ -489,76 +489,70 @@ st.markdown("""
         }
     }
     
-    /* Example questions grid */
-    .examples-grid {
-        display: grid;
-        grid-template-columns: repeat(2, 1fr);
-        gap: 1rem 1.5rem;
+    /* Examples grid wrapper */
+    .examples-grid-wrapper {
         max-width: 750px;
         margin: 0 auto;
         padding: 0 1rem;
     }
     
-    /* Example question buttons - pure HTML */
-    .example-btn {
-        background: linear-gradient(145deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0.03) 100%);
-        border: 1px solid rgba(255,255,255,0.12);
-        border-radius: 16px;
-        padding: 16px 20px;
-        text-align: center;
-        font-size: 0.9rem;
-        color: #e5e7eb;
-        cursor: pointer;
-        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    /* Style the Streamlit columns in examples grid */
+    .examples-grid-wrapper [data-testid="stHorizontalBlock"] {
+        gap: 1rem !important;
+        margin-bottom: 0.75rem !important;
+    }
+    
+    /* Style the example buttons */
+    .examples-grid-wrapper .stButton button {
+        background: linear-gradient(145deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0.03) 100%) !important;
+        border: 1px solid rgba(255,255,255,0.12) !important;
+        border-radius: 16px !important;
+        padding: 14px 18px !important;
+        text-align: center !important;
+        font-size: 0.88rem !important;
+        color: #e5e7eb !important;
+        height: auto !important;
+        min-height: auto !important;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
         backdrop-filter: blur(10px);
-        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
-        /* Animation */
-        opacity: 0;
-        transform: translateY(30px);
-        animation: exampleAppear 0.5s ease-out forwards;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1) !important;
     }
     
-    .example-btn:nth-child(1) { animation-delay: 0.4s; }
-    .example-btn:nth-child(2) { animation-delay: 0.55s; }
-    .example-btn:nth-child(3) { animation-delay: 0.7s; }
-    .example-btn:nth-child(4) { animation-delay: 0.85s; }
-    .example-btn:nth-child(5) { animation-delay: 1.0s; }
-    .example-btn:nth-child(6) { animation-delay: 1.15s; }
-    
-    @keyframes exampleAppear {
-        0% {
-            opacity: 0;
-            transform: translateY(30px);
-        }
-        100% {
-            opacity: 1;
-            transform: translateY(0);
-        }
+    .examples-grid-wrapper .stButton button:hover {
+        background: linear-gradient(145deg, rgba(102, 126, 234, 0.25) 0%, rgba(118, 75, 162, 0.25) 100%) !important;
+        border-color: rgba(102, 126, 234, 0.5) !important;
+        transform: translateY(-3px) !important;
+        box-shadow: 0 8px 25px rgba(102, 126, 234, 0.2) !important;
     }
     
-    .example-btn:hover {
-        background: linear-gradient(145deg, rgba(102, 126, 234, 0.25) 0%, rgba(118, 75, 162, 0.25) 100%);
-        border-color: rgba(102, 126, 234, 0.5);
-        transform: translateY(-3px);
-        box-shadow: 0 8px 25px rgba(102, 126, 234, 0.2);
-    }
-    
-    .example-btn:active {
-        transform: translateY(-1px);
+    .examples-grid-wrapper .stButton button:active {
+        transform: translateY(-1px) !important;
     }
     
     /* Light mode */
     @media (prefers-color-scheme: light) {
-        .example-btn {
-            background: linear-gradient(145deg, #ffffff 0%, #f8fafc 100%);
-            border: 1px solid #e2e8f0;
-            color: #374151;
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.06);
+        .examples-grid-wrapper .stButton button {
+            background: linear-gradient(145deg, #ffffff 0%, #f8fafc 100%) !important;
+            border: 1px solid #e2e8f0 !important;
+            color: #374151 !important;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.06) !important;
         }
         
-        .example-btn:hover {
-            background: linear-gradient(145deg, #eef2ff 0%, #e0e7ff 100%);
-            border-color: #a5b4fc;
+        .examples-grid-wrapper .stButton button:hover {
+            background: linear-gradient(145deg, #eef2ff 0%, #e0e7ff 100%) !important;
+            border-color: #a5b4fc !important;
+        }
+    }
+    
+    /* Animation keyframes for example buttons */
+    @keyframes exampleFadeIn {
+        0% {
+            opacity: 0;
+            transform: translateY(25px);
+        }
+        100% {
+            opacity: 1;
+            transform: translateY(0);
         }
     }
     
@@ -749,28 +743,6 @@ st.markdown("""
         height: 100vh !important;
     }
     
-    /* Attachment chip button - only target the one in the wrapper */
-    .attachment-chip-wrapper [data-testid="stBaseButton-secondary"] {
-        background: linear-gradient(135deg, rgba(34, 197, 94, 0.15) 0%, rgba(34, 197, 94, 0.1) 100%) !important;
-        border: 1px solid rgba(34, 197, 94, 0.3) !important;
-        border-radius: 20px !important;
-        padding: 6px 14px !important;
-        color: #22c55e !important;
-        font-size: 0.85rem !important;
-    }
-    
-    .attachment-chip-wrapper [data-testid="stBaseButton-secondary"]:hover {
-        background: rgba(239, 68, 68, 0.15) !important;
-        border-color: rgba(239, 68, 68, 0.5) !important;
-        color: #ef4444 !important;
-    }
-    
-    .attachment-chip-wrapper {
-        max-width: 800px;
-        margin: 0 auto 8px auto;
-    }
-
-    
     @media (prefers-color-scheme: dark) {
         .tool-badge {
             background: #1e3a5f;
@@ -781,7 +753,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# JavaScript for paperclip button and scroll control
+# JavaScript for paperclip button, scroll control, and animations
 import streamlit.components.v1 as components
 components.html("""
 <script>
@@ -829,16 +801,75 @@ components.html("""
         chatInput.insertBefore(btn, chatInput.firstChild);
     }
     
-    // Handle example button clicks - navigate with query param
-    window.parent.selectExample = function(idx) {
-        const url = new URL(window.parent.location.href);
-        url.searchParams.set('ex', idx);
-        window.parent.location.href = url.toString();
-    };
+    function animateExampleButtons() {
+        const wrapper = doc.querySelector('.examples-grid-wrapper');
+        if (!wrapper || wrapper.dataset.animated === 'true') return;
+        
+        const buttons = wrapper.querySelectorAll('.stButton button');
+        if (buttons.length === 0) return;
+        
+        wrapper.dataset.animated = 'true';
+        
+        const delays = [0.4, 0.55, 0.7, 0.85, 1.0, 1.15];
+        buttons.forEach((btn, idx) => {
+            btn.style.opacity = '0';
+            btn.style.transform = 'translateY(25px)';
+            btn.style.animation = 'exampleFadeIn 0.5s ease-out forwards';
+            btn.style.animationDelay = delays[idx] + 's';
+        });
+    }
+    
+    function positionAttachmentChip() {
+        const chatInput = doc.querySelector('[data-testid="stChatInput"]');
+        if (!chatInput) return;
+        
+        // Find attachment chip button by its unique content (contains ✕)
+        const buttons = doc.querySelectorAll('.stButton button');
+        let chipButton = null;
+        let chipContainer = null;
+        
+        buttons.forEach(btn => {
+            if (btn.innerText && btn.innerText.includes('✕')) {
+                chipButton = btn;
+                chipContainer = btn.closest('.stButton');
+            }
+        });
+        
+        if (!chipButton || !chipContainer) return;
+        if (chipContainer.dataset.positioned === 'true') return;
+        
+        chipContainer.dataset.positioned = 'true';
+        
+        // Style the button as a chip
+        chipButton.style.cssText = `
+            background: linear-gradient(135deg, rgba(34, 197, 94, 0.2) 0%, rgba(34, 197, 94, 0.1) 100%) !important;
+            border: 1px solid rgba(34, 197, 94, 0.4) !important;
+            border-radius: 20px !important;
+            padding: 8px 16px !important;
+            color: #22c55e !important;
+            font-size: 0.85rem !important;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1) !important;
+        `;
+        
+        // Create a container right above chat input if not exists
+        let posContainer = doc.getElementById('attachment-position-container');
+        if (!posContainer) {
+            posContainer = doc.createElement('div');
+            posContainer.id = 'attachment-position-container';
+            posContainer.style.cssText = 'max-width:800px;margin:0 auto 8px auto;padding:0 1rem;display:flex;';
+            chatInput.parentNode.insertBefore(posContainer, chatInput);
+        }
+        
+        // Move the entire stButton container
+        posContainer.innerHTML = '';
+        posContainer.appendChild(chipContainer);
+    }
     
     function init() {
         updateScrollBehavior();
         addPaperclipButton();
+        animateExampleButtons();
+        positionAttachmentChip();
     }
     
     // Auto-scroll in chat mode
@@ -865,6 +896,8 @@ components.html("""
     const observer = new MutationObserver(function() {
         updateScrollBehavior();
         addPaperclipButton();
+        animateExampleButtons();
+        positionAttachmentChip();
     });
     observer.observe(doc.body, { childList: true, subtree: true });
 })();
@@ -1009,6 +1042,16 @@ def render_assistant_message(content, tool_names=None):
 
 has_messages = len(st.session_state.messages) > 0
 
+# Example questions
+EXAMPLE_QUESTIONS = [
+    ("🚀", "How do I connect to Midway via SSH?"),
+    ("💾", "What are the storage quotas on Midway?"),
+    ("⚙️", "How do I submit a batch job with sbatch?"),
+    ("🐍", "How do I set up a Python environment?"),
+    ("🎮", "How do I run PyTorch on GPUs?"),
+    ("📊", "How do I check my allocation balance?"),
+]
+
 if not has_messages:
     # Welcome screen
     st.markdown('''
@@ -1018,38 +1061,49 @@ if not has_messages:
     </div>
     ''', unsafe_allow_html=True)
     
-    # Example questions as pure HTML with animations
-    example_questions = [
-        ("🚀", "How do I connect to Midway via SSH?"),
-        ("💾", "What are the storage quotas on Midway?"),
-        ("⚙️", "How do I submit a batch job with sbatch?"),
-        ("🐍", "How do I set up a Python environment?"),
-        ("🎮", "How do I run PyTorch on GPUs?"),
-        ("📊", "How do I check my allocation balance?"),
-    ]
+    # Example questions grid using Streamlit columns with custom styling
+    st.markdown('<div class="examples-grid-wrapper">', unsafe_allow_html=True)
     
-    # Build HTML grid
-    buttons_html = '<div class="examples-grid">'
-    for i, (icon, question) in enumerate(example_questions):
-        buttons_html += f'<button class="example-btn" onclick="selectExample({i})">{icon} {question}</button>'
-    buttons_html += '</div>'
-    
-    st.markdown(buttons_html, unsafe_allow_html=True)
-    
-    # Hidden selectbox to receive the click from JavaScript
-    # We use query params to communicate between JS and Streamlit
-    
-    # Check if an example was selected via query param
-    query_params = st.query_params
-    if "ex" in query_params:
-        ex_idx = int(query_params["ex"])
-        if 0 <= ex_idx < len(example_questions):
-            selected_question = example_questions[ex_idx][1]
-            st.session_state.messages.append({"role": "user", "content": selected_question})
+    # Row 1
+    col1, col2 = st.columns(2, gap="medium")
+    with col1:
+        if st.button(f"{EXAMPLE_QUESTIONS[0][0]} {EXAMPLE_QUESTIONS[0][1]}", key="ex_0", use_container_width=True):
+            st.session_state.messages.append({"role": "user", "content": EXAMPLE_QUESTIONS[0][1]})
             st.session_state.processing = True
-            # Clear the query param
-            st.query_params.clear()
             st.rerun()
+    with col2:
+        if st.button(f"{EXAMPLE_QUESTIONS[1][0]} {EXAMPLE_QUESTIONS[1][1]}", key="ex_1", use_container_width=True):
+            st.session_state.messages.append({"role": "user", "content": EXAMPLE_QUESTIONS[1][1]})
+            st.session_state.processing = True
+            st.rerun()
+    
+    # Row 2
+    col3, col4 = st.columns(2, gap="medium")
+    with col3:
+        if st.button(f"{EXAMPLE_QUESTIONS[2][0]} {EXAMPLE_QUESTIONS[2][1]}", key="ex_2", use_container_width=True):
+            st.session_state.messages.append({"role": "user", "content": EXAMPLE_QUESTIONS[2][1]})
+            st.session_state.processing = True
+            st.rerun()
+    with col4:
+        if st.button(f"{EXAMPLE_QUESTIONS[3][0]} {EXAMPLE_QUESTIONS[3][1]}", key="ex_3", use_container_width=True):
+            st.session_state.messages.append({"role": "user", "content": EXAMPLE_QUESTIONS[3][1]})
+            st.session_state.processing = True
+            st.rerun()
+    
+    # Row 3
+    col5, col6 = st.columns(2, gap="medium")
+    with col5:
+        if st.button(f"{EXAMPLE_QUESTIONS[4][0]} {EXAMPLE_QUESTIONS[4][1]}", key="ex_4", use_container_width=True):
+            st.session_state.messages.append({"role": "user", "content": EXAMPLE_QUESTIONS[4][1]})
+            st.session_state.processing = True
+            st.rerun()
+    with col6:
+        if st.button(f"{EXAMPLE_QUESTIONS[5][0]} {EXAMPLE_QUESTIONS[5][1]}", key="ex_5", use_container_width=True):
+            st.session_state.messages.append({"role": "user", "content": EXAMPLE_QUESTIONS[5][1]})
+            st.session_state.processing = True
+            st.rerun()
+    
+    st.markdown('</div>', unsafe_allow_html=True)
 
 else:
     # Chat mode - trash button fixed at top right
@@ -1092,12 +1146,10 @@ if st.session_state.uploaded_file_data and st.session_state.uploaded_file_data.g
     icon = get_file_icon(file_data.get("filename", "file"))
     filename = file_data.get("filename", "file")
     
-    st.markdown('<div class="attachment-chip-wrapper">', unsafe_allow_html=True)
     if st.button(f"{icon} {filename}  ✕", key="remove_attachment", type="secondary"):
         st.session_state.uploaded_file_data = None
         st.session_state.uploader_key += 1
         st.rerun()
-    st.markdown('</div>', unsafe_allow_html=True)
 
 # Chat input
 prompt = st.chat_input("Ask any question about RCC...", disabled=st.session_state.processing)
