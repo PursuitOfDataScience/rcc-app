@@ -564,6 +564,19 @@ st.markdown("""
         z-index: 100 !important;
     }
     
+    /* Force chat input container to have no top margin/padding */
+    [data-testid="stChatInput"] {
+        margin-top: 0 !important;
+        padding-top: 0 !important;
+    }
+    
+    /* Kill spacing on elements immediately before chat input */
+    [data-testid="stChatInput"] ~ *,
+    * + [data-testid="stChatInput"] {
+        margin-bottom: 0 !important;
+        padding-bottom: 0 !important;
+    }
+    
     .stChatInput > div {
         border-radius: 24px !important;
         border: 2px solid #e5e7eb !important;
@@ -817,58 +830,72 @@ components.html("""
         
         if (exampleButtons.length === 0) return;
         
-        // Check if already animated
-        if (exampleButtons[0].dataset.animated === 'true') return;
-        
         const delays = [0.3, 0.45, 0.6, 0.75, 0.9, 1.05];
+        let needsAnimation = false;
         
         exampleButtons.forEach((btn, idx) => {
-            btn.dataset.animated = 'true';
+            // Check if this specific button needs styling
+            if (btn.dataset.animated !== 'true') {
+                needsAnimation = true;
+                btn.dataset.animated = 'true';
+                
+                // Apply styling for the cool look
+                btn.style.cssText = `
+                    background: linear-gradient(145deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0.03) 100%) !important;
+                    border: 1px solid rgba(255,255,255,0.15) !important;
+                    border-radius: 16px !important;
+                    padding: 12px 16px !important;
+                    text-align: center !important;
+                    font-size: 0.88rem !important;
+                    color: #e5e7eb !important;
+                    height: auto !important;
+                    min-height: auto !important;
+                    max-width: 100% !important;
+                    backdrop-filter: blur(10px);
+                    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15) !important;
+                    opacity: 0;
+                    transform: translateY(25px);
+                    animation: exampleFadeIn 0.5s ease-out forwards;
+                    animation-delay: ${delays[idx]}s;
+                    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+                `;
+                
+                // Add hover effect via event listeners (only add once)
+                btn.addEventListener('mouseenter', function() {
+                    this.style.background = 'linear-gradient(145deg, rgba(102, 126, 234, 0.25) 0%, rgba(118, 75, 162, 0.25) 100%)';
+                    this.style.borderColor = 'rgba(102, 126, 234, 0.5)';
+                    this.style.transform = 'translateY(-3px)';
+                    this.style.boxShadow = '0 8px 25px rgba(102, 126, 234, 0.25)';
+                });
+                
+                btn.addEventListener('mouseleave', function() {
+                    this.style.background = 'linear-gradient(145deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0.03) 100%)';
+                    this.style.borderColor = 'rgba(255,255,255,0.15)';
+                    this.style.transform = 'translateY(0)';
+                    this.style.boxShadow = '0 4px 15px rgba(0, 0, 0, 0.15)';
+                });
+            }
             
-            // Apply styling for the cool look
-            btn.style.cssText = `
-                background: linear-gradient(145deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0.03) 100%) !important;
-                border: 1px solid rgba(255,255,255,0.15) !important;
-                border-radius: 16px !important;
-                padding: 12px 16px !important;
-                text-align: center !important;
-                font-size: 0.88rem !important;
-                color: #e5e7eb !important;
-                height: auto !important;
-                min-height: auto !important;
-                backdrop-filter: blur(10px);
-                box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15) !important;
-                opacity: 0;
-                transform: translateY(25px);
-                animation: exampleFadeIn 0.5s ease-out forwards;
-                animation-delay: ${delays[idx]}s;
-                transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
-            `;
-            
-            // Add hover effect via event listeners
-            btn.addEventListener('mouseenter', function() {
-                this.style.background = 'linear-gradient(145deg, rgba(102, 126, 234, 0.25) 0%, rgba(118, 75, 162, 0.25) 100%)';
-                this.style.borderColor = 'rgba(102, 126, 234, 0.5)';
-                this.style.transform = 'translateY(-3px)';
-                this.style.boxShadow = '0 8px 25px rgba(102, 126, 234, 0.25)';
-            });
-            
-            btn.addEventListener('mouseleave', function() {
-                this.style.background = 'linear-gradient(145deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0.03) 100%)';
-                this.style.borderColor = 'rgba(255,255,255,0.15)';
-                this.style.transform = 'translateY(0)';
-                this.style.boxShadow = '0 4px 15px rgba(0, 0, 0, 0.15)';
-            });
+            // Always ensure the parent container has proper width constraints
+            const btnContainer = btn.closest('.stButton');
+            if (btnContainer && btnContainer.dataset.widthSet !== 'true') {
+                btnContainer.dataset.widthSet = 'true';
+                btnContainer.style.maxWidth = '100%';
+            }
         });
         
-        // Also style the column containers for proper spacing
+        // Also style the column containers for proper spacing and width
         const horizontalBlocks = doc.querySelectorAll('[data-testid="stHorizontalBlock"]');
         horizontalBlocks.forEach(block => {
             // Check if this block contains example buttons
             const hasExampleBtn = block.querySelector('.stButton button[data-animated="true"]');
-            if (hasExampleBtn) {
+            if (hasExampleBtn && block.dataset.styled !== 'true') {
+                block.dataset.styled = 'true';
                 block.style.gap = '0.75rem';
                 block.style.marginBottom = '0.6rem';
+                block.style.maxWidth = '680px';
+                block.style.marginLeft = 'auto';
+                block.style.marginRight = 'auto';
             }
         });
     }
@@ -908,42 +935,44 @@ components.html("""
             display: inline-flex !important;
             align-items: center !important;
             cursor: pointer !important;
+            margin: 0 !important;
         `;
         
-        // Style the container to align left with the chat input - minimal margin
-        const stButtonContainer = chipContainer.closest('[data-testid="stVerticalBlock"]') || chipContainer.parentElement;
-        if (stButtonContainer) {
-            stButtonContainer.style.cssText = `
-                max-width: 800px !important;
-                margin: 0 auto 4px auto !important;
-                padding: 0 1rem !important;
-                display: flex !important;
-                justify-content: flex-start !important;
-            `;
-        }
-        
-        // Also find and remove gap from parent elements
-        let parent = chipContainer.parentElement;
-        while (parent && parent !== doc.body) {
-            if (parent.style) {
-                parent.style.gap = '0';
-                parent.style.marginBottom = '0';
-                parent.style.paddingBottom = '0';
-            }
-            // Only go up a few levels
-            if (parent.getAttribute && parent.getAttribute('data-testid') === 'stVerticalBlock') {
-                parent.style.gap = '0';
-                break;
-            }
-            parent = parent.parentElement;
-        }
-        
-        // Make sure the stButton wrapper doesn't force full width
+        // Make sure the stButton wrapper doesn't force full width and has no margin
         chipContainer.style.cssText = `
             width: auto !important;
             display: inline-block !important;
-            margin-bottom: 0 !important;
+            margin: 0 !important;
+            padding: 0 !important;
         `;
+        
+        // Style the immediate parent containers - kill all margins and gaps
+        let parent = chipContainer.parentElement;
+        let levelsUp = 0;
+        while (parent && parent !== doc.body && levelsUp < 5) {
+            parent.style.margin = '0';
+            parent.style.marginBottom = '0';
+            parent.style.marginTop = '0';
+            parent.style.padding = '0';
+            parent.style.paddingBottom = '0';
+            parent.style.paddingTop = '0';
+            parent.style.gap = '0';
+            
+            // Find the vertical block that contains the attachment button
+            if (parent.getAttribute && parent.getAttribute('data-testid') === 'stVerticalBlock') {
+                parent.style.cssText = `
+                    max-width: 800px !important;
+                    margin: 0 auto !important;
+                    padding: 0 1rem !important;
+                    display: flex !important;
+                    justify-content: flex-start !important;
+                    gap: 0 !important;
+                `;
+                break;
+            }
+            parent = parent.parentElement;
+            levelsUp++;
+        }
         
         // Add hover effect for the X functionality visual feedback
         chipButton.addEventListener('mouseenter', function() {
