@@ -8,7 +8,6 @@ import os
 import sys
 import json
 import random
-import base64
 import anthropic
 import streamlit as st
 from io import BytesIO
@@ -19,6 +18,8 @@ if not API_KEY:
     st.error("❌ ANTHROPIC_API_KEY environment variable not set.")
     st.stop()
 
+# Supported file types: PDF and text-based files (txt, md, py, json, csv)
+# We extract text client-side and send to the model as plain text.
 MODEL = "MiniMax-M2.1"
 DOCS_BASE_PATH = "./docs"
 WEB_BASE_PATH = "./web"
@@ -58,24 +59,6 @@ def extract_pdf_text(file_bytes: bytes) -> str:
             return f"Error extracting PDF text: {str(e)}", 0
 
 
-def encode_image_to_base64(file_bytes: bytes) -> str:
-    """Encode image bytes to base64 string."""
-    return base64.standard_b64encode(file_bytes).decode("utf-8")
-
-
-def get_image_media_type(filename: str) -> str:
-    """Get the media type based on file extension."""
-    ext = filename.lower().split('.')[-1]
-    media_types = {
-        'png': 'image/png',
-        'jpg': 'image/jpeg',
-        'jpeg': 'image/jpeg',
-        'gif': 'image/gif',
-        'webp': 'image/webp',
-    }
-    return media_types.get(ext, 'image/png')
-
-
 def process_uploaded_file(uploaded_file):
     """Process an uploaded file and return content for the API."""
     filename = uploaded_file.name.lower()
@@ -95,16 +78,6 @@ def process_uploaded_file(uploaded_file):
             }
         else:
             return {"type": "error", "message": pdf_text}
-    
-    elif any(filename.endswith(ext) for ext in ['.png', '.jpg', '.jpeg', '.gif', '.webp']):
-        base64_data = encode_image_to_base64(file_bytes)
-        media_type = get_image_media_type(filename)
-        return {
-            "type": "image",
-            "filename": uploaded_file.name,
-            "media_type": media_type,
-            "base64_data": base64_data
-        }
     
     elif any(filename.endswith(ext) for ext in ['.txt', '.md', '.py', '.json', '.csv', '.yml', '.yaml']):
         try:
@@ -128,19 +101,7 @@ def build_message_content(user_text: str, file_data: dict = None) -> list:
     content = []
     
     if file_data:
-        if file_data["type"] == "image":
-            content.append({
-                "type": "image",
-                "source": {
-                    "type": "base64",
-                    "media_type": file_data["media_type"],
-                    "data": file_data["base64_data"]
-                }
-            })
-            text_with_context = f"[Attached image: {file_data['filename']}]\n\n{user_text}"
-            content.append({"type": "text", "text": text_with_context})
-        
-        elif file_data["type"] == "pdf":
+        if file_data["type"] == "pdf":
             pdf_context = f"""[Attached PDF: {file_data['filename']} ({file_data['num_pages']} pages)]
 
 --- PDF Content ---
@@ -381,8 +342,7 @@ You have DOCUMENTATION TOOLS available that retrieve official RCC documentation:
 
 You can also analyze files that users upload:
 - PDF documents: You will receive the extracted text content
-- Images: You can view and analyze images directly
-- Text files: You will receive the file contents
+- Text files (.txt, .md, .py, .json, .csv): You will receive the file contents
 
 GUIDELINES:
 - Use documentation tools to answer questions about RCC systems and procedures
@@ -842,11 +802,21 @@ st.markdown("""
         height: 100vh !important;
     }
     
-    /* Attachment preview */
-    .attachment-preview-bar {
+    /* Attachment preview - fixed position above chat input */
+    .attachment-preview-container {
+        position: fixed;
+        bottom: 85px;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 999;
         max-width: 800px;
-        margin: 0 auto 0.5rem auto;
+        width: 100%;
         padding: 0 1rem;
+        box-sizing: border-box;
+    }
+    
+    .attachment-preview-bar {
+        display: inline-block;
     }
     
     .attachment-preview {
@@ -858,22 +828,52 @@ st.markdown("""
         padding: 8px 14px;
         border-radius: 16px;
         font-size: 0.85rem;
-        box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        animation: slideUp 0.3s ease-out;
     }
     
-    .attachment-preview .remove-btn {
-        background: rgba(255,255,255,0.2);
-        border: none;
-        color: white;
-        cursor: pointer;
-        padding: 2px 6px;
-        border-radius: 50%;
-        font-size: 0.7rem;
-        margin-left: 4px;
+    @keyframes slideUp {
+        from {
+            opacity: 0;
+            transform: translateY(10px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
     }
     
-    .attachment-preview .remove-btn:hover {
-        background: rgba(255,255,255,0.3);
+    /* Hide the remove button container - we use JS to handle it */
+    .attachment-preview-container + div [data-testid="stHorizontalBlock"] {
+        position: fixed !important;
+        bottom: 85px;
+        right: calc(50% - 400px + 1rem);
+        z-index: 1000;
+    }
+    
+    .attachment-preview-container + div [data-testid="stHorizontalBlock"] .stButton button {
+        background: rgba(255, 255, 255, 0.9) !important;
+        border: none !important;
+        border-radius: 50% !important;
+        width: 28px !important;
+        height: 28px !important;
+        min-height: 28px !important;
+        padding: 0 !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        font-size: 14px !important;
+        color: #666 !important;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.15) !important;
+        opacity: 1 !important;
+        transform: none !important;
+        animation: none !important;
+    }
+    
+    .attachment-preview-container + div [data-testid="stHorizontalBlock"] .stButton button:hover {
+        background: rgba(239, 68, 68, 0.9) !important;
+        color: white !important;
+        transform: none !important;
     }
     
     @media (prefers-color-scheme: dark) {
@@ -1149,8 +1149,7 @@ def get_file_icon(filename: str) -> str:
     """Get appropriate icon for file type."""
     ext = filename.lower().split('.')[-1]
     icons = {
-        'pdf': '📄', 'png': '🖼️', 'jpg': '🖼️', 'jpeg': '🖼️', 'gif': '🖼️', 'webp': '🖼️',
-        'txt': '📝', 'md': '📝', 'py': '🐍', 'json': '📋', 'csv': '📊',
+        'pdf': '📄', 'txt': '📝', 'md': '📝', 'py': '🐍', 'json': '📋', 'csv': '📊',
     }
     return icons.get(ext, '📎')
 
@@ -1233,10 +1232,10 @@ else:
                 render_assistant_message(text, msg.get("tool_names"))
     st.markdown('</div>', unsafe_allow_html=True)
 
-# Hidden file uploader (triggered by paperclip button)
+# Hidden file uploader (triggered by paperclip button) - text-based files only
 uploaded_file = st.file_uploader(
     "Upload file",
-    type=['pdf', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'txt', 'md', 'py', 'json', 'csv'],
+    type=['pdf', 'txt', 'md', 'py', 'json', 'csv'],
     key=f"file_uploader_{st.session_state.uploader_key}",
     label_visibility="collapsed"
 )
@@ -1250,20 +1249,24 @@ if st.session_state.uploaded_file_data and st.session_state.uploaded_file_data.g
     file_data = st.session_state.uploaded_file_data
     icon = get_file_icon(file_data.get("filename", "file"))
     
-    col1, col2 = st.columns([10, 1])
-    with col1:
-        st.markdown(f'''
+    # Use a container for the attachment preview with fixed positioning via CSS
+    st.markdown(f'''
+    <div class="attachment-preview-container">
         <div class="attachment-preview-bar">
             <div class="attachment-preview">
                 <span>{icon}</span>
                 <span>{file_data.get("filename", "file")}</span>
             </div>
         </div>
-        ''', unsafe_allow_html=True)
-    with col2:
+    </div>
+    ''', unsafe_allow_html=True)
+    
+    # Hidden button for remove functionality
+    remove_col1, remove_col2 = st.columns([20, 1])
+    with remove_col2:
         if st.button("✕", key="remove_attachment", help="Remove"):
             st.session_state.uploaded_file_data = None
-            st.session_state.uploader_key += 1  # Reset the file uploader
+            st.session_state.uploader_key += 1
             st.rerun()
 
 # Chat input (paperclip button is added via JavaScript)
