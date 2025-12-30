@@ -768,6 +768,56 @@ st.markdown("""
         height: 20px;
     }
     
+    /* Attachment bar - positioned above chat input */
+    .attachment-bar {
+        position: fixed;
+        bottom: 80px;
+        left: 50%;
+        transform: translateX(-50%);
+        max-width: 800px;
+        width: calc(100% - 2rem);
+        padding: 0 10px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        z-index: 99;
+    }
+    
+    .attachment-chip {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 6px 12px;
+        border-radius: 12px;
+        font-size: 0.85rem;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+    }
+    
+    .attachment-remove-text {
+        color: #9ca3af;
+        cursor: pointer;
+        font-size: 1.1rem;
+        padding: 4px 8px;
+        border-radius: 4px;
+        transition: all 0.2s;
+    }
+    
+    .attachment-remove-text:hover {
+        color: #ef4444;
+        background: rgba(239, 68, 68, 0.1);
+    }
+    
+    /* Hide the remove_hidden button */
+    .hidden-remove-btn {
+        position: fixed !important;
+        left: -9999px !important;
+        top: -9999px !important;
+        visibility: hidden !important;
+        opacity: 0 !important;
+    }
+    
     /* Hide file uploader completely */
     [data-testid="stFileUploader"] {
         position: fixed !important;
@@ -851,8 +901,26 @@ components.html("""
         }
     }
     
+    function setupRemoveButton() {
+        const removeText = doc.querySelector('.attachment-remove-text');
+        if (removeText && !removeText.hasAttribute('data-listener')) {
+            removeText.setAttribute('data-listener', 'true');
+            removeText.onclick = function() {
+                // Find the hidden remove button and click it
+                const buttons = doc.querySelectorAll('button');
+                for (let btn of buttons) {
+                    if (btn.innerText.includes('remove_hidden')) {
+                        btn.click();
+                        break;
+                    }
+                }
+            };
+        }
+    }
+    
     function init() {
         updateScrollBehavior();
+        setupRemoveButton();
         
         const chatInput = doc.querySelector('[data-testid="stChatInput"]');
         if (!chatInput) {
@@ -860,7 +928,10 @@ components.html("""
             return;
         }
         
-        if (doc.getElementById('paperclip-btn')) return;
+        if (doc.getElementById('paperclip-btn')) {
+            setupRemoveButton();
+            return;
+        }
         
         const paperclipBtn = doc.createElement('button');
         paperclipBtn.id = 'paperclip-btn';
@@ -884,6 +955,8 @@ components.html("""
             const fileInput = doc.querySelector('input[type="file"]');
             if (fileInput) fileInput.click();
         };
+        
+        setupRemoveButton();
     }
     
     setTimeout(function() {
@@ -906,6 +979,7 @@ components.html("""
     
     const observer = new MutationObserver(function() {
         updateScrollBehavior();
+        setupRemoveButton();
         if (!doc.getElementById('paperclip-btn')) init();
     });
     observer.observe(doc.body, { childList: true, subtree: true });
@@ -1104,9 +1178,6 @@ else:
                 render_assistant_message(text, msg.get("tool_names"))
     st.markdown('</div>', unsafe_allow_html=True)
 
-# Chat input
-prompt = st.chat_input("Ask any question about RCC...", disabled=st.session_state.processing)
-
 # Hidden file uploader (CSS hides it, JavaScript triggers it)
 uploaded_file = st.file_uploader(
     "x",
@@ -1119,19 +1190,30 @@ if uploaded_file is not None and st.session_state.uploaded_file_data is None:
     file_data = process_uploaded_file(uploaded_file)
     st.session_state.uploaded_file_data = file_data
 
-# Show attachment info below input if file is attached
+# Show attachment bar ABOVE the chat input
 if st.session_state.uploaded_file_data and st.session_state.uploaded_file_data.get("type") != "error":
     file_data = st.session_state.uploaded_file_data
     icon = get_file_icon(file_data.get("filename", "file"))
     filename = file_data.get("filename", "file")
     
-    acol1, acol2, acol3 = st.columns([1, 3, 1])
-    with acol2:
-        st.info(f"{icon} **{filename}** attached")
-        if st.button("Remove attachment", key="remove_attachment"):
-            st.session_state.uploaded_file_data = None
-            st.session_state.uploader_key += 1
-            st.rerun()
+    # Attachment chip with X button on same line
+    st.markdown(f'''
+    <div class="attachment-bar">
+        <span class="attachment-chip">{icon} {filename}</span>
+        <span class="attachment-remove-text">✕</span>
+    </div>
+    ''', unsafe_allow_html=True)
+    
+    # Hidden button that gets triggered by JS
+    st.markdown('<div class="hidden-remove-btn">', unsafe_allow_html=True)
+    if st.button("remove_hidden", key="remove_attachment"):
+        st.session_state.uploaded_file_data = None
+        st.session_state.uploader_key += 1
+        st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
+
+# Chat input - comes AFTER attachment bar
+prompt = st.chat_input("Ask any question about RCC...", disabled=st.session_state.processing)
 
 if prompt:
     file_data = st.session_state.uploaded_file_data
