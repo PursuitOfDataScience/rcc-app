@@ -489,87 +489,76 @@ st.markdown("""
         }
     }
     
-    /* Example buttons container */
-    .examples-container {
-        max-width: 800px;
+    /* Example questions grid */
+    .examples-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 1rem 1.5rem;
+        max-width: 750px;
         margin: 0 auto;
         padding: 0 1rem;
     }
     
-    /* Target the columns container for spacing */
-    .examples-container [data-testid="stHorizontalBlock"] {
-        gap: 1.5rem !important;
+    /* Example question buttons - pure HTML */
+    .example-btn {
+        background: linear-gradient(145deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0.03) 100%);
+        border: 1px solid rgba(255,255,255,0.12);
+        border-radius: 16px;
+        padding: 16px 20px;
+        text-align: center;
+        font-size: 0.9rem;
+        color: #e5e7eb;
+        cursor: pointer;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        backdrop-filter: blur(10px);
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+        /* Animation */
+        opacity: 0;
+        transform: translateY(30px);
+        animation: exampleAppear 0.5s ease-out forwards;
     }
     
-    /* Base style for all buttons in examples container */
-    .examples-container .stButton button {
-        background: linear-gradient(145deg, rgba(255,255,255,0.12) 0%, rgba(255,255,255,0.04) 100%) !important;
-        border: 1px solid rgba(255,255,255,0.15) !important;
-        border-radius: 20px !important;
-        padding: 20px 28px !important;
-        text-align: center !important;
-        font-size: 0.95rem !important;
-        color: #e5e7eb !important;
-        height: auto !important;
-        min-height: 65px !important;
-        transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1) !important;
-        backdrop-filter: blur(12px);
-        box-shadow: 
-            0 4px 20px rgba(0, 0, 0, 0.15),
-            0 0 0 1px rgba(255, 255, 255, 0.05) inset !important;
-    }
+    .example-btn:nth-child(1) { animation-delay: 0.4s; }
+    .example-btn:nth-child(2) { animation-delay: 0.55s; }
+    .example-btn:nth-child(3) { animation-delay: 0.7s; }
+    .example-btn:nth-child(4) { animation-delay: 0.85s; }
+    .example-btn:nth-child(5) { animation-delay: 1.0s; }
+    .example-btn:nth-child(6) { animation-delay: 1.15s; }
     
-    @keyframes cardAppear {
+    @keyframes exampleAppear {
         0% {
             opacity: 0;
-            transform: translateY(40px) scale(0.9);
-        }
-        60% {
-            opacity: 1;
-            transform: translateY(-5px) scale(1.02);
-        }
-        80% {
-            transform: translateY(2px) scale(0.99);
+            transform: translateY(30px);
         }
         100% {
             opacity: 1;
-            transform: translateY(0) scale(1);
+            transform: translateY(0);
         }
     }
     
-    /* Hover state for example buttons */
-    .examples-container .stButton button:hover {
-        background: linear-gradient(145deg, rgba(102, 126, 234, 0.35) 0%, rgba(118, 75, 162, 0.35) 100%) !important;
-        border-color: rgba(102, 126, 234, 0.6) !important;
-        transform: translateY(-6px) scale(1.03) !important;
-        box-shadow: 
-            0 15px 35px rgba(102, 126, 234, 0.3),
-            0 5px 15px rgba(0, 0, 0, 0.1),
-            0 0 0 1px rgba(102, 126, 234, 0.2) inset !important;
+    .example-btn:hover {
+        background: linear-gradient(145deg, rgba(102, 126, 234, 0.25) 0%, rgba(118, 75, 162, 0.25) 100%);
+        border-color: rgba(102, 126, 234, 0.5);
+        transform: translateY(-3px);
+        box-shadow: 0 8px 25px rgba(102, 126, 234, 0.2);
     }
     
-    .examples-container .stButton button:active {
-        transform: translateY(-2px) scale(1) !important;
-        box-shadow: 0 5px 15px rgba(102, 126, 234, 0.2) !important;
+    .example-btn:active {
+        transform: translateY(-1px);
     }
     
-    /* Light mode adjustments for example buttons */
+    /* Light mode */
     @media (prefers-color-scheme: light) {
-        .examples-container .stButton button {
-            background: linear-gradient(145deg, #ffffff 0%, #f8fafc 100%) !important;
-            border: 1px solid #e2e8f0 !important;
-            color: #374151 !important;
-            box-shadow: 
-                0 4px 20px rgba(0, 0, 0, 0.08),
-                0 0 0 1px rgba(0, 0, 0, 0.02) inset !important;
+        .example-btn {
+            background: linear-gradient(145deg, #ffffff 0%, #f8fafc 100%);
+            border: 1px solid #e2e8f0;
+            color: #374151;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.06);
         }
         
-        .examples-container .stButton button:hover {
-            background: linear-gradient(145deg, #eef2ff 0%, #e0e7ff 100%) !important;
-            border-color: #a5b4fc !important;
-            box-shadow: 
-                0 15px 35px rgba(102, 126, 234, 0.15),
-                0 5px 15px rgba(0, 0, 0, 0.05) !important;
+        .example-btn:hover {
+            background: linear-gradient(145deg, #eef2ff 0%, #e0e7ff 100%);
+            border-color: #a5b4fc;
         }
     }
     
@@ -840,31 +829,16 @@ components.html("""
         chatInput.insertBefore(btn, chatInput.firstChild);
     }
     
-    function animateExampleButtons() {
-        const container = doc.querySelector('.examples-container');
-        if (!container) return;
-        
-        // Find all buttons inside the examples container
-        const buttons = container.querySelectorAll('button');
-        if (buttons.length === 0) return;
-        
-        // Check if already animated
-        if (container.dataset.animated === 'true') return;
-        container.dataset.animated = 'true';
-        
-        // Apply staggered animation to each button
-        buttons.forEach((btn, index) => {
-            btn.style.opacity = '0';
-            btn.style.transform = 'translateY(40px) scale(0.9)';
-            btn.style.animation = `cardAppear 0.7s cubic-bezier(0.34, 1.56, 0.64, 1) forwards`;
-            btn.style.animationDelay = `${0.2 + (index * 0.2)}s`;
-        });
-    }
+    // Handle example button clicks - navigate with query param
+    window.parent.selectExample = function(idx) {
+        const url = new URL(window.parent.location.href);
+        url.searchParams.set('ex', idx);
+        window.parent.location.href = url.toString();
+    };
     
     function init() {
         updateScrollBehavior();
         addPaperclipButton();
-        animateExampleButtons();
     }
     
     // Auto-scroll in chat mode
@@ -891,7 +865,6 @@ components.html("""
     const observer = new MutationObserver(function() {
         updateScrollBehavior();
         addPaperclipButton();
-        animateExampleButtons();
     });
     observer.observe(doc.body, { childList: true, subtree: true });
 })();
@@ -1034,16 +1007,6 @@ def render_assistant_message(content, tool_names=None):
     st.markdown('</div>', unsafe_allow_html=True)
 
 
-# Example questions
-EXAMPLES = [
-    ("🚀", "How do I connect to Midway via SSH?"),
-    ("💾", "What are the storage quotas on Midway?"),
-    ("⚙️", "How do I submit a batch job with sbatch?"),
-    ("🐍", "How do I set up a Python environment?"),
-    ("🎮", "How do I run PyTorch on GPUs?"),
-    ("📊", "How do I check my allocation balance?"),
-]
-
 has_messages = len(st.session_state.messages) > 0
 
 if not has_messages:
@@ -1055,54 +1018,38 @@ if not has_messages:
     </div>
     ''', unsafe_allow_html=True)
     
-    # Examples - 3 rows of 2 buttons each with spacing
-    st.markdown('<div class="examples-container">', unsafe_allow_html=True)
+    # Example questions as pure HTML with animations
+    example_questions = [
+        ("🚀", "How do I connect to Midway via SSH?"),
+        ("💾", "What are the storage quotas on Midway?"),
+        ("⚙️", "How do I submit a batch job with sbatch?"),
+        ("🐍", "How do I set up a Python environment?"),
+        ("🎮", "How do I run PyTorch on GPUs?"),
+        ("📊", "How do I check my allocation balance?"),
+    ]
     
-    # Row 1
-    col1, col2 = st.columns(2, gap="large")
-    with col1:
-        if st.button(f"{EXAMPLES[0][0]}  {EXAMPLES[0][1]}", key="ex_0", use_container_width=True):
-            st.session_state.messages.append({"role": "user", "content": EXAMPLES[0][1]})
-            st.session_state.processing = True
-            st.rerun()
-    with col2:
-        if st.button(f"{EXAMPLES[1][0]}  {EXAMPLES[1][1]}", key="ex_1", use_container_width=True):
-            st.session_state.messages.append({"role": "user", "content": EXAMPLES[1][1]})
-            st.session_state.processing = True
-            st.rerun()
+    # Build HTML grid
+    buttons_html = '<div class="examples-grid">'
+    for i, (icon, question) in enumerate(example_questions):
+        buttons_html += f'<button class="example-btn" onclick="selectExample({i})">{icon} {question}</button>'
+    buttons_html += '</div>'
     
-    # Spacer
-    st.markdown('<div style="height: 1rem;"></div>', unsafe_allow_html=True)
+    st.markdown(buttons_html, unsafe_allow_html=True)
     
-    # Row 2
-    col3, col4 = st.columns(2, gap="large")
-    with col3:
-        if st.button(f"{EXAMPLES[2][0]}  {EXAMPLES[2][1]}", key="ex_2", use_container_width=True):
-            st.session_state.messages.append({"role": "user", "content": EXAMPLES[2][1]})
-            st.session_state.processing = True
-            st.rerun()
-    with col4:
-        if st.button(f"{EXAMPLES[3][0]}  {EXAMPLES[3][1]}", key="ex_3", use_container_width=True):
-            st.session_state.messages.append({"role": "user", "content": EXAMPLES[3][1]})
-            st.session_state.processing = True
-            st.rerun()
+    # Hidden selectbox to receive the click from JavaScript
+    # We use query params to communicate between JS and Streamlit
     
-    # Spacer
-    st.markdown('<div style="height: 1rem;"></div>', unsafe_allow_html=True)
-    
-    # Row 3
-    col5, col6 = st.columns(2, gap="large")
-    with col5:
-        if st.button(f"{EXAMPLES[4][0]}  {EXAMPLES[4][1]}", key="ex_4", use_container_width=True):
-            st.session_state.messages.append({"role": "user", "content": EXAMPLES[4][1]})
+    # Check if an example was selected via query param
+    query_params = st.query_params
+    if "ex" in query_params:
+        ex_idx = int(query_params["ex"])
+        if 0 <= ex_idx < len(example_questions):
+            selected_question = example_questions[ex_idx][1]
+            st.session_state.messages.append({"role": "user", "content": selected_question})
             st.session_state.processing = True
+            # Clear the query param
+            st.query_params.clear()
             st.rerun()
-    with col6:
-        if st.button(f"{EXAMPLES[5][0]}  {EXAMPLES[5][1]}", key="ex_5", use_container_width=True):
-            st.session_state.messages.append({"role": "user", "content": EXAMPLES[5][1]})
-            st.session_state.processing = True
-            st.rerun()
-    st.markdown('</div>', unsafe_allow_html=True)
 
 else:
     # Chat mode - trash button fixed at top right
