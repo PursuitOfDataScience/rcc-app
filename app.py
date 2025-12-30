@@ -467,25 +467,139 @@ st.markdown("""
         flex-direction: column;
         align-items: center;
         justify-content: center;
-        min-height: 20vh;
         text-align: center;
-        padding: 0.5rem;
-        margin-top: 5vh;
+        padding: 2rem 1rem;
+        margin-top: 8vh;
+        animation: fadeInDown 0.6s ease-out;
+    }
+    
+    @keyframes fadeInDown {
+        from {
+            opacity: 0;
+            transform: translateY(-20px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
     }
     
     .welcome-icon {
-        font-size: 2.5rem;
-        margin-bottom: 0.3rem;
+        font-size: 3rem;
+        margin-bottom: 0.5rem;
+        animation: bounceIn 0.8s ease-out 0.2s both;
+    }
+    
+    @keyframes bounceIn {
+        0% {
+            opacity: 0;
+            transform: scale(0.3);
+        }
+        50% {
+            transform: scale(1.1);
+        }
+        70% {
+            transform: scale(0.9);
+        }
+        100% {
+            opacity: 1;
+            transform: scale(1);
+        }
     }
     
     .welcome-title {
-        font-size: 1.8rem;
+        font-size: 2.2rem;
         font-weight: 600;
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         background-clip: text;
-        margin-bottom: 0.5rem;
+        margin-bottom: 2rem;
+        animation: fadeInUp 0.6s ease-out 0.3s both;
+    }
+    
+    @keyframes fadeInUp {
+        from {
+            opacity: 0;
+            transform: translateY(20px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+    
+    /* Example buttons container */
+    .examples-container {
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 0 1rem;
+    }
+    
+    /* Example buttons grid */
+    .examples-container [data-testid="stHorizontalBlock"] {
+        gap: 1rem !important;
+        margin-bottom: 1rem !important;
+    }
+    
+    /* Example buttons - with staggered animation */
+    .examples-container .stButton > button {
+        background: linear-gradient(135deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0.05) 100%) !important;
+        border: 1px solid rgba(255,255,255,0.1) !important;
+        border-radius: 16px !important;
+        padding: 18px 24px !important;
+        text-align: center !important;
+        font-size: 0.95rem !important;
+        color: #e5e7eb !important;
+        height: auto !important;
+        min-height: 60px !important;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+        opacity: 0;
+        transform: translateY(30px) scale(0.95);
+        animation: cardAppear 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+        backdrop-filter: blur(10px);
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1) !important;
+    }
+    
+    /* Staggered animation delays for each button */
+    .examples-container [data-testid="stHorizontalBlock"]:nth-of-type(1) .stButton:nth-child(1) button { animation-delay: 0.4s; }
+    .examples-container [data-testid="stHorizontalBlock"]:nth-of-type(1) .stButton:nth-child(2) button { animation-delay: 0.5s; }
+    .examples-container [data-testid="stHorizontalBlock"]:nth-of-type(2) .stButton:nth-child(1) button { animation-delay: 0.6s; }
+    .examples-container [data-testid="stHorizontalBlock"]:nth-of-type(2) .stButton:nth-child(2) button { animation-delay: 0.7s; }
+    .examples-container [data-testid="stHorizontalBlock"]:nth-of-type(3) .stButton:nth-child(1) button { animation-delay: 0.8s; }
+    .examples-container [data-testid="stHorizontalBlock"]:nth-of-type(3) .stButton:nth-child(2) button { animation-delay: 0.9s; }
+    
+    @keyframes cardAppear {
+        to {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+        }
+    }
+    
+    .examples-container .stButton > button:hover {
+        background: linear-gradient(135deg, rgba(102, 126, 234, 0.3) 0%, rgba(118, 75, 162, 0.3) 100%) !important;
+        border-color: rgba(102, 126, 234, 0.5) !important;
+        transform: translateY(-4px) scale(1.02) !important;
+        box-shadow: 0 12px 30px rgba(102, 126, 234, 0.25) !important;
+    }
+    
+    .examples-container .stButton > button:active {
+        transform: translateY(-2px) scale(1) !important;
+    }
+    
+    /* Light mode adjustments for example buttons */
+    @media (prefers-color-scheme: light) {
+        .examples-container .stButton > button {
+            background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%) !important;
+            border: 1px solid #e2e8f0 !important;
+            color: #374151 !important;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08) !important;
+        }
+        
+        .examples-container .stButton > button:hover {
+            background: linear-gradient(135deg, #eef2ff 0%, #e0e7ff 100%) !important;
+            border-color: #a5b4fc !important;
+        }
     }
     
     /* Input container with paperclip */
@@ -547,49 +661,6 @@ st.markdown("""
         min-height: 56px !important;
         display: flex !important;
         align-items: center !important;
-    }
-    
-    /* Example buttons - with staggered animation */
-    .main .stButton > button {
-        background: linear-gradient(135deg, #fff 0%, #f8fafc 100%) !important;
-        border: 1px solid #e2e8f0 !important;
-        border-radius: 12px !important;
-        padding: 10px 14px !important;
-        text-align: left !important;
-        font-size: 0.8rem !important;
-        color: #374151 !important;
-        height: auto !important;
-        min-height: 40px !important;
-        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
-        opacity: 0;
-        transform: translateY(20px);
-        animation: buttonAppear 0.5s cubic-bezier(0.4, 0, 0.2, 1) forwards;
-    }
-    
-    /* Staggered animation delays for each button */
-    .main [data-testid="stHorizontalBlock"]:nth-of-type(1) .stButton:nth-child(1) button { animation-delay: 0.1s; }
-    .main [data-testid="stHorizontalBlock"]:nth-of-type(1) .stButton:nth-child(2) button { animation-delay: 0.2s; }
-    .main [data-testid="stHorizontalBlock"]:nth-of-type(2) .stButton:nth-child(1) button { animation-delay: 0.3s; }
-    .main [data-testid="stHorizontalBlock"]:nth-of-type(2) .stButton:nth-child(2) button { animation-delay: 0.4s; }
-    .main [data-testid="stHorizontalBlock"]:nth-of-type(3) .stButton:nth-child(1) button { animation-delay: 0.5s; }
-    .main [data-testid="stHorizontalBlock"]:nth-of-type(3) .stButton:nth-child(2) button { animation-delay: 0.6s; }
-    
-    @keyframes buttonAppear {
-        to {
-            opacity: 1;
-            transform: translateY(0);
-        }
-    }
-    
-    .main .stButton > button:hover {
-        background: linear-gradient(135deg, #eef2ff 0%, #e0e7ff 100%) !important;
-        border-color: #a5b4fc !important;
-        transform: translateY(-2px) !important;
-        box-shadow: 0 6px 20px rgba(102, 126, 234, 0.15) !important;
-    }
-    
-    .main .stButton > button:active {
-        transform: translateY(0) !important;
     }
     
     /* User message */
@@ -806,15 +877,6 @@ st.markdown("""
     }
     
     @media (prefers-color-scheme: dark) {
-        .main .stButton > button {
-            background: linear-gradient(135deg, #1f2937 0%, #111827 100%) !important;
-            border-color: #374151 !important;
-            color: #e5e7eb !important;
-        }
-        .main .stButton > button:hover {
-            background: linear-gradient(135deg, #374151 0%, #1f2937 100%) !important;
-            border-color: #6366f1 !important;
-        }
         .tool-badge {
             background: #1e3a5f;
             color: #7dd3fc;
@@ -1137,14 +1199,16 @@ if not has_messages:
     </div>
     ''', unsafe_allow_html=True)
     
-    # 2-column layout with full questions
-    cols = st.columns(2)
+    # Examples container with 2-column layout
+    st.markdown('<div class="examples-container">', unsafe_allow_html=True)
+    cols = st.columns(2, gap="medium")
     for i, (icon, question) in enumerate(EXAMPLES):
         with cols[i % 2]:
             if st.button(f"{icon}  {question}", key=f"ex_{i}", use_container_width=True):
                 st.session_state.messages.append({"role": "user", "content": question})
                 st.session_state.processing = True
                 st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
 
 else:
     # Chat mode - trash button fixed at top right
