@@ -749,6 +749,26 @@ st.markdown("""
         height: 100vh !important;
     }
     
+    /* Attachment chip button - only target the one in the wrapper */
+    .attachment-chip-wrapper [data-testid="stBaseButton-secondary"] {
+        background: linear-gradient(135deg, rgba(34, 197, 94, 0.15) 0%, rgba(34, 197, 94, 0.1) 100%) !important;
+        border: 1px solid rgba(34, 197, 94, 0.3) !important;
+        border-radius: 20px !important;
+        padding: 6px 14px !important;
+        color: #22c55e !important;
+        font-size: 0.85rem !important;
+    }
+    
+    .attachment-chip-wrapper [data-testid="stBaseButton-secondary"]:hover {
+        background: rgba(239, 68, 68, 0.15) !important;
+        border-color: rgba(239, 68, 68, 0.5) !important;
+        color: #ef4444 !important;
+    }
+    
+    .attachment-chip-wrapper {
+        max-width: 800px;
+        margin: 0 auto 8px auto;
+    }
 
     
     @media (prefers-color-scheme: dark) {
@@ -1047,19 +1067,18 @@ if uploaded_file is not None and st.session_state.uploaded_file_data is None:
     file_data = process_uploaded_file(uploaded_file)
     st.session_state.uploaded_file_data = file_data
 
-# Show attachment status
+# Show attachment status as a compact chip above the chat input
 if st.session_state.uploaded_file_data and st.session_state.uploaded_file_data.get("type") != "error":
     file_data = st.session_state.uploaded_file_data
     icon = get_file_icon(file_data.get("filename", "file"))
     filename = file_data.get("filename", "file")
     
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col2:
-        st.success(f"{icon} **{filename}** attached")
-        if st.button("✕ Remove", key="remove_attachment", use_container_width=True):
-            st.session_state.uploaded_file_data = None
-            st.session_state.uploader_key += 1
-            st.rerun()
+    st.markdown('<div class="attachment-chip-wrapper">', unsafe_allow_html=True)
+    if st.button(f"{icon} {filename}  ✕", key="remove_attachment", type="secondary"):
+        st.session_state.uploaded_file_data = None
+        st.session_state.uploader_key += 1
+        st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
 
 # Chat input
 prompt = st.chat_input("Ask any question about RCC...", disabled=st.session_state.processing)
