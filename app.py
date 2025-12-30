@@ -2,7 +2,7 @@
 """
 RCC User Guide AI Assistant - Streamlit App
 A chatbot that answers questions using RCC documentation (RAG-only, no command-line tools).
-File upload support for PDFs and text files via sidebar.
+File upload support for PDFs and text files via paperclip button.
 """
 import os
 import sys
@@ -577,6 +577,7 @@ st.markdown("""
         min-height: 56px !important;
         display: flex !important;
         align-items: center !important;
+        padding-left: 50px !important;
         position: relative !important;
         z-index: 100 !important;
     }
@@ -619,6 +620,19 @@ st.markdown("""
         min-height: 56px !important;
         display: flex !important;
         align-items: center !important;
+    }
+    
+    /* Hide file uploader completely */
+    [data-testid="stFileUploader"] {
+        position: absolute !important;
+        width: 1px !important;
+        height: 1px !important;
+        padding: 0 !important;
+        margin: -1px !important;
+        overflow: hidden !important;
+        clip: rect(0, 0, 0, 0) !important;
+        white-space: nowrap !important;
+        border: 0 !important;
     }
     
     /* User message */
@@ -725,11 +739,6 @@ st.markdown("""
         100% { background-position: 100% 0; }
     }
     
-    /* Hide file uploader - it's in sidebar now */
-    [data-testid="stFileUploader"] {
-        /* visible in sidebar, hidden elsewhere */
-    }
-    
     /* Remove scrollbar on landing page */
     html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
         overflow-x: hidden !important;
@@ -752,7 +761,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# JavaScript for scroll control and auto-focus
+# JavaScript for paperclip button and scroll control
 import streamlit.components.v1 as components
 components.html("""
 <script>
@@ -775,6 +784,37 @@ components.html("""
         }
     }
     
+    function addPaperclipButton() {
+        const chatInput = doc.querySelector('[data-testid="stChatInput"]');
+        if (!chatInput || doc.getElementById('paperclip-btn')) return;
+        
+        const btn = doc.createElement('button');
+        btn.id = 'paperclip-btn';
+        btn.type = 'button';
+        btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>';
+        btn.title = 'Attach file (PDF, TXT, MD, PY, JSON, CSV)';
+        btn.style.cssText = 'position:absolute;left:12px;top:50%;transform:translateY(-50%);z-index:1000;background:transparent;border:none;cursor:pointer;padding:8px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#9ca3af;transition:all 0.2s;';
+        
+        btn.onmouseenter = function() { this.style.background='rgba(102,126,234,0.1)'; this.style.color='#667eea'; };
+        btn.onmouseleave = function() { this.style.background='transparent'; this.style.color='#9ca3af'; };
+        
+        btn.onclick = function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            const fileInput = doc.querySelector('[data-testid="stFileUploader"] input[type="file"]');
+            if (fileInput) fileInput.click();
+        };
+        
+        chatInput.style.position = 'relative';
+        chatInput.insertBefore(btn, chatInput.firstChild);
+    }
+    
+    function init() {
+        updateScrollBehavior();
+        addPaperclipButton();
+    }
+    
+    // Auto-scroll in chat mode
     setTimeout(function() {
         const chatContainer = doc.querySelector('.chat-container');
         if (chatContainer) {
@@ -782,6 +822,7 @@ components.html("""
         }
     }, 100);
     
+    // Auto-focus on typing
     doc.addEventListener('keydown', function(e) {
         if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
         if (e.ctrlKey || e.altKey || e.metaKey) return;
@@ -791,10 +832,12 @@ components.html("""
         if (input) input.focus();
     });
     
-    updateScrollBehavior();
+    init();
     
+    // Re-run on DOM changes
     const observer = new MutationObserver(function() {
         updateScrollBehavior();
+        addPaperclipButton();
     });
     observer.observe(doc.body, { childList: true, subtree: true });
 })();
@@ -992,25 +1035,28 @@ else:
                 render_assistant_message(text, msg.get("tool_names"))
     st.markdown('</div>', unsafe_allow_html=True)
 
-# File uploader in sidebar
-with st.sidebar:
-    st.markdown("### 📎 Attach a file")
-    uploaded_file = st.file_uploader(
-        "Upload",
-        type=['pdf', 'txt', 'md', 'py', 'json', 'csv'],
-        key=f"file_uploader_{st.session_state.uploader_key}",
-        label_visibility="collapsed"
-    )
+# Hidden file uploader
+uploaded_file = st.file_uploader(
+    "Upload",
+    type=['pdf', 'txt', 'md', 'py', 'json', 'csv'],
+    key=f"file_uploader_{st.session_state.uploader_key}",
+    label_visibility="collapsed"
+)
+
+if uploaded_file is not None and st.session_state.uploaded_file_data is None:
+    file_data = process_uploaded_file(uploaded_file)
+    st.session_state.uploaded_file_data = file_data
+
+# Show attachment status
+if st.session_state.uploaded_file_data and st.session_state.uploaded_file_data.get("type") != "error":
+    file_data = st.session_state.uploaded_file_data
+    icon = get_file_icon(file_data.get("filename", "file"))
+    filename = file_data.get("filename", "file")
     
-    if uploaded_file is not None and st.session_state.uploaded_file_data is None:
-        file_data = process_uploaded_file(uploaded_file)
-        st.session_state.uploaded_file_data = file_data
-    
-    if st.session_state.uploaded_file_data and st.session_state.uploaded_file_data.get("type") != "error":
-        file_data = st.session_state.uploaded_file_data
-        icon = get_file_icon(file_data.get("filename", "file"))
-        st.success(f"{icon} {file_data.get('filename', 'file')}")
-        if st.button("🗑️ Remove", key="remove_attachment"):
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        st.success(f"{icon} **{filename}** attached")
+        if st.button("✕ Remove", key="remove_attachment", use_container_width=True):
             st.session_state.uploaded_file_data = None
             st.session_state.uploader_key += 1
             st.rerun()
