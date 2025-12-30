@@ -2,13 +2,16 @@
 """
 RCC User Guide AI Assistant - Streamlit App
 A chatbot that answers questions using RCC documentation (RAG-only, no command-line tools).
+Now with file upload support for PDFs and images.
 """
 import os
 import sys
 import json
 import random
+import base64
 import anthropic
 import streamlit as st
+from io import BytesIO
 
 # --- API Configuration ---
 API_KEY = os.getenv("ANTHROPIC_API_KEY")
@@ -27,6 +30,142 @@ def get_client():
         api_key=API_KEY,
         base_url="https://api.minimax.io/anthropic"
     )
+
+
+# --- File Processing Functions ---
+def extract_pdf_text(file_bytes: bytes) -> str:
+    """Extract text from a PDF file."""
+    try:
+        import fitz
+        doc = fitz.open(stream=file_bytes, filetype="pdf")
+        pdf_text = ""
+        for page in doc:
+            pdf_text += page.get_text() + "\n"
+        num_pages = len(doc)
+        doc.close()
+        return pdf_text, num_pages
+    except ImportError:
+        try:
+            from pypdf import PdfReader
+            pdf_reader = PdfReader(BytesIO(file_bytes))
+            pdf_text = ""
+            for page in pdf_reader.pages:
+                text = page.extract_text()
+                if text:
+                    pdf_text += text + "\n"
+            return pdf_text, len(pdf_reader.pages)
+        except Exception as e:
+            return f"Error extracting PDF text: {str(e)}", 0
+
+
+def encode_image_to_base64(file_bytes: bytes) -> str:
+    """Encode image bytes to base64 string."""
+    return base64.standard_b64encode(file_bytes).decode("utf-8")
+
+
+def get_image_media_type(filename: str) -> str:
+    """Get the media type based on file extension."""
+    ext = filename.lower().split('.')[-1]
+    media_types = {
+        'png': 'image/png',
+        'jpg': 'image/jpeg',
+        'jpeg': 'image/jpeg',
+        'gif': 'image/gif',
+        'webp': 'image/webp',
+    }
+    return media_types.get(ext, 'image/png')
+
+
+def process_uploaded_file(uploaded_file):
+    """Process an uploaded file and return content for the API."""
+    filename = uploaded_file.name.lower()
+    file_bytes = uploaded_file.read()
+    uploaded_file.seek(0)
+    
+    if filename.endswith('.pdf'):
+        pdf_text, num_pages = extract_pdf_text(file_bytes)
+        if num_pages > 0:
+            if len(pdf_text) > 30000:
+                pdf_text = pdf_text[:30000] + "\n\n[... Document truncated due to length ...]"
+            return {
+                "type": "pdf",
+                "filename": uploaded_file.name,
+                "num_pages": num_pages,
+                "text": pdf_text
+            }
+        else:
+            return {"type": "error", "message": pdf_text}
+    
+    elif any(filename.endswith(ext) for ext in ['.png', '.jpg', '.jpeg', '.gif', '.webp']):
+        base64_data = encode_image_to_base64(file_bytes)
+        media_type = get_image_media_type(filename)
+        return {
+            "type": "image",
+            "filename": uploaded_file.name,
+            "media_type": media_type,
+            "base64_data": base64_data
+        }
+    
+    elif any(filename.endswith(ext) for ext in ['.txt', '.md', '.py', '.json', '.csv', '.yml', '.yaml']):
+        try:
+            text_content = file_bytes.decode('utf-8')
+            if len(text_content) > 30000:
+                text_content = text_content[:30000] + "\n\n[... File truncated due to length ...]"
+            return {
+                "type": "text",
+                "filename": uploaded_file.name,
+                "text": text_content
+            }
+        except UnicodeDecodeError:
+            return {"type": "error", "message": f"Could not decode {uploaded_file.name} as text"}
+    
+    else:
+        return {"type": "error", "message": f"Unsupported file type: {uploaded_file.name}"}
+
+
+def build_message_content(user_text: str, file_data: dict = None) -> list:
+    """Build message content array with text and optional file data."""
+    content = []
+    
+    if file_data:
+        if file_data["type"] == "image":
+            content.append({
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": file_data["media_type"],
+                    "data": file_data["base64_data"]
+                }
+            })
+            text_with_context = f"[Attached image: {file_data['filename']}]\n\n{user_text}"
+            content.append({"type": "text", "text": text_with_context})
+        
+        elif file_data["type"] == "pdf":
+            pdf_context = f"""[Attached PDF: {file_data['filename']} ({file_data['num_pages']} pages)]
+
+--- PDF Content ---
+{file_data['text']}
+--- End of PDF Content ---
+
+User's question: {user_text}"""
+            content.append({"type": "text", "text": pdf_context})
+        
+        elif file_data["type"] == "text":
+            text_context = f"""[Attached file: {file_data['filename']}]
+
+--- File Content ---
+{file_data['text']}
+--- End of File Content ---
+
+User's question: {user_text}"""
+            content.append({"type": "text", "text": text_context})
+        
+        elif file_data["type"] == "error":
+            content.append({"type": "text", "text": f"[File upload error: {file_data['message']}]\n\n{user_text}"})
+    else:
+        content.append({"type": "text", "text": user_text})
+    
+    return content
 
 
 # --- Documentation Reader (RAG) ---
@@ -240,8 +379,14 @@ You have DOCUMENTATION TOOLS available that retrieve official RCC documentation:
 - read_*_doc tools that retrieve markdown documentation files
 - read_web_* tools that retrieve content from the RCC website
 
+You can also analyze files that users upload:
+- PDF documents: You will receive the extracted text content
+- Images: You can view and analyze images directly
+- Text files: You will receive the file contents
+
 GUIDELINES:
 - Use documentation tools to answer questions about RCC systems and procedures
+- When users upload files, analyze them and provide helpful information
 - Be helpful, accurate, and cite specific commands when possible
 - NEVER include raw markdown syntax like {:target="_blank"} in responses
 
@@ -263,7 +408,6 @@ st.markdown("""
         max-width: 900px;
     }
     
-    /* Reduce vertical gaps */
     [data-testid="stVerticalBlock"] > div {
         margin-bottom: 0 !important;
     }
@@ -293,7 +437,7 @@ st.markdown("""
         background-clip: text;
     }
     
-    /* Chat input - wider and shorter like Claude */
+    /* Chat input */
     .stChatInput {
         max-width: 800px !important;
         margin: 0 auto !important;
@@ -303,7 +447,9 @@ st.markdown("""
         border-radius: 24px !important;
         border: 2px solid #e5e7eb !important;
         box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1) !important;
-        min-height: 60px !important;
+        min-height: 56px !important;
+        display: flex !important;
+        align-items: center !important;
     }
     
     .stChatInput > div:focus-within {
@@ -313,13 +459,78 @@ st.markdown("""
     
     .stChatInput textarea {
         font-size: 1.1rem !important;
-        padding: 18px 24px !important;
-        line-height: 1.4 !important;
+        padding: 16px 24px !important;
+        line-height: 1.5 !important;
+        display: flex !important;
+        align-items: center !important;
+        min-height: 24px !important;
+        height: auto !important;
+        resize: none !important;
+        vertical-align: middle !important;
+    }
+    
+    .stChatInput textarea:not(:focus) {
+        padding-top: 16px !important;
+        padding-bottom: 16px !important;
     }
     
     .stChatInput textarea::placeholder {
         font-size: 1.1rem !important;
         color: #9ca3af !important;
+        line-height: 1.5 !important;
+    }
+    
+    .stChatInput div[data-baseweb="textarea"] {
+        padding: 0 !important;
+    }
+    
+    .stChatInput div[data-baseweb="base-input"] {
+        min-height: 56px !important;
+        display: flex !important;
+        align-items: center !important;
+    }
+    
+    /* Example buttons - with staggered animation */
+    .main .stButton > button {
+        background: linear-gradient(135deg, #fff 0%, #f8fafc 100%) !important;
+        border: 1px solid #e2e8f0 !important;
+        border-radius: 14px !important;
+        padding: 14px 18px !important;
+        text-align: left !important;
+        font-size: 0.85rem !important;
+        color: #374151 !important;
+        height: auto !important;
+        min-height: 50px !important;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+        opacity: 0;
+        transform: translateY(20px);
+        animation: buttonAppear 0.5s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+    }
+    
+    /* Staggered animation delays for each button */
+    .main [data-testid="stHorizontalBlock"]:nth-of-type(1) .stButton:nth-child(1) button { animation-delay: 0.1s; }
+    .main [data-testid="stHorizontalBlock"]:nth-of-type(1) .stButton:nth-child(2) button { animation-delay: 0.2s; }
+    .main [data-testid="stHorizontalBlock"]:nth-of-type(2) .stButton:nth-child(1) button { animation-delay: 0.3s; }
+    .main [data-testid="stHorizontalBlock"]:nth-of-type(2) .stButton:nth-child(2) button { animation-delay: 0.4s; }
+    .main [data-testid="stHorizontalBlock"]:nth-of-type(3) .stButton:nth-child(1) button { animation-delay: 0.5s; }
+    .main [data-testid="stHorizontalBlock"]:nth-of-type(3) .stButton:nth-child(2) button { animation-delay: 0.6s; }
+    
+    @keyframes buttonAppear {
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+    
+    .main .stButton > button:hover {
+        background: linear-gradient(135deg, #eef2ff 0%, #e0e7ff 100%) !important;
+        border-color: #a5b4fc !important;
+        transform: translateY(-2px) !important;
+        box-shadow: 0 6px 20px rgba(102, 126, 234, 0.15) !important;
+    }
+    
+    .main .stButton > button:active {
+        transform: translateY(0) !important;
     }
     
     /* User message */
@@ -330,11 +541,7 @@ st.markdown("""
         padding-right: 1rem;
     }
     
-    .user-message:first-child {
-        margin-top: 0.25rem;
-    }
-    
-    .user-bubble {
+    .user-bubble, .user-bubble-with-attachment {
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         color: white;
         padding: 12px 18px;
@@ -343,6 +550,17 @@ st.markdown("""
         line-height: 1.5;
         max-width: 70%;
         box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+    }
+    
+    .attachment-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        background: rgba(255,255,255,0.2);
+        padding: 4px 10px;
+        border-radius: 12px;
+        font-size: 0.8rem;
+        margin-bottom: 8px;
     }
     
     /* Assistant message */
@@ -360,41 +578,11 @@ st.markdown("""
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
     }
     
-    /* Hide link icons/anchors in markdown headers - very aggressive */
+    /* Hide anchor links */
     .stMarkdown a.header-anchor,
     .stMarkdown h1 a, .stMarkdown h2 a, .stMarkdown h3 a,
     .stMarkdown h4 a, .stMarkdown h5 a, .stMarkdown h6 a,
-    .stChatMessage a[href^="#"],
-    a.anchor-link, .anchor-link,
-    [data-testid="stChatMessage"] a[href*="#"],
-    .stMarkdown a:has(svg),
-    a:empty, a[href=""],
-    .stMarkdown a[href^="#"],
-    [data-testid="stMarkdownContainer"] a[href^="#"],
-    .element-container a[href^="#"],
-    h1 a[href^="#"], h2 a[href^="#"], h3 a[href^="#"],
-    h4 a[href^="#"], h5 a[href^="#"], h6 a[href^="#"],
-    .stMarkdown h1 > a, .stMarkdown h2 > a, .stMarkdown h3 > a,
-    .stMarkdown h4 > a, .stMarkdown h5 > a, .stMarkdown h6 > a,
-    a[data-header-anchor], [class*="anchor"],
-    a[aria-hidden="true"] {
-        display: none !important;
-        visibility: hidden !important;
-        opacity: 0 !important;
-        width: 0 !important;
-        height: 0 !important;
-        pointer-events: none !important;
-    }
-    
-    /* Hide any link icon next to headers */
-    .stMarkdown h1::after, .stMarkdown h2::after, .stMarkdown h3::after,
-    .stMarkdown h4::after, .stMarkdown h5::after, .stMarkdown h6::after {
-        display: none !important;
-    }
-    
-    /* Prevent header links from showing on hover */
-    .stMarkdown h1:hover a, .stMarkdown h2:hover a, .stMarkdown h3:hover a,
-    .stMarkdown h4:hover a, .stMarkdown h5:hover a, .stMarkdown h6:hover a {
+    a[href^="#"], a:empty {
         display: none !important;
     }
     
@@ -410,31 +598,13 @@ st.markdown("""
         border: 1px solid #bae6fd;
     }
     
-    /* Chat container - minimal top margin */
+    /* Chat container */
     .chat-container {
-        padding-bottom: 80px;
+        padding-bottom: 140px;
         margin-top: 0;
     }
     
-    /* Clear button row - very compact */
-    .stColumns {
-        margin-bottom: 0 !important;
-        gap: 0 !important;
-    }
-    
-    /* Reduce gap after clear button */
-    [data-testid="stHorizontalBlock"] {
-        margin-bottom: 0.25rem !important;
-    }
-    
-    /* Make clear button small */
-    [data-testid="stHorizontalBlock"] button {
-        padding: 0.25rem 0.5rem !important;
-        min-height: unset !important;
-        height: auto !important;
-    }
-    
-    /* Searching animation */
+    /* Status animation */
     .search-status {
         padding: 0.5rem 1rem;
         margin: 0.5rem 0;
@@ -457,66 +627,178 @@ st.markdown("""
         100% { background-position: 100% 0; }
     }
     
-    /* Example buttons */
-    .main .stButton > button {
-        background: linear-gradient(135deg, #fff 0%, #f8fafc 100%) !important;
-        border: 1px solid #e2e8f0 !important;
-        border-radius: 14px !important;
-        padding: 14px 18px !important;
-        text-align: left !important;
-        font-size: 0.85rem !important;
-        color: #374151 !important;
-        height: auto !important;
-        min-height: 50px !important;
-        transition: all 0.2s ease !important;
+    /* File uploader */
+    [data-testid="stFileUploader"] {
+        max-width: 800px;
+        margin: 0 auto;
     }
     
-    .main .stButton > button:hover {
-        background: linear-gradient(135deg, #eef2ff 0%, #e0e7ff 100%) !important;
-        border-color: #a5b4fc !important;
-        transform: translateY(-2px) !important;
-        box-shadow: 0 6px 20px rgba(102, 126, 234, 0.15) !important;
+    [data-testid="stFileUploader"] section {
+        padding: 0.75rem !important;
+        border: 2px dashed #e5e7eb !important;
+        border-radius: 16px !important;
+        background: #f9fafb !important;
     }
     
-    /* Clear button compact */
-    .clear-btn {
-        margin: 0 !important;
-        padding: 0 !important;
+    [data-testid="stFileUploader"] section:hover {
+        border-color: #667eea !important;
+        background: #f5f3ff !important;
+    }
+    
+    /* Attachment preview */
+    .attachment-preview-bar {
+        max-width: 800px;
+        margin: 0 auto 0.5rem auto;
+        padding: 0 1rem;
+    }
+    
+    .attachment-preview {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 8px 14px;
+        border-radius: 16px;
+        font-size: 0.85rem;
+        box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+    }
+    
+    /* Paste hint */
+    .paste-hint {
+        text-align: center;
+        color: #9ca3af;
+        font-size: 0.75rem;
+        margin-top: 0.75rem;
+        opacity: 0.8;
     }
     
     @media (prefers-color-scheme: dark) {
-        .tool-badge {
-            background: #1e3a5f;
-            color: #7dd3fc;
-            border-color: #0369a1;
-        }
         .main .stButton > button {
             background: linear-gradient(135deg, #1f2937 0%, #111827 100%) !important;
             border-color: #374151 !important;
             color: #e5e7eb !important;
         }
+        .main .stButton > button:hover {
+            background: linear-gradient(135deg, #374151 0%, #1f2937 100%) !important;
+            border-color: #6366f1 !important;
+        }
+        .tool-badge {
+            background: #1e3a5f;
+            color: #7dd3fc;
+            border-color: #0369a1;
+        }
+        [data-testid="stFileUploader"] section {
+            background: #1f2937 !important;
+            border-color: #374151 !important;
+        }
     }
 </style>
 """, unsafe_allow_html=True)
 
-# JavaScript for auto-focus on any keypress
+# JavaScript for drag/drop, paste, and auto-focus
 import streamlit.components.v1 as components
 components.html("""
 <script>
 (function() {
     const doc = window.parent.document;
     
-    // Auto-scroll to bottom on page load
-    setTimeout(function() {
-        const mainContent = doc.querySelector('[data-testid="stAppViewBlockContainer"]') || 
-                           doc.querySelector('.main') || 
-                           doc.querySelector('[data-testid="stVerticalBlock"]');
-        if (mainContent) {
-            window.parent.scrollTo({ top: doc.body.scrollHeight, behavior: 'smooth' });
+    // Create drop overlay
+    let overlay = doc.getElementById('drop-overlay');
+    if (!overlay) {
+        overlay = doc.createElement('div');
+        overlay.id = 'drop-overlay';
+        overlay.innerHTML = '<div class="drop-content"><div class="drop-icon">📎</div><div class="drop-text">Drop your file here</div></div>';
+        overlay.style.cssText = 'display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(102,126,234,0.15);backdrop-filter:blur(4px);z-index:99999;justify-content:center;align-items:center;';
+        doc.body.appendChild(overlay);
+        
+        const style = doc.createElement('style');
+        style.textContent = `
+            #drop-overlay .drop-content {
+                background: white;
+                padding: 3rem 4rem;
+                border-radius: 24px;
+                border: 3px dashed #667eea;
+                text-align: center;
+                box-shadow: 0 20px 60px rgba(0,0,0,0.15);
+            }
+            #drop-overlay .drop-icon {
+                font-size: 4rem;
+                margin-bottom: 1rem;
+                animation: bounce 1s ease-in-out infinite;
+            }
+            #drop-overlay .drop-text {
+                font-size: 1.2rem;
+                color: #667eea;
+                font-weight: 600;
+            }
+            @keyframes bounce {
+                0%, 100% { transform: translateY(0); }
+                50% { transform: translateY(-10px); }
+            }
+            @media (prefers-color-scheme: dark) {
+                #drop-overlay .drop-content { background: #1f2937; }
+                #drop-overlay .drop-text { color: #a5b4fc; }
+            }
+        `;
+        doc.head.appendChild(style);
+    }
+    
+    let dragCounter = 0;
+    
+    doc.addEventListener('dragenter', function(e) {
+        e.preventDefault();
+        dragCounter++;
+        if (dragCounter === 1) overlay.style.display = 'flex';
+    });
+    
+    doc.addEventListener('dragleave', function(e) {
+        e.preventDefault();
+        dragCounter--;
+        if (dragCounter === 0) overlay.style.display = 'none';
+    });
+    
+    doc.addEventListener('dragover', function(e) { e.preventDefault(); });
+    
+    doc.addEventListener('drop', function(e) {
+        e.preventDefault();
+        dragCounter = 0;
+        overlay.style.display = 'none';
+        
+        const files = e.dataTransfer.files;
+        if (files.length > 0) {
+            const fileInput = doc.querySelector('input[type="file"]');
+            if (fileInput) {
+                const dt = new DataTransfer();
+                dt.items.add(files[0]);
+                fileInput.files = dt.files;
+                fileInput.dispatchEvent(new Event('change', { bubbles: true }));
+            }
         }
+    });
+    
+    doc.addEventListener('paste', function(e) {
+        const items = e.clipboardData.items;
+        for (let i = 0; i < items.length; i++) {
+            if (items[i].type.indexOf('image') !== -1) {
+                const file = items[i].getAsFile();
+                const fileInput = doc.querySelector('input[type="file"]');
+                if (fileInput && file) {
+                    const dt = new DataTransfer();
+                    dt.items.add(file);
+                    fileInput.files = dt.files;
+                    fileInput.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+                break;
+            }
+        }
+    });
+    
+    // Auto-scroll and auto-focus
+    setTimeout(function() {
+        window.parent.scrollTo({ top: doc.body.scrollHeight, behavior: 'smooth' });
     }, 100);
     
-    // Auto-focus on keypress
     doc.addEventListener('keydown', function(e) {
         if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
         if (e.ctrlKey || e.altKey || e.metaKey) return;
@@ -538,6 +820,8 @@ if "processing" not in st.session_state:
     st.session_state.processing = False
 if "client" not in st.session_state:
     st.session_state.client = get_client()
+if "uploaded_file_data" not in st.session_state:
+    st.session_state.uploaded_file_data = None
 
 
 def collect_stream_response(stream):
@@ -599,7 +883,6 @@ def format_tool_names(tool_names):
     return ", ".join(f"{n} (×{c})" if c > 1 else n for n, c in tool_counts.items())
 
 
-# Base URL for the actual RCC documentation website
 RCC_DOCS_BASE_URL = "https://rcc-uchicago.github.io/user-guide/"
 
 def fix_markdown_links(text):
@@ -610,44 +893,52 @@ def fix_markdown_links(text):
         link_text = match.group(1)
         link_target = match.group(2)
         
-        # If it's already a proper http/https URL, keep it
         if link_target.startswith(('http://', 'https://')):
             return match.group(0)
         
-        # Check if it's a tool name reference (like read_sbatch_doc)
         if link_target in DOC_PATHS:
-            # Convert to real RCC docs URL (remove .md extension for web)
             doc_path = DOC_PATHS[link_target].replace('.md', '')
             return f'[{link_text}]({RCC_DOCS_BASE_URL}{doc_path}/)'
         
-        # Check if it's a direct path reference (like slurm/sbatch.md)
         for tool_name, doc_path in DOC_PATHS.items():
             if link_target == doc_path or link_target == doc_path.replace('.md', ''):
                 clean_path = doc_path.replace('.md', '')
                 return f'[{link_text}]({RCC_DOCS_BASE_URL}{clean_path}/)'
         
-        # For any other relative links (like advance.md), try to construct URL
         if link_target.endswith('.md'):
             clean_path = link_target.replace('.md', '')
             return f'[{link_text}]({RCC_DOCS_BASE_URL}{clean_path}/)'
         
-        # If we can't resolve it, just return the link text without link
         return link_text
     
-    # Match markdown links: [text](url)
     text = re.sub(r'\[([^\]]+)\]\(([^)]+)\)', replace_link, text)
     return text
 
 
-def render_user_message(content):
-    """Render user message."""
+def get_file_icon(filename: str) -> str:
+    """Get appropriate icon for file type."""
+    ext = filename.lower().split('.')[-1]
+    icons = {
+        'pdf': '📄', 'png': '🖼️', 'jpg': '🖼️', 'jpeg': '🖼️', 'gif': '🖼️', 'webp': '🖼️',
+        'txt': '📝', 'md': '📝', 'py': '🐍', 'json': '📋', 'csv': '📊',
+    }
+    return icons.get(ext, '📎')
+
+
+def render_user_message(content, file_info=None):
+    """Render user message with optional file attachment."""
     escaped = content.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;').replace('\n', '<br>')
-    st.markdown(f'<div class="user-message"><div class="user-bubble">{escaped}</div></div>', unsafe_allow_html=True)
+    
+    if file_info:
+        icon = get_file_icon(file_info['filename'])
+        file_badge = f'<div class="attachment-badge">{icon} {file_info["filename"]}</div>'
+        st.markdown(f'<div class="user-message"><div class="user-bubble-with-attachment">{file_badge}{escaped}</div></div>', unsafe_allow_html=True)
+    else:
+        st.markdown(f'<div class="user-message"><div class="user-bubble">{escaped}</div></div>', unsafe_allow_html=True)
 
 
 def render_assistant_message(content, tool_names=None):
     """Render assistant message."""
-    # Fix markdown links to point to real RCC documentation
     content = fix_markdown_links(content)
     st.markdown('<div class="assistant-wrapper">', unsafe_allow_html=True)
     with st.chat_message("assistant"):
@@ -657,7 +948,7 @@ def render_assistant_message(content, tool_names=None):
     st.markdown('</div>', unsafe_allow_html=True)
 
 
-# Example questions
+# Example questions - ORIGINAL full text
 EXAMPLES = [
     ("🚀", "How do I connect to Midway via SSH?"),
     ("💾", "What are the storage quotas on Midway?"),
@@ -671,8 +962,14 @@ has_messages = len(st.session_state.messages) > 0
 
 if not has_messages:
     # Welcome screen
-    st.markdown('<div class="welcome-container"><div class="welcome-icon">📚 ➡️ 🎯</div><h1 class="welcome-title">What can I help you with?</h1></div>', unsafe_allow_html=True)
+    st.markdown('''
+    <div class="welcome-container">
+        <div class="welcome-icon">📚 ✨ 🎯</div>
+        <h1 class="welcome-title">What can I help you with?</h1>
+    </div>
+    ''', unsafe_allow_html=True)
     
+    # ORIGINAL 2-column layout with full questions
     cols = st.columns(2)
     for i, (icon, question) in enumerate(EXAMPLES):
         with cols[i % 2]:
@@ -680,45 +977,95 @@ if not has_messages:
                 st.session_state.messages.append({"role": "user", "content": question})
                 st.session_state.processing = True
                 st.rerun()
+
 else:
-    # Chat mode - compact clear button at top right
+    # Chat mode
     _, col2 = st.columns([20, 1])
     with col2:
         if st.button("🗑️", key="clear", help="Clear"):
             st.session_state.messages = []
             st.session_state.processing = False
+            st.session_state.uploaded_file_data = None
             st.rerun()
     
     st.markdown('<div class="chat-container">', unsafe_allow_html=True)
     for msg in st.session_state.messages:
-        if msg["role"] == "user" and isinstance(msg["content"], str):
-            render_user_message(msg["content"])
+        if msg["role"] == "user":
+            display_text = msg.get("display_text", msg["content"] if isinstance(msg["content"], str) else "")
+            file_info = msg.get("file_info")
+            render_user_message(display_text, file_info)
         elif msg["role"] == "assistant" and msg.get("is_final"):
             text = extract_display_text(msg["content"])
             if text:
                 render_assistant_message(text, msg.get("tool_names"))
     st.markdown('</div>', unsafe_allow_html=True)
 
+# File uploader
+uploaded_file = st.file_uploader(
+    "📎 Drop files here or click to upload",
+    type=['pdf', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'txt', 'md', 'py', 'json', 'csv'],
+    key="file_uploader",
+    label_visibility="collapsed",
+    help="Supports PDF, images, and text files"
+)
+
+if uploaded_file is not None and st.session_state.uploaded_file_data is None:
+    file_data = process_uploaded_file(uploaded_file)
+    st.session_state.uploaded_file_data = file_data
+
+# Attachment preview
+if st.session_state.uploaded_file_data and st.session_state.uploaded_file_data.get("type") != "error":
+    file_data = st.session_state.uploaded_file_data
+    icon = get_file_icon(file_data.get("filename", "file"))
+    
+    col1, col2 = st.columns([10, 1])
+    with col1:
+        st.markdown(f'''
+        <div class="attachment-preview-bar">
+            <div class="attachment-preview">
+                <span>{icon}</span>
+                <span>{file_data.get("filename", "file")}</span>
+            </div>
+        </div>
+        ''', unsafe_allow_html=True)
+    with col2:
+        if st.button("✕", key="remove_attachment", help="Remove"):
+            st.session_state.uploaded_file_data = None
+            st.rerun()
+
+# Hint
+if not has_messages:
+    st.markdown('<div class="paste-hint">💡 Paste screenshots (Ctrl+V) or drag & drop files anywhere</div>', unsafe_allow_html=True)
+
 # Chat input
 prompt = st.chat_input("Ask any question about RCC...", disabled=st.session_state.processing)
 
 if prompt:
-    st.session_state.messages.append({"role": "user", "content": prompt})
+    file_data = st.session_state.uploaded_file_data
+    message_content = build_message_content(prompt, file_data)
+    
+    msg_to_store = {
+        "role": "user",
+        "content": message_content,
+        "display_text": prompt
+    }
+    
+    if file_data and file_data["type"] != "error":
+        msg_to_store["file_info"] = {
+            "filename": file_data.get("filename", "file"),
+            "type": file_data["type"]
+        }
+    
+    st.session_state.messages.append(msg_to_store)
     st.session_state.processing = True
+    st.session_state.uploaded_file_data = None
+    
     st.rerun()
 
 # Process
 if st.session_state.processing:
-    # Randomly choose between cool status messages
-    status_messages = [
-        "🧠 Contemplating...",
-        "✨ Vibing...",
-        "⏳ Brewing...",
-        "🎨 Crafting...",
-        "🔧 Tinkering..."
-    ]
-    status_text = random.choice(status_messages)
-    st.markdown(f'<div class="search-status"><span class="search-text">{status_text}</span></div>', unsafe_allow_html=True)
+    status_messages = ["🧠 Contemplating...", "✨ Vibing...", "⏳ Brewing...", "🎨 Crafting...", "🔧 Tinkering..."]
+    st.markdown(f'<div class="search-status"><span class="search-text">{random.choice(status_messages)}</span></div>', unsafe_allow_html=True)
     
     api_messages = [{"role": m["role"], "content": m["content"]} for m in st.session_state.messages]
     
