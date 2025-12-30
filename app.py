@@ -802,20 +802,74 @@ components.html("""
     }
     
     function animateExampleButtons() {
-        const wrapper = doc.querySelector('.examples-grid-wrapper');
-        if (!wrapper || wrapper.dataset.animated === 'true') return;
+        // Find example buttons by their keys (ex_0 through ex_5)
+        // These buttons contain the example questions text
+        const allButtons = doc.querySelectorAll('.stButton button');
+        const exampleButtons = [];
         
-        const buttons = wrapper.querySelectorAll('.stButton button');
-        if (buttons.length === 0) return;
+        allButtons.forEach(btn => {
+            const text = btn.innerText || '';
+            // Match buttons that contain emoji + question pattern (our example questions)
+            if (text.includes('How do I') || text.includes('What are the')) {
+                exampleButtons.push(btn);
+            }
+        });
         
-        wrapper.dataset.animated = 'true';
+        if (exampleButtons.length === 0) return;
         
-        const delays = [0.4, 0.55, 0.7, 0.85, 1.0, 1.15];
-        buttons.forEach((btn, idx) => {
-            btn.style.opacity = '0';
-            btn.style.transform = 'translateY(25px)';
-            btn.style.animation = 'exampleFadeIn 0.5s ease-out forwards';
-            btn.style.animationDelay = delays[idx] + 's';
+        // Check if already animated
+        if (exampleButtons[0].dataset.animated === 'true') return;
+        
+        const delays = [0.3, 0.45, 0.6, 0.75, 0.9, 1.05];
+        
+        exampleButtons.forEach((btn, idx) => {
+            btn.dataset.animated = 'true';
+            
+            // Apply styling for the cool look
+            btn.style.cssText = `
+                background: linear-gradient(145deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0.03) 100%) !important;
+                border: 1px solid rgba(255,255,255,0.15) !important;
+                border-radius: 16px !important;
+                padding: 16px 20px !important;
+                text-align: center !important;
+                font-size: 0.9rem !important;
+                color: #e5e7eb !important;
+                height: auto !important;
+                min-height: auto !important;
+                backdrop-filter: blur(10px);
+                box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15) !important;
+                opacity: 0;
+                transform: translateY(25px);
+                animation: exampleFadeIn 0.5s ease-out forwards;
+                animation-delay: ${delays[idx]}s;
+                transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+            `;
+            
+            // Add hover effect via event listeners
+            btn.addEventListener('mouseenter', function() {
+                this.style.background = 'linear-gradient(145deg, rgba(102, 126, 234, 0.25) 0%, rgba(118, 75, 162, 0.25) 100%)';
+                this.style.borderColor = 'rgba(102, 126, 234, 0.5)';
+                this.style.transform = 'translateY(-3px)';
+                this.style.boxShadow = '0 8px 25px rgba(102, 126, 234, 0.25)';
+            });
+            
+            btn.addEventListener('mouseleave', function() {
+                this.style.background = 'linear-gradient(145deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0.03) 100%)';
+                this.style.borderColor = 'rgba(255,255,255,0.15)';
+                this.style.transform = 'translateY(0)';
+                this.style.boxShadow = '0 4px 15px rgba(0, 0, 0, 0.15)';
+            });
+        });
+        
+        // Also style the column containers for proper spacing
+        const horizontalBlocks = doc.querySelectorAll('[data-testid="stHorizontalBlock"]');
+        horizontalBlocks.forEach(block => {
+            // Check if this block contains example buttons
+            const hasExampleBtn = block.querySelector('.stButton button[data-animated="true"]');
+            if (hasExampleBtn) {
+                block.style.gap = '1rem';
+                block.style.marginBottom = '0.75rem';
+            }
         });
     }
     
