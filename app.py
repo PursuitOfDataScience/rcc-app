@@ -399,13 +399,15 @@ st.set_page_config(page_title="Sage", page_icon="🤖", layout="wide", initial_s
 # CSS
 st.markdown("""
 <style>
+    html, body {height: 100%;}
     .stDeployButton, #MainMenu, footer {display: none !important; visibility: hidden !important;}
     [data-testid="stSidebar"], [data-testid="stSidebarCollapsedControl"] {display: none !important;}
+    body.welcome-page { overflow: hidden; }
     
     .main .block-container {
-        padding-top: 0.1rem;
+        padding-top: 0.5rem;
         padding-bottom: 0;
-        max-width: 900px;
+        max-width: 1000px;
     }
     
     [data-testid="stVerticalBlock"] > div {
@@ -418,29 +420,38 @@ st.markdown("""
         flex-direction: column;
         align-items: center;
         justify-content: center;
-        min-height: 30vh;
+        min-height: calc(100vh - 220px);
         text-align: center;
-        padding: 1rem;
+        padding: 1.25rem 1rem 0;
+        gap: 0.35rem;
     }
     
     .welcome-icon {
         font-size: 3.5rem;
-        margin-bottom: 0.5rem;
+        margin-bottom: 0.35rem;
     }
     
     .welcome-title {
-        font-size: 2rem;
+        font-size: 2.1rem;
         font-weight: 600;
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         background-clip: text;
+        margin-bottom: 0.5rem;
     }
     
     /* Chat input */
+    .chat-input-row {
+        position: relative;
+        max-width: 900px;
+        margin: 0.5rem auto 0 auto;
+    }
+    
     .stChatInput {
-        max-width: 800px !important;
+        max-width: 900px !important;
         margin: 0 auto !important;
+        position: relative;
     }
     
     .stChatInput > div {
@@ -450,6 +461,8 @@ st.markdown("""
         min-height: 56px !important;
         display: flex !important;
         align-items: center !important;
+        padding-left: 64px !important;
+        position: relative !important;
     }
     
     .stChatInput > div:focus-within {
@@ -490,47 +503,49 @@ st.markdown("""
         align-items: center !important;
     }
     
-    /* Example buttons - with staggered animation */
-    .main .stButton > button {
-        background: linear-gradient(135deg, #fff 0%, #f8fafc 100%) !important;
-        border: 1px solid #e2e8f0 !important;
-        border-radius: 14px !important;
+    /* Example buttons - animated cards */
+    .question-card {
+        background: linear-gradient(145deg, #0f172a 0%, #111827 45%, #0b1224 100%) !important;
+        border: 1px solid #1f2937 !important;
+        border-radius: 16px !important;
         padding: 14px 18px !important;
         text-align: left !important;
-        font-size: 0.85rem !important;
-        color: #374151 !important;
+        font-size: 0.95rem !important;
+        color: #e5e7eb !important;
         height: auto !important;
-        min-height: 50px !important;
-        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+        min-height: 58px !important;
+        letter-spacing: 0.01em;
+        box-shadow: 0 12px 30px rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255,255,255,0.02) !important;
+        position: relative;
+        overflow: hidden;
         opacity: 0;
-        transform: translateY(20px);
-        animation: buttonAppear 0.5s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+        transform: translateY(26px) scale(0.97);
+        animation: questionRise 0.7s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+        animation-delay: calc(var(--card-order, 0) * 0.1s);
+        transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
     }
     
-    /* Staggered animation delays for each button */
-    .main [data-testid="stHorizontalBlock"]:nth-of-type(1) .stButton:nth-child(1) button { animation-delay: 0.1s; }
-    .main [data-testid="stHorizontalBlock"]:nth-of-type(1) .stButton:nth-child(2) button { animation-delay: 0.2s; }
-    .main [data-testid="stHorizontalBlock"]:nth-of-type(2) .stButton:nth-child(1) button { animation-delay: 0.3s; }
-    .main [data-testid="stHorizontalBlock"]:nth-of-type(2) .stButton:nth-child(2) button { animation-delay: 0.4s; }
-    .main [data-testid="stHorizontalBlock"]:nth-of-type(3) .stButton:nth-child(1) button { animation-delay: 0.5s; }
-    .main [data-testid="stHorizontalBlock"]:nth-of-type(3) .stButton:nth-child(2) button { animation-delay: 0.6s; }
-    
-    @keyframes buttonAppear {
-        to {
-            opacity: 1;
-            transform: translateY(0);
-        }
+    .question-card::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: radial-gradient(circle at 20% 20%, rgba(94, 234, 212, 0.12), transparent 35%),
+                    radial-gradient(circle at 80% 0%, rgba(129, 140, 248, 0.16), transparent 30%);
+        pointer-events: none;
     }
     
-    .main .stButton > button:hover {
-        background: linear-gradient(135deg, #eef2ff 0%, #e0e7ff 100%) !important;
-        border-color: #a5b4fc !important;
-        transform: translateY(-2px) !important;
-        box-shadow: 0 6px 20px rgba(102, 126, 234, 0.15) !important;
+    @keyframes questionRise {
+        to { opacity: 1; transform: translateY(0) scale(1); }
     }
     
-    .main .stButton > button:active {
-        transform: translateY(0) !important;
+    .question-card:hover {
+        border-color: #6366f1 !important;
+        transform: translateY(-2px) scale(1.01);
+        box-shadow: 0 16px 40px rgba(99, 102, 241, 0.25);
+    }
+    
+    .question-card:active {
+        transform: translateY(0) scale(0.995);
     }
     
     /* User message */
@@ -600,7 +615,7 @@ st.markdown("""
     
     /* Chat container */
     .chat-container {
-        padding-bottom: 140px;
+        padding-bottom: 120px;
         margin-top: 0;
     }
     
@@ -627,28 +642,55 @@ st.markdown("""
         100% { background-position: 100% 0; }
     }
     
-    /* File uploader */
+    /* File uploader as paperclip */
     [data-testid="stFileUploader"] {
-        max-width: 800px;
-        margin: 0 auto;
+        width: 44px;
+        margin: 0;
+        position: absolute;
+        left: 12px;
+        bottom: 10px;
+        z-index: 10;
     }
     
     [data-testid="stFileUploader"] section {
-        padding: 0.75rem !important;
-        border: 2px dashed #e5e7eb !important;
-        border-radius: 16px !important;
-        background: #f9fafb !important;
+        padding: 0 !important;
+        border: 1px solid #1f2937 !important;
+        border-radius: 12px !important;
+        background: linear-gradient(135deg, #111827 0%, #0f172a 100%) !important;
+        min-height: 44px !important;
+        box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35);
+        position: relative;
+        overflow: hidden;
     }
     
-    [data-testid="stFileUploader"] section:hover {
-        border-color: #667eea !important;
-        background: #f5f3ff !important;
+    [data-testid="stFileUploader"] section > div:not([data-testid]) {
+        display: none !important;
+    }
+    
+    [data-testid="stFileUploader"] section input[type="file"] {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        opacity: 0;
+        cursor: pointer;
+    }
+    
+    [data-testid="stFileUploader"] section::after {
+        content: "📎";
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #e5e7eb;
+        font-size: 1.05rem;
+        width: 100%;
+        height: 100%;
     }
     
     /* Attachment preview */
     .attachment-preview-bar {
-        max-width: 800px;
-        margin: 0 auto 0.5rem auto;
+        max-width: 900px;
+        margin: 0.25rem auto 0.25rem auto;
         padding: 0 1rem;
     }
     
@@ -669,149 +711,22 @@ st.markdown("""
         text-align: center;
         color: #9ca3af;
         font-size: 0.75rem;
-        margin-top: 0.75rem;
+        margin-top: 0.35rem;
         opacity: 0.8;
     }
     
     @media (prefers-color-scheme: dark) {
-        .main .stButton > button {
-            background: linear-gradient(135deg, #1f2937 0%, #111827 100%) !important;
-            border-color: #374151 !important;
-            color: #e5e7eb !important;
-        }
-        .main .stButton > button:hover {
-            background: linear-gradient(135deg, #374151 0%, #1f2937 100%) !important;
-            border-color: #6366f1 !important;
-        }
         .tool-badge {
             background: #1e3a5f;
             color: #7dd3fc;
             border-color: #0369a1;
         }
         [data-testid="stFileUploader"] section {
-            background: #1f2937 !important;
-            border-color: #374151 !important;
+            border-color: #30364f !important;
         }
     }
 </style>
 """, unsafe_allow_html=True)
-
-# JavaScript for drag/drop, paste, and auto-focus
-import streamlit.components.v1 as components
-components.html("""
-<script>
-(function() {
-    const doc = window.parent.document;
-    
-    // Create drop overlay
-    let overlay = doc.getElementById('drop-overlay');
-    if (!overlay) {
-        overlay = doc.createElement('div');
-        overlay.id = 'drop-overlay';
-        overlay.innerHTML = '<div class="drop-content"><div class="drop-icon">📎</div><div class="drop-text">Drop your file here</div></div>';
-        overlay.style.cssText = 'display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(102,126,234,0.15);backdrop-filter:blur(4px);z-index:99999;justify-content:center;align-items:center;';
-        doc.body.appendChild(overlay);
-        
-        const style = doc.createElement('style');
-        style.textContent = `
-            #drop-overlay .drop-content {
-                background: white;
-                padding: 3rem 4rem;
-                border-radius: 24px;
-                border: 3px dashed #667eea;
-                text-align: center;
-                box-shadow: 0 20px 60px rgba(0,0,0,0.15);
-            }
-            #drop-overlay .drop-icon {
-                font-size: 4rem;
-                margin-bottom: 1rem;
-                animation: bounce 1s ease-in-out infinite;
-            }
-            #drop-overlay .drop-text {
-                font-size: 1.2rem;
-                color: #667eea;
-                font-weight: 600;
-            }
-            @keyframes bounce {
-                0%, 100% { transform: translateY(0); }
-                50% { transform: translateY(-10px); }
-            }
-            @media (prefers-color-scheme: dark) {
-                #drop-overlay .drop-content { background: #1f2937; }
-                #drop-overlay .drop-text { color: #a5b4fc; }
-            }
-        `;
-        doc.head.appendChild(style);
-    }
-    
-    let dragCounter = 0;
-    
-    doc.addEventListener('dragenter', function(e) {
-        e.preventDefault();
-        dragCounter++;
-        if (dragCounter === 1) overlay.style.display = 'flex';
-    });
-    
-    doc.addEventListener('dragleave', function(e) {
-        e.preventDefault();
-        dragCounter--;
-        if (dragCounter === 0) overlay.style.display = 'none';
-    });
-    
-    doc.addEventListener('dragover', function(e) { e.preventDefault(); });
-    
-    doc.addEventListener('drop', function(e) {
-        e.preventDefault();
-        dragCounter = 0;
-        overlay.style.display = 'none';
-        
-        const files = e.dataTransfer.files;
-        if (files.length > 0) {
-            const fileInput = doc.querySelector('input[type="file"]');
-            if (fileInput) {
-                const dt = new DataTransfer();
-                dt.items.add(files[0]);
-                fileInput.files = dt.files;
-                fileInput.dispatchEvent(new Event('change', { bubbles: true }));
-            }
-        }
-    });
-    
-    doc.addEventListener('paste', function(e) {
-        const items = e.clipboardData.items;
-        for (let i = 0; i < items.length; i++) {
-            if (items[i].type.indexOf('image') !== -1) {
-                const file = items[i].getAsFile();
-                const fileInput = doc.querySelector('input[type="file"]');
-                if (fileInput && file) {
-                    const dt = new DataTransfer();
-                    dt.items.add(file);
-                    fileInput.files = dt.files;
-                    fileInput.dispatchEvent(new Event('change', { bubbles: true }));
-                }
-                break;
-            }
-        }
-    });
-    
-    // Auto-scroll and auto-focus
-    setTimeout(function() {
-        window.parent.scrollTo({ top: doc.body.scrollHeight, behavior: 'smooth' });
-    }, 100);
-    
-    doc.addEventListener('keydown', function(e) {
-        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
-        if (e.ctrlKey || e.altKey || e.metaKey) return;
-        const ignore = ['Escape', 'Tab', 'CapsLock', 'Shift', 'Control', 'Alt', 'Meta', 
-                        'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
-                        'F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8', 'F9', 'F10', 'F11', 'F12'];
-        if (ignore.includes(e.key)) return;
-        const input = doc.querySelector('textarea[data-testid="stChatInputTextArea"]');
-        if (input) input.focus();
-    });
-})();
-</script>
-""", height=0)
 
 # Session state
 if "messages" not in st.session_state:
@@ -822,6 +737,9 @@ if "client" not in st.session_state:
     st.session_state.client = get_client()
 if "uploaded_file_data" not in st.session_state:
     st.session_state.uploaded_file_data = None
+
+# JavaScript for drag/drop, paste, auto-focus, and welcome layout
+import streamlit.components.v1 as components
 
 
 def collect_stream_response(stream):
@@ -960,6 +878,71 @@ EXAMPLES = [
 
 has_messages = len(st.session_state.messages) > 0
 
+components.html(f"""
+<script>
+(function() {{
+    const doc = window.parent.document;
+    const hasMessages = {str(has_messages).lower()};
+    const exampleButtons = {json.dumps([f"{icon}  {question}" for icon, question in EXAMPLES])};
+    
+    // Toggle welcome overflow
+    doc.body.classList.toggle('welcome-page', !hasMessages);
+    
+    // Move uploader next to chat input
+    const fileUploader = doc.querySelector('[data-testid="stFileUploader"]');
+    const chatInput = doc.querySelector('[data-testid="stChatInput"]');
+    if (fileUploader && chatInput && !chatInput.contains(fileUploader)) {{
+        chatInput.prepend(fileUploader);
+    }}
+
+    // Decorate example buttons and stagger animations
+    const buttons = Array.from(doc.querySelectorAll('button'));
+    const welcomeButtons = buttons.filter(btn => exampleButtons.includes(btn.innerText.trim())).slice(0, 6);
+    welcomeButtons.forEach((btn, idx) => {{
+        btn.classList.add('question-card');
+        btn.style.setProperty('--card-order', idx);
+    }});
+
+    // Paste to file input
+    doc.addEventListener('paste', function(e) {{
+        const items = e.clipboardData?.items || [];
+        for (let i = 0; i < items.length; i++) {{
+            if (items[i].type && items[i].type.indexOf('image') !== -1) {{
+                const file = items[i].getAsFile();
+                const fileInput = doc.querySelector('input[type="file"]');
+                if (fileInput && file) {{
+                    const dt = new DataTransfer();
+                    dt.items.add(file);
+                    fileInput.files = dt.files;
+                    fileInput.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                }}
+                break;
+            }}
+        }}
+    }});
+
+    // Auto-focus chat input on key press
+    doc.addEventListener('keydown', function(e) {{
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+        if (e.ctrlKey || e.altKey || e.metaKey) return;
+        const ignore = ['Escape', 'Tab', 'CapsLock', 'Shift', 'Control', 'Alt', 'Meta', 
+                        'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
+                        'F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8', 'F9', 'F10', 'F11', 'F12'];
+        if (ignore.includes(e.key)) return;
+        const input = doc.querySelector('textarea[data-testid="stChatInputTextArea"]');
+        if (input) input.focus();
+    }});
+
+    // Scroll positioning
+    if (hasMessages) {{
+        window.parent.scrollTo({{ top: doc.body.scrollHeight, behavior: 'smooth' }});
+    }} else {{
+        window.parent.scrollTo({{ top: 0, behavior: 'auto' }});
+    }}
+}})();
+</script>
+""", height=0)
+
 if not has_messages:
     # Welcome screen
     st.markdown('''
@@ -1000,13 +983,13 @@ else:
                 render_assistant_message(text, msg.get("tool_names"))
     st.markdown('</div>', unsafe_allow_html=True)
 
-# File uploader
+# File uploader (paperclip button beside input)
 uploaded_file = st.file_uploader(
-    "📎 Drop files here or click to upload",
+    "Attach a file",
     type=['pdf', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'txt', 'md', 'py', 'json', 'csv'],
     key="file_uploader",
     label_visibility="collapsed",
-    help="Supports PDF, images, and text files"
+    help="Attach PDFs, images, or text files (limit 200MB per file)."
 )
 
 if uploaded_file is not None and st.session_state.uploaded_file_data is None:
@@ -1035,7 +1018,7 @@ if st.session_state.uploaded_file_data and st.session_state.uploaded_file_data.g
 
 # Hint
 if not has_messages:
-    st.markdown('<div class="paste-hint">💡 Paste screenshots (Ctrl+V) or drag & drop files anywhere</div>', unsafe_allow_html=True)
+    st.markdown('<div class="paste-hint">💡 Click the paperclip to attach a file or paste an image (Ctrl+V)</div>', unsafe_allow_html=True)
 
 # Chat input
 prompt = st.chat_input("Ask any question about RCC...", disabled=st.session_state.processing)
