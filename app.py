@@ -772,12 +772,17 @@ st.markdown("""
         opacity: 0 !important;
         pointer-events: none !important;
         visibility: hidden !important;
+        display: none !important;
     }
     
     [data-testid="stFileUploader"] > div,
     [data-testid="stFileUploader"] section,
-    [data-testid="stFileUploaderDropzone"] {
+    [data-testid="stFileUploader"] label,
+    [data-testid="stFileUploader"] small,
+    [data-testid="stFileUploaderDropzone"],
+    [data-testid="stFileUploaderDropzoneInstructions"] {
         display: none !important;
+        visibility: hidden !important;
     }
     
     /* Keep the actual input functional but invisible */
@@ -802,78 +807,24 @@ st.markdown("""
         height: 100vh !important;
     }
     
-    /* Attachment preview - fixed position above chat input */
-    .attachment-preview-container {
-        position: fixed;
-        bottom: 85px;
-        left: 50%;
-        transform: translateX(-50%);
-        z-index: 999;
-        max-width: 800px;
-        width: 100%;
-        padding: 0 1rem;
-        box-sizing: border-box;
-    }
-    
-    .attachment-preview-bar {
-        display: inline-block;
-    }
-    
+    /* Attachment preview */
     .attachment-preview {
         display: inline-flex;
         align-items: center;
-        gap: 10px;
+        gap: 8px;
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         color: white;
         padding: 8px 14px;
-        border-radius: 16px;
+        border-radius: 14px;
         font-size: 0.85rem;
-        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
-        animation: slideUp 0.3s ease-out;
+        box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
     }
     
-    @keyframes slideUp {
-        from {
-            opacity: 0;
-            transform: translateY(10px);
-        }
-        to {
-            opacity: 1;
-            transform: translateY(0);
-        }
-    }
-    
-    /* Hide the remove button container - we use JS to handle it */
-    .attachment-preview-container + div [data-testid="stHorizontalBlock"] {
-        position: fixed !important;
-        bottom: 85px;
-        right: calc(50% - 400px + 1rem);
-        z-index: 1000;
-    }
-    
-    .attachment-preview-container + div [data-testid="stHorizontalBlock"] .stButton button {
-        background: rgba(255, 255, 255, 0.9) !important;
-        border: none !important;
-        border-radius: 50% !important;
-        width: 28px !important;
-        height: 28px !important;
-        min-height: 28px !important;
-        padding: 0 !important;
-        display: flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-        font-size: 14px !important;
-        color: #666 !important;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.15) !important;
+    /* Style buttons outside of examples-container to be simple */
+    .main .stButton > button:not(.examples-container .stButton > button) {
         opacity: 1 !important;
         transform: none !important;
         animation: none !important;
-    }
-    
-    .attachment-preview-container + div [data-testid="stHorizontalBlock"] .stButton button:hover {
-        background: rgba(239, 68, 68, 0.9) !important;
-        color: white !important;
-        transform: none !important;
     }
     
     @media (prefers-color-scheme: dark) {
@@ -1248,23 +1199,20 @@ if uploaded_file is not None and st.session_state.uploaded_file_data is None:
 if st.session_state.uploaded_file_data and st.session_state.uploaded_file_data.get("type") != "error":
     file_data = st.session_state.uploaded_file_data
     icon = get_file_icon(file_data.get("filename", "file"))
+    filename = file_data.get("filename", "file")
     
-    # Use a container for the attachment preview with fixed positioning via CSS
-    st.markdown(f'''
-    <div class="attachment-preview-container">
-        <div class="attachment-preview-bar">
+    # Use columns to keep attachment and remove button together
+    att_col1, att_col2, att_col3 = st.columns([1, 6, 1])
+    with att_col2:
+        st.markdown(f'''
+        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 0.5rem;">
             <div class="attachment-preview">
                 <span>{icon}</span>
-                <span>{file_data.get("filename", "file")}</span>
+                <span>{filename}</span>
             </div>
         </div>
-    </div>
-    ''', unsafe_allow_html=True)
-    
-    # Hidden button for remove functionality
-    remove_col1, remove_col2 = st.columns([20, 1])
-    with remove_col2:
-        if st.button("✕", key="remove_attachment", help="Remove"):
+        ''', unsafe_allow_html=True)
+        if st.button("✕ Remove", key="remove_attachment"):
             st.session_state.uploaded_file_data = None
             st.session_state.uploader_key += 1
             st.rerun()
