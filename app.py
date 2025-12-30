@@ -494,19 +494,15 @@ st.markdown("""
         max-width: 800px;
         margin: 0 auto;
         padding: 0 1rem;
-        display: flex;
-        flex-direction: column;
-        gap: 1.2rem;
     }
     
-    /* Example buttons grid - each row */
+    /* Target the columns container for spacing */
     .examples-container [data-testid="stHorizontalBlock"] {
         gap: 1.5rem !important;
-        margin-bottom: 0 !important;
     }
     
-    /* Example buttons - with staggered animation */
-    .examples-container .stButton > button {
+    /* Base style for all buttons in examples container */
+    .examples-container .stButton button {
         background: linear-gradient(145deg, rgba(255,255,255,0.12) 0%, rgba(255,255,255,0.04) 100%) !important;
         border: 1px solid rgba(255,255,255,0.15) !important;
         border-radius: 20px !important;
@@ -517,22 +513,11 @@ st.markdown("""
         height: auto !important;
         min-height: 65px !important;
         transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1) !important;
-        opacity: 0;
-        transform: translateY(40px) scale(0.9);
-        animation: cardAppear 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
         backdrop-filter: blur(12px);
         box-shadow: 
             0 4px 20px rgba(0, 0, 0, 0.15),
             0 0 0 1px rgba(255, 255, 255, 0.05) inset !important;
     }
-    
-    /* Staggered animation delays for each button - appearing one at a time */
-    .examples-container [data-testid="stHorizontalBlock"]:nth-of-type(1) .stButton:nth-child(1) button { animation-delay: 0.3s; }
-    .examples-container [data-testid="stHorizontalBlock"]:nth-of-type(1) .stButton:nth-child(2) button { animation-delay: 0.5s; }
-    .examples-container [data-testid="stHorizontalBlock"]:nth-of-type(2) .stButton:nth-child(1) button { animation-delay: 0.7s; }
-    .examples-container [data-testid="stHorizontalBlock"]:nth-of-type(2) .stButton:nth-child(2) button { animation-delay: 0.9s; }
-    .examples-container [data-testid="stHorizontalBlock"]:nth-of-type(3) .stButton:nth-child(1) button { animation-delay: 1.1s; }
-    .examples-container [data-testid="stHorizontalBlock"]:nth-of-type(3) .stButton:nth-child(2) button { animation-delay: 1.3s; }
     
     @keyframes cardAppear {
         0% {
@@ -552,7 +537,8 @@ st.markdown("""
         }
     }
     
-    .examples-container .stButton > button:hover {
+    /* Hover state for example buttons */
+    .examples-container .stButton button:hover {
         background: linear-gradient(145deg, rgba(102, 126, 234, 0.35) 0%, rgba(118, 75, 162, 0.35) 100%) !important;
         border-color: rgba(102, 126, 234, 0.6) !important;
         transform: translateY(-6px) scale(1.03) !important;
@@ -562,14 +548,14 @@ st.markdown("""
             0 0 0 1px rgba(102, 126, 234, 0.2) inset !important;
     }
     
-    .examples-container .stButton > button:active {
+    .examples-container .stButton button:active {
         transform: translateY(-2px) scale(1) !important;
         box-shadow: 0 5px 15px rgba(102, 126, 234, 0.2) !important;
     }
     
     /* Light mode adjustments for example buttons */
     @media (prefers-color-scheme: light) {
-        .examples-container .stButton > button {
+        .examples-container .stButton button {
             background: linear-gradient(145deg, #ffffff 0%, #f8fafc 100%) !important;
             border: 1px solid #e2e8f0 !important;
             color: #374151 !important;
@@ -578,7 +564,7 @@ st.markdown("""
                 0 0 0 1px rgba(0, 0, 0, 0.02) inset !important;
         }
         
-        .examples-container .stButton > button:hover {
+        .examples-container .stButton button:hover {
             background: linear-gradient(145deg, #eef2ff 0%, #e0e7ff 100%) !important;
             border-color: #a5b4fc !important;
             box-shadow: 
@@ -854,9 +840,31 @@ components.html("""
         chatInput.insertBefore(btn, chatInput.firstChild);
     }
     
+    function animateExampleButtons() {
+        const container = doc.querySelector('.examples-container');
+        if (!container) return;
+        
+        // Find all buttons inside the examples container
+        const buttons = container.querySelectorAll('button');
+        if (buttons.length === 0) return;
+        
+        // Check if already animated
+        if (container.dataset.animated === 'true') return;
+        container.dataset.animated = 'true';
+        
+        // Apply staggered animation to each button
+        buttons.forEach((btn, index) => {
+            btn.style.opacity = '0';
+            btn.style.transform = 'translateY(40px) scale(0.9)';
+            btn.style.animation = `cardAppear 0.7s cubic-bezier(0.34, 1.56, 0.64, 1) forwards`;
+            btn.style.animationDelay = `${0.2 + (index * 0.2)}s`;
+        });
+    }
+    
     function init() {
         updateScrollBehavior();
         addPaperclipButton();
+        animateExampleButtons();
     }
     
     // Auto-scroll in chat mode
@@ -883,6 +891,7 @@ components.html("""
     const observer = new MutationObserver(function() {
         updateScrollBehavior();
         addPaperclipButton();
+        animateExampleButtons();
     });
     observer.observe(doc.body, { childList: true, subtree: true });
 })();
@@ -1046,15 +1055,53 @@ if not has_messages:
     </div>
     ''', unsafe_allow_html=True)
     
-    # Examples container with 2-column layout
+    # Examples - 3 rows of 2 buttons each with spacing
     st.markdown('<div class="examples-container">', unsafe_allow_html=True)
-    cols = st.columns(2, gap="medium")
-    for i, (icon, question) in enumerate(EXAMPLES):
-        with cols[i % 2]:
-            if st.button(f"{icon}  {question}", key=f"ex_{i}", use_container_width=True):
-                st.session_state.messages.append({"role": "user", "content": question})
-                st.session_state.processing = True
-                st.rerun()
+    
+    # Row 1
+    col1, col2 = st.columns(2, gap="large")
+    with col1:
+        if st.button(f"{EXAMPLES[0][0]}  {EXAMPLES[0][1]}", key="ex_0", use_container_width=True):
+            st.session_state.messages.append({"role": "user", "content": EXAMPLES[0][1]})
+            st.session_state.processing = True
+            st.rerun()
+    with col2:
+        if st.button(f"{EXAMPLES[1][0]}  {EXAMPLES[1][1]}", key="ex_1", use_container_width=True):
+            st.session_state.messages.append({"role": "user", "content": EXAMPLES[1][1]})
+            st.session_state.processing = True
+            st.rerun()
+    
+    # Spacer
+    st.markdown('<div style="height: 1rem;"></div>', unsafe_allow_html=True)
+    
+    # Row 2
+    col3, col4 = st.columns(2, gap="large")
+    with col3:
+        if st.button(f"{EXAMPLES[2][0]}  {EXAMPLES[2][1]}", key="ex_2", use_container_width=True):
+            st.session_state.messages.append({"role": "user", "content": EXAMPLES[2][1]})
+            st.session_state.processing = True
+            st.rerun()
+    with col4:
+        if st.button(f"{EXAMPLES[3][0]}  {EXAMPLES[3][1]}", key="ex_3", use_container_width=True):
+            st.session_state.messages.append({"role": "user", "content": EXAMPLES[3][1]})
+            st.session_state.processing = True
+            st.rerun()
+    
+    # Spacer
+    st.markdown('<div style="height: 1rem;"></div>', unsafe_allow_html=True)
+    
+    # Row 3
+    col5, col6 = st.columns(2, gap="large")
+    with col5:
+        if st.button(f"{EXAMPLES[4][0]}  {EXAMPLES[4][1]}", key="ex_4", use_container_width=True):
+            st.session_state.messages.append({"role": "user", "content": EXAMPLES[4][1]})
+            st.session_state.processing = True
+            st.rerun()
+    with col6:
+        if st.button(f"{EXAMPLES[5][0]}  {EXAMPLES[5][1]}", key="ex_5", use_container_width=True):
+            st.session_state.messages.append({"role": "user", "content": EXAMPLES[5][1]})
+            st.session_state.processing = True
+            st.rerun()
     st.markdown('</div>', unsafe_allow_html=True)
 
 else:
