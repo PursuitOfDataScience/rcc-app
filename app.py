@@ -2,7 +2,7 @@
 """
 RCC User Guide AI Assistant - Streamlit App
 A chatbot that answers questions using RCC documentation (RAG-only, no command-line tools).
-Now with file upload support for PDFs and images.
+Now with file upload support for PDFs and images via paperclip button.
 """
 import os
 import sys
@@ -437,6 +437,13 @@ st.markdown("""
         background-clip: text;
     }
     
+    /* Input container with paperclip */
+    .input-container {
+        max-width: 800px;
+        margin: 0 auto;
+        position: relative;
+    }
+    
     /* Chat input */
     .stChatInput {
         max-width: 800px !important;
@@ -450,6 +457,7 @@ st.markdown("""
         min-height: 56px !important;
         display: flex !important;
         align-items: center !important;
+        padding-left: 50px !important;
     }
     
     .stChatInput > div:focus-within {
@@ -627,22 +635,56 @@ st.markdown("""
         100% { background-position: 100% 0; }
     }
     
-    /* File uploader */
-    [data-testid="stFileUploader"] {
+    /* Paperclip button styling */
+    .paperclip-container {
+        position: relative;
         max-width: 800px;
         margin: 0 auto;
     }
     
-    [data-testid="stFileUploader"] section {
-        padding: 0.75rem !important;
-        border: 2px dashed #e5e7eb !important;
-        border-radius: 16px !important;
-        background: #f9fafb !important;
+    .paperclip-btn {
+        position: absolute;
+        left: 12px;
+        top: 50%;
+        transform: translateY(-50%);
+        z-index: 1000;
+        background: transparent;
+        border: none;
+        cursor: pointer;
+        padding: 8px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.2s ease;
+        color: #9ca3af;
     }
     
-    [data-testid="stFileUploader"] section:hover {
-        border-color: #667eea !important;
-        background: #f5f3ff !important;
+    .paperclip-btn:hover {
+        background: rgba(102, 126, 234, 0.1);
+        color: #667eea;
+    }
+    
+    .paperclip-btn svg {
+        width: 20px;
+        height: 20px;
+    }
+    
+    /* Hide the default file uploader completely */
+    .hidden-uploader {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
+    }
+    
+    .hidden-uploader > div {
+        display: none !important;
     }
     
     /* Attachment preview */
@@ -664,13 +706,19 @@ st.markdown("""
         box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
     }
     
-    /* Paste hint */
-    .paste-hint {
-        text-align: center;
-        color: #9ca3af;
-        font-size: 0.75rem;
-        margin-top: 0.75rem;
-        opacity: 0.8;
+    .attachment-preview .remove-btn {
+        background: rgba(255,255,255,0.2);
+        border: none;
+        color: white;
+        cursor: pointer;
+        padding: 2px 6px;
+        border-radius: 50%;
+        font-size: 0.7rem;
+        margin-left: 4px;
+    }
+    
+    .attachment-preview .remove-btn:hover {
+        background: rgba(255,255,255,0.3);
     }
     
     @media (prefers-color-scheme: dark) {
@@ -688,95 +736,92 @@ st.markdown("""
             color: #7dd3fc;
             border-color: #0369a1;
         }
-        [data-testid="stFileUploader"] section {
-            background: #1f2937 !important;
-            border-color: #374151 !important;
+        .paperclip-btn {
+            color: #6b7280;
+        }
+        .paperclip-btn:hover {
+            color: #a5b4fc;
+            background: rgba(165, 180, 252, 0.1);
         }
     }
 </style>
 """, unsafe_allow_html=True)
 
-# JavaScript for drag/drop, paste, and auto-focus
+# JavaScript for paperclip button, paste handling, and auto-focus
 import streamlit.components.v1 as components
 components.html("""
 <script>
 (function() {
     const doc = window.parent.document;
     
-    // Create drop overlay
-    let overlay = doc.getElementById('drop-overlay');
-    if (!overlay) {
-        overlay = doc.createElement('div');
-        overlay.id = 'drop-overlay';
-        overlay.innerHTML = '<div class="drop-content"><div class="drop-icon">📎</div><div class="drop-text">Drop your file here</div></div>';
-        overlay.style.cssText = 'display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(102,126,234,0.15);backdrop-filter:blur(4px);z-index:99999;justify-content:center;align-items:center;';
-        doc.body.appendChild(overlay);
+    // Wait for DOM to be ready
+    function init() {
+        // Find the chat input container
+        const chatInput = doc.querySelector('[data-testid="stChatInput"]');
+        if (!chatInput) {
+            setTimeout(init, 100);
+            return;
+        }
         
-        const style = doc.createElement('style');
-        style.textContent = `
-            #drop-overlay .drop-content {
-                background: white;
-                padding: 3rem 4rem;
-                border-radius: 24px;
-                border: 3px dashed #667eea;
-                text-align: center;
-                box-shadow: 0 20px 60px rgba(0,0,0,0.15);
-            }
-            #drop-overlay .drop-icon {
-                font-size: 4rem;
-                margin-bottom: 1rem;
-                animation: bounce 1s ease-in-out infinite;
-            }
-            #drop-overlay .drop-text {
-                font-size: 1.2rem;
-                color: #667eea;
-                font-weight: 600;
-            }
-            @keyframes bounce {
-                0%, 100% { transform: translateY(0); }
-                50% { transform: translateY(-10px); }
-            }
-            @media (prefers-color-scheme: dark) {
-                #drop-overlay .drop-content { background: #1f2937; }
-                #drop-overlay .drop-text { color: #a5b4fc; }
-            }
+        // Check if paperclip already exists
+        if (doc.getElementById('paperclip-btn')) return;
+        
+        // Create paperclip button
+        const paperclipBtn = doc.createElement('button');
+        paperclipBtn.id = 'paperclip-btn';
+        paperclipBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>';
+        paperclipBtn.title = 'Attach file';
+        paperclipBtn.style.cssText = `
+            position: absolute;
+            left: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            z-index: 1000;
+            background: transparent;
+            border: none;
+            cursor: pointer;
+            padding: 8px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s ease;
+            color: #9ca3af;
         `;
-        doc.head.appendChild(style);
-    }
-    
-    let dragCounter = 0;
-    
-    doc.addEventListener('dragenter', function(e) {
-        e.preventDefault();
-        dragCounter++;
-        if (dragCounter === 1) overlay.style.display = 'flex';
-    });
-    
-    doc.addEventListener('dragleave', function(e) {
-        e.preventDefault();
-        dragCounter--;
-        if (dragCounter === 0) overlay.style.display = 'none';
-    });
-    
-    doc.addEventListener('dragover', function(e) { e.preventDefault(); });
-    
-    doc.addEventListener('drop', function(e) {
-        e.preventDefault();
-        dragCounter = 0;
-        overlay.style.display = 'none';
         
-        const files = e.dataTransfer.files;
-        if (files.length > 0) {
+        paperclipBtn.onmouseover = function() {
+            this.style.background = 'rgba(102, 126, 234, 0.1)';
+            this.style.color = '#667eea';
+        };
+        paperclipBtn.onmouseout = function() {
+            this.style.background = 'transparent';
+            this.style.color = '#9ca3af';
+        };
+        
+        // Position the chat input container relatively
+        chatInput.style.position = 'relative';
+        
+        // Add padding to the input to make room for the button
+        const inputWrapper = chatInput.querySelector('div');
+        if (inputWrapper) {
+            inputWrapper.style.paddingLeft = '50px';
+        }
+        
+        // Insert paperclip button
+        chatInput.insertBefore(paperclipBtn, chatInput.firstChild);
+        
+        // Click handler for paperclip
+        paperclipBtn.onclick = function(e) {
+            e.preventDefault();
+            e.stopPropagation();
             const fileInput = doc.querySelector('input[type="file"]');
             if (fileInput) {
-                const dt = new DataTransfer();
-                dt.items.add(files[0]);
-                fileInput.files = dt.files;
-                fileInput.dispatchEvent(new Event('change', { bubbles: true }));
+                fileInput.click();
             }
-        }
-    });
+        };
+    }
     
+    // Handle paste for images
     doc.addEventListener('paste', function(e) {
         const items = e.clipboardData.items;
         for (let i = 0; i < items.length; i++) {
@@ -809,6 +854,17 @@ components.html("""
         const input = doc.querySelector('textarea[data-testid="stChatInputTextArea"]');
         if (input) input.focus();
     });
+    
+    // Initialize
+    init();
+    
+    // Re-init on DOM changes (for when Streamlit reruns)
+    const observer = new MutationObserver(function() {
+        if (!doc.getElementById('paperclip-btn')) {
+            init();
+        }
+    });
+    observer.observe(doc.body, { childList: true, subtree: true });
 })();
 </script>
 """, height=0)
@@ -948,7 +1004,7 @@ def render_assistant_message(content, tool_names=None):
     st.markdown('</div>', unsafe_allow_html=True)
 
 
-# Example questions - ORIGINAL full text
+# Example questions
 EXAMPLES = [
     ("🚀", "How do I connect to Midway via SSH?"),
     ("💾", "What are the storage quotas on Midway?"),
@@ -969,7 +1025,7 @@ if not has_messages:
     </div>
     ''', unsafe_allow_html=True)
     
-    # ORIGINAL 2-column layout with full questions
+    # 2-column layout with full questions
     cols = st.columns(2)
     for i, (icon, question) in enumerate(EXAMPLES):
         with cols[i % 2]:
@@ -1000,20 +1056,21 @@ else:
                 render_assistant_message(text, msg.get("tool_names"))
     st.markdown('</div>', unsafe_allow_html=True)
 
-# File uploader
+# Hidden file uploader (triggered by paperclip button)
+st.markdown('<div class="hidden-uploader">', unsafe_allow_html=True)
 uploaded_file = st.file_uploader(
-    "📎 Drop files here or click to upload",
+    "Upload file",
     type=['pdf', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'txt', 'md', 'py', 'json', 'csv'],
     key="file_uploader",
-    label_visibility="collapsed",
-    help="Supports PDF, images, and text files"
+    label_visibility="collapsed"
 )
+st.markdown('</div>', unsafe_allow_html=True)
 
 if uploaded_file is not None and st.session_state.uploaded_file_data is None:
     file_data = process_uploaded_file(uploaded_file)
     st.session_state.uploaded_file_data = file_data
 
-# Attachment preview
+# Attachment preview (shown above the input when a file is attached)
 if st.session_state.uploaded_file_data and st.session_state.uploaded_file_data.get("type") != "error":
     file_data = st.session_state.uploaded_file_data
     icon = get_file_icon(file_data.get("filename", "file"))
@@ -1033,11 +1090,7 @@ if st.session_state.uploaded_file_data and st.session_state.uploaded_file_data.g
             st.session_state.uploaded_file_data = None
             st.rerun()
 
-# Hint
-if not has_messages:
-    st.markdown('<div class="paste-hint">💡 Paste screenshots (Ctrl+V) or drag & drop files anywhere</div>', unsafe_allow_html=True)
-
-# Chat input
+# Chat input (paperclip button is added via JavaScript)
 prompt = st.chat_input("Ask any question about RCC...", disabled=st.session_state.processing)
 
 if prompt:
