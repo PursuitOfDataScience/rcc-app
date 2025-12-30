@@ -494,71 +494,96 @@ st.markdown("""
         max-width: 800px;
         margin: 0 auto;
         padding: 0 1rem;
+        display: flex;
+        flex-direction: column;
+        gap: 1.2rem;
     }
     
-    /* Example buttons grid */
+    /* Example buttons grid - each row */
     .examples-container [data-testid="stHorizontalBlock"] {
-        gap: 1rem !important;
-        margin-bottom: 1rem !important;
+        gap: 1.5rem !important;
+        margin-bottom: 0 !important;
     }
     
     /* Example buttons - with staggered animation */
     .examples-container .stButton > button {
-        background: linear-gradient(135deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0.05) 100%) !important;
-        border: 1px solid rgba(255,255,255,0.1) !important;
-        border-radius: 16px !important;
-        padding: 18px 24px !important;
+        background: linear-gradient(145deg, rgba(255,255,255,0.12) 0%, rgba(255,255,255,0.04) 100%) !important;
+        border: 1px solid rgba(255,255,255,0.15) !important;
+        border-radius: 20px !important;
+        padding: 20px 28px !important;
         text-align: center !important;
         font-size: 0.95rem !important;
         color: #e5e7eb !important;
         height: auto !important;
-        min-height: 60px !important;
-        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+        min-height: 65px !important;
+        transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1) !important;
         opacity: 0;
-        transform: translateY(30px) scale(0.95);
-        animation: cardAppear 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
-        backdrop-filter: blur(10px);
-        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1) !important;
+        transform: translateY(40px) scale(0.9);
+        animation: cardAppear 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+        backdrop-filter: blur(12px);
+        box-shadow: 
+            0 4px 20px rgba(0, 0, 0, 0.15),
+            0 0 0 1px rgba(255, 255, 255, 0.05) inset !important;
     }
     
-    /* Staggered animation delays for each button */
-    .examples-container [data-testid="stHorizontalBlock"]:nth-of-type(1) .stButton:nth-child(1) button { animation-delay: 0.4s; }
+    /* Staggered animation delays for each button - appearing one at a time */
+    .examples-container [data-testid="stHorizontalBlock"]:nth-of-type(1) .stButton:nth-child(1) button { animation-delay: 0.3s; }
     .examples-container [data-testid="stHorizontalBlock"]:nth-of-type(1) .stButton:nth-child(2) button { animation-delay: 0.5s; }
-    .examples-container [data-testid="stHorizontalBlock"]:nth-of-type(2) .stButton:nth-child(1) button { animation-delay: 0.6s; }
-    .examples-container [data-testid="stHorizontalBlock"]:nth-of-type(2) .stButton:nth-child(2) button { animation-delay: 0.7s; }
-    .examples-container [data-testid="stHorizontalBlock"]:nth-of-type(3) .stButton:nth-child(1) button { animation-delay: 0.8s; }
-    .examples-container [data-testid="stHorizontalBlock"]:nth-of-type(3) .stButton:nth-child(2) button { animation-delay: 0.9s; }
+    .examples-container [data-testid="stHorizontalBlock"]:nth-of-type(2) .stButton:nth-child(1) button { animation-delay: 0.7s; }
+    .examples-container [data-testid="stHorizontalBlock"]:nth-of-type(2) .stButton:nth-child(2) button { animation-delay: 0.9s; }
+    .examples-container [data-testid="stHorizontalBlock"]:nth-of-type(3) .stButton:nth-child(1) button { animation-delay: 1.1s; }
+    .examples-container [data-testid="stHorizontalBlock"]:nth-of-type(3) .stButton:nth-child(2) button { animation-delay: 1.3s; }
     
     @keyframes cardAppear {
-        to {
+        0% {
+            opacity: 0;
+            transform: translateY(40px) scale(0.9);
+        }
+        60% {
+            opacity: 1;
+            transform: translateY(-5px) scale(1.02);
+        }
+        80% {
+            transform: translateY(2px) scale(0.99);
+        }
+        100% {
             opacity: 1;
             transform: translateY(0) scale(1);
         }
     }
     
     .examples-container .stButton > button:hover {
-        background: linear-gradient(135deg, rgba(102, 126, 234, 0.3) 0%, rgba(118, 75, 162, 0.3) 100%) !important;
-        border-color: rgba(102, 126, 234, 0.5) !important;
-        transform: translateY(-4px) scale(1.02) !important;
-        box-shadow: 0 12px 30px rgba(102, 126, 234, 0.25) !important;
+        background: linear-gradient(145deg, rgba(102, 126, 234, 0.35) 0%, rgba(118, 75, 162, 0.35) 100%) !important;
+        border-color: rgba(102, 126, 234, 0.6) !important;
+        transform: translateY(-6px) scale(1.03) !important;
+        box-shadow: 
+            0 15px 35px rgba(102, 126, 234, 0.3),
+            0 5px 15px rgba(0, 0, 0, 0.1),
+            0 0 0 1px rgba(102, 126, 234, 0.2) inset !important;
     }
     
     .examples-container .stButton > button:active {
         transform: translateY(-2px) scale(1) !important;
+        box-shadow: 0 5px 15px rgba(102, 126, 234, 0.2) !important;
     }
     
     /* Light mode adjustments for example buttons */
     @media (prefers-color-scheme: light) {
         .examples-container .stButton > button {
-            background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%) !important;
+            background: linear-gradient(145deg, #ffffff 0%, #f8fafc 100%) !important;
             border: 1px solid #e2e8f0 !important;
             color: #374151 !important;
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08) !important;
+            box-shadow: 
+                0 4px 20px rgba(0, 0, 0, 0.08),
+                0 0 0 1px rgba(0, 0, 0, 0.02) inset !important;
         }
         
         .examples-container .stButton > button:hover {
-            background: linear-gradient(135deg, #eef2ff 0%, #e0e7ff 100%) !important;
+            background: linear-gradient(145deg, #eef2ff 0%, #e0e7ff 100%) !important;
             border-color: #a5b4fc !important;
+            box-shadow: 
+                0 15px 35px rgba(102, 126, 234, 0.15),
+                0 5px 15px rgba(0, 0, 0, 0.05) !important;
         }
     }
     
