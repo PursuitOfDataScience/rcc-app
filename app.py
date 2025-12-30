@@ -573,6 +573,8 @@ st.markdown("""
     .stChatInput {
         max-width: 800px !important;
         margin: 0 auto !important;
+        position: relative !important;
+        z-index: 100 !important;
     }
     
     .stChatInput > div {
@@ -584,6 +586,7 @@ st.markdown("""
         align-items: center !important;
         padding-left: 50px !important;
         position: relative !important;
+        z-index: 100 !important;
     }
     
     .stChatInput > div:focus-within {
@@ -601,6 +604,8 @@ st.markdown("""
         height: auto !important;
         resize: none !important;
         vertical-align: middle !important;
+        position: relative !important;
+        z-index: 101 !important;
     }
     
     .stChatInput textarea:not(:focus) {
@@ -763,39 +768,35 @@ st.markdown("""
         height: 20px;
     }
     
-    /* Hide the default file uploader completely */
+    /* Hide file uploader completely */
     [data-testid="stFileUploader"] {
         position: fixed !important;
         top: -9999px !important;
         left: -9999px !important;
-        width: 1px !important;
-        height: 1px !important;
-        opacity: 0 !important;
-        pointer-events: none !important;
-        visibility: hidden !important;
-        display: none !important;
+        height: 0 !important;
+        width: 0 !important;
+        overflow: hidden !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        z-index: -1 !important;
     }
     
     [data-testid="stFileUploader"] > div,
-    [data-testid="stFileUploader"] section,
+    [data-testid="stFileUploader"] > section,
     [data-testid="stFileUploader"] label,
-    [data-testid="stFileUploader"] small,
     [data-testid="stFileUploaderDropzone"],
     [data-testid="stFileUploaderDropzoneInstructions"] {
         display: none !important;
         visibility: hidden !important;
     }
     
-    /* Keep the actual input functional but invisible */
+    /* Keep file input accessible for JavaScript click */
     [data-testid="stFileUploader"] input[type="file"] {
         position: fixed !important;
         top: 0 !important;
         left: 0 !important;
-        width: 1px !important;
-        height: 1px !important;
         opacity: 0 !important;
         pointer-events: auto !important;
-        visibility: visible !important;
     }
     
     /* Remove scrollbar on landing page */
@@ -808,43 +809,7 @@ st.markdown("""
         height: 100vh !important;
     }
     
-    /* Attachment badge inside chat input */
-    .attachment-badge-input {
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        padding: 5px 10px;
-        border-radius: 10px;
-        font-size: 0.8rem;
-        margin-right: 8px;
-        white-space: nowrap;
-        max-width: 200px;
-        overflow: hidden;
-        text-overflow: ellipsis;
-    }
-    
-    .attachment-badge-input .remove-x {
-        cursor: pointer;
-        opacity: 0.8;
-        font-size: 14px;
-        margin-left: 4px;
-        font-weight: bold;
-    }
-    
-    .attachment-badge-input .remove-x:hover {
-        opacity: 1;
-    }
-    
-    /* Hide the remove button completely */
-    .hidden-remove-btn {
-        position: absolute !important;
-        left: -9999px !important;
-        top: -9999px !important;
-        visibility: hidden !important;
-        display: none !important;
-    }
+
     
     @media (prefers-color-scheme: dark) {
         .tool-badge {
@@ -863,14 +828,13 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# JavaScript for paperclip button, attachment badge, paste handling, and auto-focus
+# JavaScript for paperclip button and auto-focus
 import streamlit.components.v1 as components
 components.html("""
 <script>
 (function() {
     const doc = window.parent.document;
     
-    // Control scrollbar based on page state
     function updateScrollBehavior() {
         const chatContainer = doc.querySelector('.chat-container');
         const appContainer = doc.querySelector('[data-testid="stAppViewContainer"]');
@@ -887,81 +851,8 @@ components.html("""
         }
     }
     
-    // Show/update attachment badge inside chat input
-    function updateAttachmentBadge() {
-        const attachmentInfo = doc.getElementById('attachment-info');
-        const chatInput = doc.querySelector('[data-testid="stChatInput"]');
-        if (!chatInput) return;
-        
-        const inputWrapper = chatInput.querySelector('div');
-        if (!inputWrapper) return;
-        
-        // Remove existing badge if any
-        const existingBadge = doc.getElementById('attachment-badge');
-        if (existingBadge) {
-            existingBadge.remove();
-        }
-        
-        // If there's an attachment, create the badge
-        if (attachmentInfo) {
-            const filename = attachmentInfo.getAttribute('data-filename');
-            const icon = attachmentInfo.getAttribute('data-icon');
-            
-            const badge = doc.createElement('div');
-            badge.id = 'attachment-badge';
-            badge.className = 'attachment-badge-input';
-            badge.innerHTML = `<span>${icon}</span><span style="overflow:hidden;text-overflow:ellipsis;">${filename}</span><span class="remove-x">✕</span>`;
-            badge.style.cssText = `
-                display: inline-flex;
-                align-items: center;
-                gap: 6px;
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                color: white;
-                padding: 5px 10px;
-                border-radius: 10px;
-                font-size: 0.8rem;
-                margin-left: 50px;
-                margin-right: 8px;
-                white-space: nowrap;
-                max-width: 200px;
-                position: absolute;
-                left: 4px;
-                top: 50%;
-                transform: translateY(-50%);
-                z-index: 1001;
-            `;
-            
-            // Click handler for remove
-            badge.querySelector('.remove-x').onclick = function(e) {
-                e.preventDefault();
-                e.stopPropagation();
-                // Find and click the hidden remove button
-                const removeBtn = doc.querySelector('.hidden-remove-btn button');
-                if (removeBtn) {
-                    removeBtn.click();
-                }
-            };
-            
-            chatInput.appendChild(badge);
-            
-            // Adjust textarea padding to make room for badge
-            const textarea = chatInput.querySelector('textarea');
-            if (textarea) {
-                textarea.style.paddingLeft = '220px';
-            }
-        } else {
-            // No attachment - reset textarea padding
-            const textarea = chatInput.querySelector('textarea');
-            if (textarea) {
-                textarea.style.paddingLeft = '';
-            }
-        }
-    }
-    
-    // Wait for DOM to be ready
     function init() {
         updateScrollBehavior();
-        updateAttachmentBadge();
         
         const chatInput = doc.querySelector('[data-testid="stChatInput"]');
         if (!chatInput) {
@@ -969,50 +860,21 @@ components.html("""
             return;
         }
         
-        // Check if paperclip already exists
-        if (doc.getElementById('paperclip-btn')) {
-            updateAttachmentBadge();
-            return;
-        }
+        if (doc.getElementById('paperclip-btn')) return;
         
-        // Create paperclip button
         const paperclipBtn = doc.createElement('button');
         paperclipBtn.id = 'paperclip-btn';
         paperclipBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>';
-        paperclipBtn.title = 'Attach file (PDF, TXT, MD, PY, JSON, CSV)';
-        paperclipBtn.style.cssText = `
-            position: absolute;
-            left: 12px;
-            top: 50%;
-            transform: translateY(-50%);
-            z-index: 1000;
-            background: transparent;
-            border: none;
-            cursor: pointer;
-            padding: 8px;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            transition: all 0.2s ease;
-            color: #9ca3af;
-        `;
+        paperclipBtn.title = 'Attach file';
+        paperclipBtn.style.cssText = 'position:absolute;left:12px;top:50%;transform:translateY(-50%);z-index:1000;background:transparent;border:none;cursor:pointer;padding:8px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#9ca3af;';
         
-        paperclipBtn.onmouseover = function() {
-            this.style.background = 'rgba(102, 126, 234, 0.1)';
-            this.style.color = '#667eea';
-        };
-        paperclipBtn.onmouseout = function() {
-            this.style.background = 'transparent';
-            this.style.color = '#9ca3af';
-        };
+        paperclipBtn.onmouseover = function() { this.style.background='rgba(102,126,234,0.1)'; this.style.color='#667eea'; };
+        paperclipBtn.onmouseout = function() { this.style.background='transparent'; this.style.color='#9ca3af'; };
         
         chatInput.style.position = 'relative';
         
         const inputWrapper = chatInput.querySelector('div');
-        if (inputWrapper) {
-            inputWrapper.style.paddingLeft = '50px';
-        }
+        if (inputWrapper) inputWrapper.style.paddingLeft = '50px';
         
         chatInput.insertBefore(paperclipBtn, chatInput.firstChild);
         
@@ -1020,15 +882,10 @@ components.html("""
             e.preventDefault();
             e.stopPropagation();
             const fileInput = doc.querySelector('input[type="file"]');
-            if (fileInput) {
-                fileInput.click();
-            }
+            if (fileInput) fileInput.click();
         };
-        
-        updateAttachmentBadge();
     }
     
-    // Auto-scroll only in chat mode
     setTimeout(function() {
         const chatContainer = doc.querySelector('.chat-container');
         if (chatContainer) {
@@ -1039,25 +896,17 @@ components.html("""
     doc.addEventListener('keydown', function(e) {
         if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
         if (e.ctrlKey || e.altKey || e.metaKey) return;
-        const ignore = ['Escape', 'Tab', 'CapsLock', 'Shift', 'Control', 'Alt', 'Meta', 
-                        'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
-                        'F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8', 'F9', 'F10', 'F11', 'F12'];
+        const ignore = ['Escape','Tab','CapsLock','Shift','Control','Alt','Meta','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','F1','F2','F3','F4','F5','F6','F7','F8','F9','F10','F11','F12'];
         if (ignore.includes(e.key)) return;
         const input = doc.querySelector('textarea[data-testid="stChatInputTextArea"]');
         if (input) input.focus();
     });
     
-    // Initialize
     init();
     
-    // Re-init on DOM changes
     const observer = new MutationObserver(function() {
         updateScrollBehavior();
-        if (!doc.getElementById('paperclip-btn')) {
-            init();
-        } else {
-            updateAttachmentBadge();
-        }
+        if (!doc.getElementById('paperclip-btn')) init();
     });
     observer.observe(doc.body, { childList: true, subtree: true });
 })();
@@ -1255,9 +1104,12 @@ else:
                 render_assistant_message(text, msg.get("tool_names"))
     st.markdown('</div>', unsafe_allow_html=True)
 
-# Hidden file uploader (triggered by paperclip button) - text-based files only
+# Chat input
+prompt = st.chat_input("Ask any question about RCC...", disabled=st.session_state.processing)
+
+# Hidden file uploader (CSS hides it, JavaScript triggers it)
 uploaded_file = st.file_uploader(
-    "Upload file",
+    "x",
     type=['pdf', 'txt', 'md', 'py', 'json', 'csv'],
     key=f"file_uploader_{st.session_state.uploader_key}",
     label_visibility="collapsed"
@@ -1267,23 +1119,19 @@ if uploaded_file is not None and st.session_state.uploaded_file_data is None:
     file_data = process_uploaded_file(uploaded_file)
     st.session_state.uploaded_file_data = file_data
 
-# Hidden element to pass attachment info to JavaScript
+# Show attachment info below input if file is attached
 if st.session_state.uploaded_file_data and st.session_state.uploaded_file_data.get("type") != "error":
     file_data = st.session_state.uploaded_file_data
     icon = get_file_icon(file_data.get("filename", "file"))
     filename = file_data.get("filename", "file")
-    st.markdown(f'<div id="attachment-info" data-filename="{filename}" data-icon="{icon}" style="display:none;"></div>', unsafe_allow_html=True)
     
-    # Hidden remove button (triggered by JavaScript)
-    st.markdown('<div class="hidden-remove-btn">', unsafe_allow_html=True)
-    if st.button("remove_attachment_hidden", key="remove_attachment"):
-        st.session_state.uploaded_file_data = None
-        st.session_state.uploader_key += 1
-        st.rerun()
-    st.markdown('</div>', unsafe_allow_html=True)
-
-# Chat input (paperclip button and attachment badge added via JavaScript)
-prompt = st.chat_input("Ask any question about RCC...", disabled=st.session_state.processing)
+    acol1, acol2, acol3 = st.columns([1, 3, 1])
+    with acol2:
+        st.info(f"{icon} **{filename}** attached")
+        if st.button("Remove attachment", key="remove_attachment"):
+            st.session_state.uploaded_file_data = None
+            st.session_state.uploader_key += 1
+            st.rerun()
 
 if prompt:
     file_data = st.session_state.uploaded_file_data
