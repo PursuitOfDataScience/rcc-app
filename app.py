@@ -935,6 +935,8 @@ if "client" not in st.session_state:
     st.session_state.client = get_client()
 if "uploaded_file_data" not in st.session_state:
     st.session_state.uploaded_file_data = None
+if "uploader_key" not in st.session_state:
+    st.session_state.uploader_key = 0
 
 
 def collect_stream_response(stream):
@@ -1099,6 +1101,7 @@ else:
             st.session_state.messages = []
             st.session_state.processing = False
             st.session_state.uploaded_file_data = None
+            st.session_state.uploader_key += 1  # Reset the file uploader
             st.rerun()
     
     st.markdown('<div class="chat-container">', unsafe_allow_html=True)
@@ -1117,7 +1120,7 @@ else:
 uploaded_file = st.file_uploader(
     "Upload file",
     type=['pdf', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'txt', 'md', 'py', 'json', 'csv'],
-    key="file_uploader",
+    key=f"file_uploader_{st.session_state.uploader_key}",
     label_visibility="collapsed"
 )
 
@@ -1143,6 +1146,7 @@ if st.session_state.uploaded_file_data and st.session_state.uploaded_file_data.g
     with col2:
         if st.button("✕", key="remove_attachment", help="Remove"):
             st.session_state.uploaded_file_data = None
+            st.session_state.uploader_key += 1  # Reset the file uploader
             st.rerun()
 
 # Chat input (paperclip button is added via JavaScript)
