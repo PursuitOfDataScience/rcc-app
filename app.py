@@ -1370,11 +1370,21 @@ if st.session_state.processing:
         stream = st.session_state.client.messages.stream(model=MODEL, max_tokens=8192, system=SYSTEM_PROMPT, messages=api_messages, tools=TOOLS)
         generator, tool_use_blocks, final_message_container = stream_response_generator(stream)
         
-        # Stream the response with proper markdown rendering
+        # Stream the response with a single assistant bubble to avoid duplicate avatars
         st.markdown('<div class="assistant-wrapper">', unsafe_allow_html=True)
-        with st.chat_message("assistant"):
-            # Use st.write_stream for proper streaming with markdown
-            streamed_text = st.write_stream(generator)
+        assistant_chat = st.chat_message("assistant")
+        with assistant_chat:
+            tool_badge_placeholder = st.empty()
+            text_placeholder = st.empty()
+        
+        accumulated_text = [""]
+        
+        def stream_into_placeholder(gen):
+            for chunk in gen:
+                accumulated_text[0] += chunk
+                text_placeholder.markdown(accumulated_text[0])
+        
+        stream_into_placeholder(generator)
         st.markdown('</div>', unsafe_allow_html=True)
         
         response = final_message_container[0]
@@ -1394,13 +1404,10 @@ if st.session_state.processing:
             stream = st.session_state.client.messages.stream(model=MODEL, max_tokens=8192, system=SYSTEM_PROMPT, messages=api_messages, tools=TOOLS)
             generator, tool_use_blocks, final_message_container = stream_response_generator(stream)
             
-            # Stream the continuation response
-            st.markdown('<div class="assistant-wrapper">', unsafe_allow_html=True)
-            with st.chat_message("assistant"):
-                if all_tool_names:
-                    st.markdown(f'<span class="tool-badge">📚 {format_tool_names(all_tool_names)}</span>', unsafe_allow_html=True)
-                streamed_text = st.write_stream(generator)
-            st.markdown('</div>', unsafe_allow_html=True)
+            # Stream the continuation response into the same bubble
+            if all_tool_names:
+                tool_badge_placeholder.markdown(f'<span class="tool-badge">📚 {format_tool_names(all_tool_names)}</span>', unsafe_allow_html=True)
+            stream_into_placeholder(generator)
             
             response = final_message_container[0]
             all_tool_names.extend([tb["name"] for tb in tool_use_blocks])
