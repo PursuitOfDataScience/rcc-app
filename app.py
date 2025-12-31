@@ -1078,6 +1078,48 @@ def collect_stream_response(stream):
     return full_text, tool_use_blocks, final_message
 
 
+def stream_response_generator(stream):
+    """
+    Generator that yields text chunks from the streaming API for use with st.write_stream().
+    Also collects tool use blocks and returns them via a mutable container.
+    
+    Returns: generator that yields text chunks
+    """
+    tool_use_blocks = []
+    current_tool = None
+    current_tool_input = ""
+    final_message_container = [None]  # Mutable container to store final message
+    
+    def generator():
+        nonlocal current_tool, current_tool_input
+        with stream as s:
+            for event in s:
+                if event.type == "content_block_start":
+                    if hasattr(event.content_block, 'type') and event.content_block.type == "tool_use":
+                        current_tool = {"id": event.content_block.id, "name": event.content_block.name, "input": {}}
+                        current_tool_input = ""
+                elif event.type == "content_block_delta":
+                    if hasattr(event.delta, 'type'):
+                        if event.delta.type == "text_delta":
+                            # Yield text chunks for streaming display
+                            yield event.delta.text
+                        elif event.delta.type == "input_json_delta" and current_tool:
+                            current_tool_input += event.delta.partial_json
+                elif event.type == "content_block_stop":
+                    if current_tool:
+                        try:
+                            current_tool["input"] = json.loads(current_tool_input) if current_tool_input else {}
+                        except json.JSONDecodeError:
+                            current_tool["input"] = {}
+                        tool_use_blocks.append(current_tool)
+                        current_tool = None
+                elif event.type == "message_stop":
+                    break
+            final_message_container[0] = s.get_final_message()
+    
+    return generator(), tool_use_blocks, final_message_container
+
+
 def extract_display_text(content):
     """Extract displayable text from message content."""
     if isinstance(content, str):
@@ -1307,25 +1349,56 @@ if prompt:
 
 # Process
 if st.session_state.processing:
-    status_messages = ["🧠 Contemplating...", "✨ Vibing...", "⏳ Brewing...", "🎨 Crafting...", "🔧 Tinkering..."]
-    st.markdown(f'<div class="search-status"><span class="search-text">{random.choice(status_messages)}</span></div>', unsafe_allow_html=True)
+    # Display user message first
+    last_user_msg = st.session_state.messages[-1]
+    display_text = last_user_msg.get("display_text", last_user_msg["content"] if isinstance(last_user_msg["content"], str) else "")
+    file_info = last_user_msg.get("file_info")
+    render_user_message(display_text, file_info)
     
     api_messages = [{"role": m["role"], "content": m["content"]} for m in st.session_state.messages]
+    all_tool_names = []
     
     try:
+        # First API call - may have tool use
         stream = st.session_state.client.messages.stream(model=MODEL, max_tokens=8192, system=SYSTEM_PROMPT, messages=api_messages, tools=TOOLS)
-        response_text, tool_use_blocks, response = collect_stream_response(stream)
-        all_tool_names = [tb["name"] for tb in tool_use_blocks]
-
+        generator, tool_use_blocks, final_message_container = stream_response_generator(stream)
+        
+        # Stream the response with proper markdown rendering
+        st.markdown('<div class="assistant-wrapper">', unsafe_allow_html=True)
+        with st.chat_message("assistant"):
+            # Use st.write_stream for proper streaming with markdown
+            streamed_text = st.write_stream(generator)
+        st.markdown('</div>', unsafe_allow_html=True)
+        
+        response = final_message_container[0]
+        all_tool_names.extend([tb["name"] for tb in tool_use_blocks])
+        
+        # Handle tool calls in a loop
         while tool_use_blocks:
+            # Show tool usage indicator
+            tool_display = format_tool_names([tb["name"] for tb in tool_use_blocks])
+            st.markdown(f'<div class="search-status"><span class="search-text">📚 Reading {tool_display}...</span></div>', unsafe_allow_html=True)
+            
             api_messages.append({"role": "assistant", "content": response.content})
             tool_results = [{"type": "tool_result", "tool_use_id": tb["id"], "content": execute_tool(tb["name"], tb["input"])} for tb in tool_use_blocks]
             api_messages.append({"role": "user", "content": tool_results})
             
+            # Next API call after tool execution
             stream = st.session_state.client.messages.stream(model=MODEL, max_tokens=8192, system=SYSTEM_PROMPT, messages=api_messages, tools=TOOLS)
-            response_text, tool_use_blocks, response = collect_stream_response(stream)
+            generator, tool_use_blocks, final_message_container = stream_response_generator(stream)
+            
+            # Stream the continuation response
+            st.markdown('<div class="assistant-wrapper">', unsafe_allow_html=True)
+            with st.chat_message("assistant"):
+                if all_tool_names:
+                    st.markdown(f'<span class="tool-badge">📚 {format_tool_names(all_tool_names)}</span>', unsafe_allow_html=True)
+                streamed_text = st.write_stream(generator)
+            st.markdown('</div>', unsafe_allow_html=True)
+            
+            response = final_message_container[0]
             all_tool_names.extend([tb["name"] for tb in tool_use_blocks])
 
+        # Store the final response in session state
         if response and response.content:
             st.session_state.messages.append({"role": "assistant", "content": response.content, "tool_names": all_tool_names, "is_final": True})
 
