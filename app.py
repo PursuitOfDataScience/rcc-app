@@ -1287,7 +1287,14 @@ else:
     st.markdown('</div>', unsafe_allow_html=True)
     
     st.markdown('<div class="chat-container">', unsafe_allow_html=True)
-    for msg in st.session_state.messages:
+    
+    # When processing, skip the last user message in history since it will be rendered
+    # by the processing block along with the streaming response
+    messages_to_render = st.session_state.messages
+    if st.session_state.processing and messages_to_render and messages_to_render[-1]["role"] == "user":
+        messages_to_render = messages_to_render[:-1]
+    
+    for msg in messages_to_render:
         if msg["role"] == "user":
             display_text = msg.get("display_text", msg["content"] if isinstance(msg["content"], str) else "")
             file_info = msg.get("file_info")
