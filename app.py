@@ -365,7 +365,9 @@ st.markdown("""
     .main .block-container {
         padding-top: 0 !important;
         padding-bottom: 0;
-        max-width: 900px;
+        max-width: 880px;
+        margin: 0 auto;
+        width: 100%;
     }
     
     /* Kill all Streamlit default spacing */
@@ -558,10 +560,12 @@ st.markdown("""
     
     /* Chat input */
     .stChatInput {
-        max-width: 800px !important;
-        margin: 0 auto !important;
+        max-width: 880px !important;
+        margin: 1.75rem auto 1.25rem auto !important;
         position: relative !important;
         z-index: 100 !important;
+        padding: 0 1rem !important;
+        width: 100% !important;
     }
     
     /* Force chat input container to have no top margin/padding */
@@ -646,8 +650,10 @@ st.markdown("""
     .user-message {
         display: flex;
         justify-content: flex-end;
-        margin: 2rem 0 1rem 0;
-        padding-right: 1rem;
+        margin: 2.25rem auto 1.75rem auto;
+        padding: 0 1rem;
+        max-width: 860px;
+        width: 100%;
     }
     
     .user-message:first-child {
@@ -678,7 +684,10 @@ st.markdown("""
     
     /* Assistant message */
     .assistant-wrapper {
-        margin: 1rem 0 2rem 0;
+        margin: 1.25rem auto 2.75rem auto;
+        max-width: 820px;
+        padding: 0 1rem;
+        width: 100%;
     }
     
     .stChatMessage {
@@ -713,9 +722,11 @@ st.markdown("""
     
     /* Chat container */
     .chat-container {
-        padding-bottom: 140px;
-        margin-top: 0;
-        padding-top: 0.5rem;
+        padding-bottom: 200px;
+        margin: 0 auto;
+        padding-top: 1rem;
+        max-width: 880px;
+        width: 100%;
     }
     
     .chat-container > div:first-child {
@@ -961,7 +972,7 @@ components.html("""
             // Find the vertical block that contains the attachment button
             if (parent.getAttribute && parent.getAttribute('data-testid') === 'stVerticalBlock') {
                 parent.style.cssText = `
-                    max-width: 800px !important;
+                    max-width: 880px !important;
                     margin: 0 auto !important;
                     padding: 0 1rem !important;
                     display: flex !important;
