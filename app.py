@@ -646,7 +646,7 @@ st.markdown("""
     .user-message {
         display: flex;
         justify-content: flex-end;
-        margin: 0 0 0.8rem 0;
+        margin: 1.5rem 0 0.8rem 0;
         padding-right: 1rem;
     }
     
@@ -678,7 +678,7 @@ st.markdown("""
     
     /* Assistant message */
     .assistant-wrapper {
-        margin: 0.3rem 0 0.8rem 0;
+        margin: 0.8rem 0 1.5rem 0;
     }
     
     .stChatMessage {
@@ -1376,12 +1376,9 @@ if st.session_state.processing:
         response_text, tool_use_blocks, response = collect_stream_response(stream)
         all_tool_names.extend([tb["name"] for tb in tool_use_blocks])
         
-        # Handle tool calls in a loop (collect mode, showing status)
+        # Handle tool calls in a loop (collect mode, status stays the same)
         while tool_use_blocks:
-            # Update status to show tool usage
-            tool_display = format_tool_names([tb["name"] for tb in tool_use_blocks])
-            status_placeholder.markdown(f'<div class="search-status"><span class="search-text">📚 Reading {tool_display}...</span></div>', unsafe_allow_html=True)
-            
+            # Keep the same status message - don't switch to "Reading..."
             api_messages.append({"role": "assistant", "content": response.content})
             tool_results = [{"type": "tool_result", "tool_use_id": tb["id"], "content": execute_tool(tb["name"], tb["input"])} for tb in tool_use_blocks]
             api_messages.append({"role": "user", "content": tool_results})
