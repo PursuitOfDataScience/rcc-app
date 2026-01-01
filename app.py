@@ -646,7 +646,7 @@ st.markdown("""
     .user-message {
         display: flex;
         justify-content: flex-end;
-        margin: 1.5rem 0 0.8rem 0;
+        margin: 2rem 0 1rem 0;
         padding-right: 1rem;
     }
     
@@ -678,7 +678,7 @@ st.markdown("""
     
     /* Assistant message */
     .assistant-wrapper {
-        margin: 0.8rem 0 1.5rem 0;
+        margin: 1rem 0 2rem 0;
     }
     
     .stChatMessage {
