@@ -13,6 +13,7 @@ import anthropic
 import streamlit as st
 from io import BytesIO
 from mistralai import Mistral
+import traceback
 
 # --- API Configuration ---
 # Primary API: MiniMax (via Anthropic SDK)
@@ -23,6 +24,12 @@ MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY")
 if not MINIMAX_API_KEY and not MISTRAL_API_KEY:
     st.error("❌ No API keys found. Please set ANTHROPIC_API_KEY and/or MISTRAL_API_KEY.")
     st.stop()
+
+# Show warning if only one API is available
+if MINIMAX_API_KEY and not MISTRAL_API_KEY:
+    pass  # Primary available, backup not - still functional
+elif MISTRAL_API_KEY and not MINIMAX_API_KEY:
+    pass  # Only backup available - will use it as primary
 
 # Supported file types: PDF and text-based files (txt, md, py, json, csv)
 # We extract text client-side and send to the model as plain text.
@@ -36,17 +43,25 @@ def get_minimax_client():
     """Create an Anthropic client configured for MiniMax."""
     if not MINIMAX_API_KEY:
         return None
-    return anthropic.Anthropic(
-        api_key=MINIMAX_API_KEY,
-        base_url="https://api.minimax.io/anthropic"
-    )
+    try:
+        return anthropic.Anthropic(
+            api_key=MINIMAX_API_KEY,
+            base_url="https://api.minimax.io/anthropic"
+        )
+    except Exception as e:
+        print(f"Failed to create MiniMax client: {e}")
+        return None
 
 
 def get_mistral_client():
     """Create a Mistral client as backup."""
     if not MISTRAL_API_KEY:
         return None
-    return Mistral(api_key=MISTRAL_API_KEY)
+    try:
+        return Mistral(api_key=MISTRAL_API_KEY)
+    except Exception as e:
+        print(f"Failed to create Mistral client: {e}")
+        return None
 
 
 # --- File Processing Functions ---
@@ -1160,36 +1175,60 @@ def mistral_collect_response(stream):
     content_buffer = ""
     message = None
     
-    for chunk in stream:
-        if not chunk.data or not chunk.data.choices:
-            continue
-        
-        delta = chunk.data.choices[0].delta
-        
-        if delta.content:
-            content_buffer += delta.content
-        
-        if delta.tool_calls:
-            for tool_call_delta in delta.tool_calls:
-                idx = tool_call_delta.index
-                if idx not in tool_calls_dict:
-                    tool_calls_dict[idx] = {
-                        "id": tool_call_delta.id or "",
-                        "name": "",
-                        "arguments": ""
-                    }
+    try:
+        for chunk in stream:
+            # Handle different response formats
+            if hasattr(chunk, 'data'):
+                data = chunk.data
+            else:
+                data = chunk
+            
+            if not data or not hasattr(data, 'choices') or not data.choices:
+                continue
+            
+            choice = data.choices[0]
+            delta = getattr(choice, 'delta', None)
+            
+            if delta is None:
+                continue
+            
+            # Extract content
+            content = getattr(delta, 'content', None)
+            if content:
+                content_buffer += content
+            
+            # Extract tool calls
+            tool_calls = getattr(delta, 'tool_calls', None)
+            if tool_calls:
+                for tool_call_delta in tool_calls:
+                    idx = getattr(tool_call_delta, 'index', 0)
+                    if idx not in tool_calls_dict:
+                        tool_calls_dict[idx] = {
+                            "id": getattr(tool_call_delta, 'id', "") or "",
+                            "name": "",
+                            "arguments": ""
+                        }
+                    
+                    tc_id = getattr(tool_call_delta, 'id', None)
+                    if tc_id:
+                        tool_calls_dict[idx]["id"] = tc_id
+                    
+                    func = getattr(tool_call_delta, 'function', None)
+                    if func:
+                        func_name = getattr(func, 'name', None)
+                        if func_name:
+                            tool_calls_dict[idx]["name"] = func_name
+                        func_args = getattr(func, 'arguments', None)
+                        if func_args:
+                            tool_calls_dict[idx]["arguments"] += func_args
+            
+            if hasattr(choice, 'message'):
+                message = choice.message
                 
-                if tool_call_delta.id:
-                    tool_calls_dict[idx]["id"] = tool_call_delta.id
-                
-                if tool_call_delta.function:
-                    if tool_call_delta.function.name:
-                        tool_calls_dict[idx]["name"] = tool_call_delta.function.name
-                    if tool_call_delta.function.arguments:
-                        tool_calls_dict[idx]["arguments"] += tool_call_delta.function.arguments
-        
-        if hasattr(chunk.data.choices[0], 'message'):
-            message = chunk.data.choices[0].message
+    except Exception as e:
+        print(f"Error in mistral_collect_response: {e}")
+        print(traceback.format_exc())
+        raise
     
     # Convert tool_calls_dict to list format compatible with the app
     tool_use_blocks = []
@@ -1212,7 +1251,6 @@ def mistral_collect_response(stream):
     
     return content_buffer, tool_use_blocks, response
 
-
 def mistral_stream_generator(stream):
     """Generator that yields text chunks from Mistral streaming API for st.write_stream()."""
     tool_calls_dict = {}
@@ -1222,34 +1260,55 @@ def mistral_stream_generator(stream):
     
     def generator():
         nonlocal content_buffer
-        for chunk in stream:
-            if not chunk.data or not chunk.data.choices:
-                continue
-            
-            delta = chunk.data.choices[0].delta
-            
-            if delta.content:
-                content_buffer += delta.content
-                yield delta.content
-            
-            if delta.tool_calls:
-                for tool_call_delta in delta.tool_calls:
-                    idx = tool_call_delta.index
-                    if idx not in tool_calls_dict:
-                        tool_calls_dict[idx] = {
-                            "id": tool_call_delta.id or "",
-                            "name": "",
-                            "arguments": ""
-                        }
-                    
-                    if tool_call_delta.id:
-                        tool_calls_dict[idx]["id"] = tool_call_delta.id
-                    
-                    if tool_call_delta.function:
-                        if tool_call_delta.function.name:
-                            tool_calls_dict[idx]["name"] = tool_call_delta.function.name
-                        if tool_call_delta.function.arguments:
-                            tool_calls_dict[idx]["arguments"] += tool_call_delta.function.arguments
+        try:
+            for chunk in stream:
+                # Handle different response formats
+                if hasattr(chunk, 'data'):
+                    data = chunk.data
+                else:
+                    data = chunk
+                
+                if not data or not hasattr(data, 'choices') or not data.choices:
+                    continue
+                
+                choice = data.choices[0]
+                delta = getattr(choice, 'delta', None)
+                
+                if delta is None:
+                    continue
+                
+                content = getattr(delta, 'content', None)
+                if content:
+                    content_buffer += content
+                    yield content
+                
+                tool_calls = getattr(delta, 'tool_calls', None)
+                if tool_calls:
+                    for tool_call_delta in tool_calls:
+                        idx = getattr(tool_call_delta, 'index', 0)
+                        if idx not in tool_calls_dict:
+                            tool_calls_dict[idx] = {
+                                "id": getattr(tool_call_delta, 'id', "") or "",
+                                "name": "",
+                                "arguments": ""
+                            }
+                        
+                        tc_id = getattr(tool_call_delta, 'id', None)
+                        if tc_id:
+                            tool_calls_dict[idx]["id"] = tc_id
+                        
+                        func = getattr(tool_call_delta, 'function', None)
+                        if func:
+                            func_name = getattr(func, 'name', None)
+                            if func_name:
+                                tool_calls_dict[idx]["name"] = func_name
+                            func_args = getattr(func, 'arguments', None)
+                            if func_args:
+                                tool_calls_dict[idx]["arguments"] += func_args
+        except Exception as e:
+            print(f"Error in mistral_stream_generator: {e}")
+            print(traceback.format_exc())
+            raise
         
         # After stream ends, process tool calls
         for tc in tool_calls_dict.values():
@@ -1293,42 +1352,85 @@ def call_mistral_api(client, messages, tools, system_prompt, collect_only=False)
     mistral_messages = [{"role": "system", "content": system_prompt}]
     
     for msg in messages:
-        if msg["role"] == "user":
+        role = msg["role"]
+        content = msg["content"]
+        
+        if role == "user":
             # Handle both string content and list content
-            if isinstance(msg["content"], str):
-                mistral_messages.append({"role": "user", "content": msg["content"]})
-            elif isinstance(msg["content"], list):
+            if isinstance(content, str):
+                mistral_messages.append({"role": "user", "content": content})
+            elif isinstance(content, list):
                 # Check if it's tool results
-                if msg["content"] and isinstance(msg["content"][0], dict) and msg["content"][0].get("type") == "tool_result":
+                if content and isinstance(content[0], dict) and content[0].get("type") == "tool_result":
                     # Convert tool results to Mistral format
-                    for tool_result in msg["content"]:
+                    for tool_result in content:
                         mistral_messages.append({
                             "role": "tool",
-                            "tool_call_id": tool_result["tool_use_id"],
+                            "tool_call_id": tool_result.get("tool_use_id", "unknown"),
                             "name": tool_result.get("name", "unknown"),
-                            "content": tool_result["content"]
+                            "content": str(tool_result.get("content", ""))
                         })
                 else:
                     # Regular content list - extract text
                     text_content = ""
-                    for block in msg["content"]:
+                    for block in content:
                         if isinstance(block, dict) and block.get("type") == "text":
                             text_content += block.get("text", "")
-                    mistral_messages.append({"role": "user", "content": text_content})
-        elif msg["role"] == "assistant":
-            if isinstance(msg["content"], str):
-                mistral_messages.append({"role": "assistant", "content": msg["content"]})
-            elif isinstance(msg["content"], list):
-                # Extract text from content blocks
+                        elif isinstance(block, dict) and "text" in block:
+                            text_content += block.get("text", "")
+                    if text_content:
+                        mistral_messages.append({"role": "user", "content": text_content})
+        
+        elif role == "assistant":
+            if isinstance(content, str):
+                if content:  # Only add non-empty content
+                    mistral_messages.append({"role": "assistant", "content": content})
+            elif isinstance(content, list):
+                # Extract text from content blocks and handle tool calls
                 text_content = ""
-                for block in msg["content"]:
-                    if hasattr(block, 'type') and block.type == "text":
-                        text_content += block.text
-                    elif hasattr(block, 'type') and block.type == "tool_use":
-                        # This is a tool call - add it properly
-                        pass  # Tool calls are handled separately
-                mistral_messages.append({"role": "assistant", "content": text_content})
+                tool_calls_to_add = []
+                
+                for block in content:
+                    # Handle SimpleNamespace objects (from Anthropic response)
+                    if hasattr(block, 'type'):
+                        if block.type == "text" and hasattr(block, 'text'):
+                            text_content += block.text
+                        elif block.type == "tool_use":
+                            # This is a tool call - need to track for Mistral format
+                            tool_calls_to_add.append({
+                                "id": getattr(block, 'id', 'unknown'),
+                                "type": "function",
+                                "function": {
+                                    "name": getattr(block, 'name', 'unknown'),
+                                    "arguments": json.dumps(getattr(block, 'input', {}))
+                                }
+                            })
+                    # Handle dict objects
+                    elif isinstance(block, dict):
+                        if block.get("type") == "text":
+                            text_content += block.get("text", "")
+                        elif block.get("type") == "tool_use":
+                            tool_calls_to_add.append({
+                                "id": block.get("id", "unknown"),
+                                "type": "function",
+                                "function": {
+                                    "name": block.get("name", "unknown"),
+                                    "arguments": json.dumps(block.get("input", {}))
+                                }
+                            })
+                
+                # Build assistant message
+                if tool_calls_to_add:
+                    assistant_msg = {
+                        "role": "assistant",
+                        "content": text_content if text_content else "",
+                        "tool_calls": tool_calls_to_add
+                    }
+                    mistral_messages.append(assistant_msg)
+                elif text_content:
+                    mistral_messages.append({"role": "assistant", "content": text_content})
     
+    # Make the API call
     stream = client.chat.stream(
         model=MISTRAL_MODEL,
         messages=mistral_messages,
@@ -1592,10 +1694,12 @@ if st.session_state.processing:
     api_messages = [{"role": m["role"], "content": m["content"]} for m in st.session_state.messages]
     all_tool_names = []
     using_backup = False
+    minimax_error_msg = None
     
     try:
-        # Try MiniMax API first (primary)
+        # Try MiniMax API first (primary) if client is available
         minimax_succeeded = False
+        
         if st.session_state.minimax_client:
             try:
                 # First API call - collect to check for tool calls
@@ -1616,37 +1720,54 @@ if st.session_state.processing:
                     all_tool_names.extend([tb["name"] for tb in tool_use_blocks])
                 
                 minimax_succeeded = True
-            except Exception as minimax_error:
-                # MiniMax failed, will try Mistral backup
-                if not st.session_state.mistral_client:
-                    raise minimax_error
+                
+            except Exception as e:
+                # MiniMax failed - store error and try backup
+                minimax_error_msg = str(e)
+                print(f"MiniMax API failed: {minimax_error_msg}")
+                print(traceback.format_exc())
+                minimax_succeeded = False
         
         # If MiniMax failed or not available, try Mistral backup
         if not minimax_succeeded:
             if st.session_state.mistral_client:
+                print(f"Switching to Mistral backup API...")
                 using_backup = True
-                # Reset for backup attempt
+                
+                # Reset messages for backup attempt (start fresh)
                 api_messages = [{"role": m["role"], "content": m["content"]} for m in st.session_state.messages]
                 all_tool_names = []
                 
-                # First API call - collect to check for tool calls
-                response_text, tool_use_blocks, response = call_mistral_api(
-                    st.session_state.mistral_client, api_messages, MISTRAL_TOOLS, SYSTEM_PROMPT, collect_only=True
-                )
-                all_tool_names.extend([tb["name"] for tb in tool_use_blocks])
-                
-                # Handle tool calls in a loop
-                while tool_use_blocks:
-                    api_messages.append({"role": "assistant", "content": response.content})
-                    tool_results = [{"type": "tool_result", "tool_use_id": tb["id"], "name": tb["name"], "content": execute_tool(tb["name"], tb["input"])} for tb in tool_use_blocks]
-                    api_messages.append({"role": "user", "content": tool_results})
-                    
+                try:
+                    # First API call - collect to check for tool calls
                     response_text, tool_use_blocks, response = call_mistral_api(
                         st.session_state.mistral_client, api_messages, MISTRAL_TOOLS, SYSTEM_PROMPT, collect_only=True
                     )
                     all_tool_names.extend([tb["name"] for tb in tool_use_blocks])
+                    
+                    # Handle tool calls in a loop
+                    while tool_use_blocks:
+                        api_messages.append({"role": "assistant", "content": response.content})
+                        tool_results = [{"type": "tool_result", "tool_use_id": tb["id"], "name": tb["name"], "content": execute_tool(tb["name"], tb["input"])} for tb in tool_use_blocks]
+                        api_messages.append({"role": "user", "content": tool_results})
+                        
+                        response_text, tool_use_blocks, response = call_mistral_api(
+                            st.session_state.mistral_client, api_messages, MISTRAL_TOOLS, SYSTEM_PROMPT, collect_only=True
+                        )
+                        all_tool_names.extend([tb["name"] for tb in tool_use_blocks])
+                        
+                except Exception as mistral_error:
+                    # Both APIs failed
+                    error_msg = f"Backup API also failed: {mistral_error}"
+                    if minimax_error_msg:
+                        error_msg = f"Primary API failed: {minimax_error_msg}. {error_msg}"
+                    raise Exception(error_msg)
             else:
-                raise Exception("No API client available")
+                # No backup available
+                if minimax_error_msg:
+                    raise Exception(f"Primary API failed: {minimax_error_msg}. No backup API configured.")
+                else:
+                    raise Exception("No API client available. Please set ANTHROPIC_API_KEY or MISTRAL_API_KEY.")
         
         # Clear the status message
         status_placeholder.empty()
@@ -1657,17 +1778,26 @@ if st.session_state.processing:
             with st.chat_message("assistant"):
                 st.markdown(f'<span class="tool-badge">📚 {format_tool_names(all_tool_names)}</span>', unsafe_allow_html=True)
                 
-                # Use appropriate API for streaming
-                if not using_backup and st.session_state.minimax_client:
+                # Use appropriate API for streaming based on which one succeeded
+                if using_backup:
+                    # Use Mistral for streaming
+                    gen, _, final_msg_container = call_mistral_api(
+                        st.session_state.mistral_client, api_messages, MISTRAL_TOOLS, SYSTEM_PROMPT, collect_only=False
+                    )
+                    streamed_text = st.write_stream(gen)
+                    response = final_msg_container[0]
+                else:
+                    # Try MiniMax for streaming, fallback to Mistral if it fails
                     try:
                         gen, _, final_msg_container = call_minimax_api(
                             st.session_state.minimax_client, api_messages, TOOLS, SYSTEM_PROMPT, collect_only=False
                         )
                         streamed_text = st.write_stream(gen)
                         response = final_msg_container[0]
-                    except Exception:
+                    except Exception as stream_error:
                         # Fallback to Mistral for streaming
                         if st.session_state.mistral_client:
+                            print(f"MiniMax streaming failed, using Mistral: {stream_error}")
                             gen, _, final_msg_container = call_mistral_api(
                                 st.session_state.mistral_client, api_messages, MISTRAL_TOOLS, SYSTEM_PROMPT, collect_only=False
                             )
@@ -1675,27 +1805,30 @@ if st.session_state.processing:
                             response = final_msg_container[0]
                         else:
                             raise
-                else:
-                    gen, _, final_msg_container = call_mistral_api(
-                        st.session_state.mistral_client, api_messages, MISTRAL_TOOLS, SYSTEM_PROMPT, collect_only=False
-                    )
-                    streamed_text = st.write_stream(gen)
-                    response = final_msg_container[0]
             st.markdown('</div>', unsafe_allow_html=True)
         else:
             st.markdown('<div class="assistant-wrapper">', unsafe_allow_html=True)
             with st.chat_message("assistant"):
-                # Use appropriate API for streaming
-                if not using_backup and st.session_state.minimax_client:
+                # Use appropriate API for streaming based on which one succeeded
+                if using_backup:
+                    # Use Mistral for streaming
+                    gen, _, final_msg_container = call_mistral_api(
+                        st.session_state.mistral_client, api_messages, MISTRAL_TOOLS, SYSTEM_PROMPT, collect_only=False
+                    )
+                    streamed_text = st.write_stream(gen)
+                    response = final_msg_container[0]
+                else:
+                    # Try MiniMax for streaming, fallback to Mistral if it fails
                     try:
                         gen, _, final_msg_container = call_minimax_api(
                             st.session_state.minimax_client, api_messages, TOOLS, SYSTEM_PROMPT, collect_only=False
                         )
                         streamed_text = st.write_stream(gen)
                         response = final_msg_container[0]
-                    except Exception:
+                    except Exception as stream_error:
                         # Fallback to Mistral for streaming
                         if st.session_state.mistral_client:
+                            print(f"MiniMax streaming failed, using Mistral: {stream_error}")
                             gen, _, final_msg_container = call_mistral_api(
                                 st.session_state.mistral_client, api_messages, MISTRAL_TOOLS, SYSTEM_PROMPT, collect_only=False
                             )
@@ -1703,12 +1836,6 @@ if st.session_state.processing:
                             response = final_msg_container[0]
                         else:
                             raise
-                else:
-                    gen, _, final_msg_container = call_mistral_api(
-                        st.session_state.mistral_client, api_messages, MISTRAL_TOOLS, SYSTEM_PROMPT, collect_only=False
-                    )
-                    streamed_text = st.write_stream(gen)
-                    response = final_msg_container[0]
             st.markdown('</div>', unsafe_allow_html=True)
 
         # Store the final response in session state
@@ -1717,7 +1844,10 @@ if st.session_state.processing:
 
     except Exception as e:
         status_placeholder.empty()
-        st.error(f"Error: {e}")
+        error_msg = str(e)
+        print(f"Final error: {error_msg}")
+        print(traceback.format_exc())
+        st.error(f"Error: {error_msg}")
         if st.session_state.messages and st.session_state.messages[-1]["role"] == "user":
             st.session_state.messages.pop()
     finally:
