@@ -1200,53 +1200,39 @@ def mistral_collect_response(stream):
     
     try:
         for chunk in stream:
-            # Handle different response formats
-            if hasattr(chunk, 'data'):
-                data = chunk.data
-            else:
-                data = chunk
-            
-            if not data or not hasattr(data, 'choices') or not data.choices:
+            # Match the working pattern from mistral_tool_calling.py
+            if not chunk.data or not chunk.data.choices:
                 continue
             
-            choice = data.choices[0]
-            delta = getattr(choice, 'delta', None)
-            
-            if delta is None:
-                continue
+            delta = chunk.data.choices[0].delta
             
             # Extract content
-            content = getattr(delta, 'content', None)
-            if content:
-                content_buffer += content
+            if delta.content:
+                content_buffer += delta.content
             
             # Extract tool calls
-            tool_calls = getattr(delta, 'tool_calls', None)
-            if tool_calls:
-                for tool_call_delta in tool_calls:
-                    idx = getattr(tool_call_delta, 'index', 0)
+            if delta.tool_calls:
+                for tool_call_delta in delta.tool_calls:
+                    idx = tool_call_delta.index
                     if idx not in tool_calls_dict:
                         tool_calls_dict[idx] = {
-                            "id": getattr(tool_call_delta, 'id', "") or "",
+                            "id": tool_call_delta.id or "",
                             "name": "",
                             "arguments": ""
                         }
                     
-                    tc_id = getattr(tool_call_delta, 'id', None)
-                    if tc_id:
-                        tool_calls_dict[idx]["id"] = tc_id
+                    if tool_call_delta.id:
+                        tool_calls_dict[idx]["id"] = tool_call_delta.id
                     
-                    func = getattr(tool_call_delta, 'function', None)
-                    if func:
-                        func_name = getattr(func, 'name', None)
-                        if func_name:
-                            tool_calls_dict[idx]["name"] = func_name
-                        func_args = getattr(func, 'arguments', None)
-                        if func_args:
-                            tool_calls_dict[idx]["arguments"] += func_args
+                    if tool_call_delta.function:
+                        if tool_call_delta.function.name:
+                            tool_calls_dict[idx]["name"] = tool_call_delta.function.name
+                        if tool_call_delta.function.arguments:
+                            tool_calls_dict[idx]["arguments"] += tool_call_delta.function.arguments
             
-            if hasattr(choice, 'message'):
-                message = choice.message
+            # Store the last message for later use
+            if hasattr(chunk.data.choices[0], 'message'):
+                message = chunk.data.choices[0].message
                 
     except Exception as e:
         print(f"Error in mistral_collect_response: {e}")
@@ -1272,6 +1258,8 @@ def mistral_collect_response(stream):
     mock_content = [SimpleNamespace(type="text", text=content_buffer)] if content_buffer else []
     response = SimpleNamespace(content=mock_content)
     
+    print(f"[DEBUG] Mistral response collected: text_len={len(content_buffer)}, tool_calls={len(tool_use_blocks)}")
+    
     return content_buffer, tool_use_blocks, response
 
 def mistral_stream_generator(stream):
@@ -1285,49 +1273,37 @@ def mistral_stream_generator(stream):
         nonlocal content_buffer
         try:
             for chunk in stream:
-                # Handle different response formats
-                if hasattr(chunk, 'data'):
-                    data = chunk.data
-                else:
-                    data = chunk
-                
-                if not data or not hasattr(data, 'choices') or not data.choices:
+                # Match the working pattern from mistral_tool_calling.py
+                if not chunk.data or not chunk.data.choices:
                     continue
                 
-                choice = data.choices[0]
-                delta = getattr(choice, 'delta', None)
+                delta = chunk.data.choices[0].delta
                 
-                if delta is None:
-                    continue
+                # Extract content and yield for streaming
+                if delta.content:
+                    content_buffer += delta.content
+                    yield delta.content
                 
-                content = getattr(delta, 'content', None)
-                if content:
-                    content_buffer += content
-                    yield content
-                
-                tool_calls = getattr(delta, 'tool_calls', None)
-                if tool_calls:
-                    for tool_call_delta in tool_calls:
-                        idx = getattr(tool_call_delta, 'index', 0)
+                # Extract tool calls
+                if delta.tool_calls:
+                    for tool_call_delta in delta.tool_calls:
+                        idx = tool_call_delta.index
                         if idx not in tool_calls_dict:
                             tool_calls_dict[idx] = {
-                                "id": getattr(tool_call_delta, 'id', "") or "",
+                                "id": tool_call_delta.id or "",
                                 "name": "",
                                 "arguments": ""
                             }
                         
-                        tc_id = getattr(tool_call_delta, 'id', None)
-                        if tc_id:
-                            tool_calls_dict[idx]["id"] = tc_id
+                        if tool_call_delta.id:
+                            tool_calls_dict[idx]["id"] = tool_call_delta.id
                         
-                        func = getattr(tool_call_delta, 'function', None)
-                        if func:
-                            func_name = getattr(func, 'name', None)
-                            if func_name:
-                                tool_calls_dict[idx]["name"] = func_name
-                            func_args = getattr(func, 'arguments', None)
-                            if func_args:
-                                tool_calls_dict[idx]["arguments"] += func_args
+                        if tool_call_delta.function:
+                            if tool_call_delta.function.name:
+                                tool_calls_dict[idx]["name"] = tool_call_delta.function.name
+                            if tool_call_delta.function.arguments:
+                                tool_calls_dict[idx]["arguments"] += tool_call_delta.function.arguments
+                                
         except Exception as e:
             print(f"Error in mistral_stream_generator: {e}")
             print(traceback.format_exc())
@@ -1378,6 +1354,7 @@ def call_minimax_api(client, messages, tools, system_prompt, collect_only=False)
 
 
 def call_mistral_api(client, messages, tools, system_prompt, collect_only=False):
+
     """Call Mistral API with tool support. Returns (text, tool_blocks, response) or generator tuple."""
     # Convert messages for Mistral format
     mistral_messages = [{"role": "system", "content": system_prompt}]
@@ -1667,6 +1644,18 @@ else:
             text = extract_display_text(msg["content"])
             if text:
                 render_assistant_message(text, msg.get("tool_names"))
+    
+    # Display any stored error message
+    if "last_error" in st.session_state:
+        st.error(f"⚠️ Error: {st.session_state.last_error}")
+        # Add a button to dismiss the error and try again
+        if st.button("🔄 Try Again", key="dismiss_error"):
+            # Remove the last user message that caused the error
+            if st.session_state.messages and st.session_state.messages[-1]["role"] == "user":
+                st.session_state.messages.pop()
+            del st.session_state.last_error
+            st.rerun()
+    
     st.markdown('</div>', unsafe_allow_html=True)
 
 # Hidden file uploader
@@ -1894,15 +1883,19 @@ if st.session_state.processing:
         # Store the final response in session state
         if response and response.content:
             st.session_state.messages.append({"role": "assistant", "content": response.content, "tool_names": all_tool_names, "is_final": True})
+        # Clear any previous error
+        if "last_error" in st.session_state:
+            del st.session_state.last_error
 
     except Exception as e:
         status_placeholder.empty()
         error_msg = str(e)
         print(f"Final error: {error_msg}")
         print(traceback.format_exc())
-        st.error(f"Error: {error_msg}")
-        if st.session_state.messages and st.session_state.messages[-1]["role"] == "user":
-            st.session_state.messages.pop()
+        # Store error in session state so it persists after rerun
+        st.session_state.last_error = error_msg
+        # Keep the user message so they can see what they asked
+        # Don't pop the message - let the user see it
     finally:
         st.session_state.processing = False
         st.rerun()
