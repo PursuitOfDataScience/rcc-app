@@ -1092,6 +1092,11 @@ if "uploader_key" not in st.session_state:
 if "using_backup" not in st.session_state:
     st.session_state.using_backup = False
 
+# Debug indicator (shows API status at startup)
+print(f"[STARTUP] MiniMax client initialized: {st.session_state.minimax_client is not None}")
+print(f"[STARTUP] Mistral client initialized: {st.session_state.mistral_client is not None}")
+print(f"[STARTUP] ANTHROPIC_API_KEY set: {bool(MINIMAX_API_KEY)}")
+print(f"[STARTUP] MISTRAL_API_KEY set: {bool(MISTRAL_API_KEY)}")
 
 def collect_stream_response(stream):
     """Collect full response from streaming API."""
@@ -1100,30 +1105,40 @@ def collect_stream_response(stream):
     current_tool = None
     current_tool_input = ""
 
-    with stream as s:
-        for event in s:
-            if event.type == "content_block_start":
-                if hasattr(event.content_block, 'type') and event.content_block.type == "tool_use":
-                    current_tool = {"id": event.content_block.id, "name": event.content_block.name, "input": {}}
-                    current_tool_input = ""
-            elif event.type == "content_block_delta":
-                if hasattr(event.delta, 'type'):
-                    if event.delta.type == "text_delta":
-                        full_text += event.delta.text
-                    elif event.delta.type == "input_json_delta" and current_tool:
-                        current_tool_input += event.delta.partial_json
-            elif event.type == "content_block_stop":
-                if current_tool:
-                    try:
-                        current_tool["input"] = json.loads(current_tool_input) if current_tool_input else {}
-                    except json.JSONDecodeError:
-                        current_tool["input"] = {}
-                    tool_use_blocks.append(current_tool)
-                    current_tool = None
-            elif event.type == "message_stop":
-                break
-        final_message = s.get_final_message()
+    try:
+        with stream as s:
+            for event in s:
+                if event.type == "content_block_start":
+                    if hasattr(event.content_block, 'type') and event.content_block.type == "tool_use":
+                        current_tool = {"id": event.content_block.id, "name": event.content_block.name, "input": {}}
+                        current_tool_input = ""
+                elif event.type == "content_block_delta":
+                    if hasattr(event.delta, 'type'):
+                        if event.delta.type == "text_delta":
+                            full_text += event.delta.text
+                        elif event.delta.type == "input_json_delta" and current_tool:
+                            current_tool_input += event.delta.partial_json
+                elif event.type == "content_block_stop":
+                    if current_tool:
+                        try:
+                            current_tool["input"] = json.loads(current_tool_input) if current_tool_input else {}
+                        except json.JSONDecodeError:
+                            current_tool["input"] = {}
+                        tool_use_blocks.append(current_tool)
+                        current_tool = None
+                elif event.type == "message_stop":
+                    break
+            final_message = s.get_final_message()
+    except Exception as e:
+        # Re-raise with more context - this helps identify MiniMax API errors
+        error_str = str(e)
+        # Check for MiniMax-specific error codes
+        if any(code in error_str for code in ['1002', '2045', '2056', '1001', '1024', '1033', '1039', '429']):
+            print(f"MiniMax API error detected: {error_str}")
+        raise  # Re-raise to trigger fallback
+    
     return full_text, tool_use_blocks, final_message
+
 
 
 def stream_response_generator(stream):
@@ -1140,32 +1155,40 @@ def stream_response_generator(stream):
     
     def generator():
         nonlocal current_tool, current_tool_input
-        with stream as s:
-            for event in s:
-                if event.type == "content_block_start":
-                    if hasattr(event.content_block, 'type') and event.content_block.type == "tool_use":
-                        current_tool = {"id": event.content_block.id, "name": event.content_block.name, "input": {}}
-                        current_tool_input = ""
-                elif event.type == "content_block_delta":
-                    if hasattr(event.delta, 'type'):
-                        if event.delta.type == "text_delta":
-                            # Yield text chunks for streaming display
-                            yield event.delta.text
-                        elif event.delta.type == "input_json_delta" and current_tool:
-                            current_tool_input += event.delta.partial_json
-                elif event.type == "content_block_stop":
-                    if current_tool:
-                        try:
-                            current_tool["input"] = json.loads(current_tool_input) if current_tool_input else {}
-                        except json.JSONDecodeError:
-                            current_tool["input"] = {}
-                        tool_use_blocks.append(current_tool)
-                        current_tool = None
-                elif event.type == "message_stop":
-                    break
-            final_message_container[0] = s.get_final_message()
+        try:
+            with stream as s:
+                for event in s:
+                    if event.type == "content_block_start":
+                        if hasattr(event.content_block, 'type') and event.content_block.type == "tool_use":
+                            current_tool = {"id": event.content_block.id, "name": event.content_block.name, "input": {}}
+                            current_tool_input = ""
+                    elif event.type == "content_block_delta":
+                        if hasattr(event.delta, 'type'):
+                            if event.delta.type == "text_delta":
+                                # Yield text chunks for streaming display
+                                yield event.delta.text
+                            elif event.delta.type == "input_json_delta" and current_tool:
+                                current_tool_input += event.delta.partial_json
+                    elif event.type == "content_block_stop":
+                        if current_tool:
+                            try:
+                                current_tool["input"] = json.loads(current_tool_input) if current_tool_input else {}
+                            except json.JSONDecodeError:
+                                current_tool["input"] = {}
+                            tool_use_blocks.append(current_tool)
+                            current_tool = None
+                    elif event.type == "message_stop":
+                        break
+                final_message_container[0] = s.get_final_message()
+        except Exception as e:
+            # Re-raise with more context
+            error_str = str(e)
+            if any(code in error_str for code in ['1002', '2045', '2056', '1001', '1024', '1033', '1039', '429']):
+                print(f"MiniMax API error in streaming: {error_str}")
+            raise
     
     return generator(), tool_use_blocks, final_message_container
+
 
 
 # --- Mistral API Helper Functions ---
@@ -1333,17 +1356,25 @@ def mistral_stream_generator(stream):
 
 def call_minimax_api(client, messages, tools, system_prompt, collect_only=False):
     """Call MiniMax API with tool support. Returns (text, tool_blocks, response) or generator tuple."""
-    stream = client.messages.stream(
-        model=MINIMAX_MODEL,
-        max_tokens=8192,
-        system=system_prompt,
-        messages=messages,
-        tools=tools
-    )
+    try:
+        stream = client.messages.stream(
+            model=MINIMAX_MODEL,
+            max_tokens=8192,
+            system=system_prompt,
+            messages=messages,
+            tools=tools
+        )
+    except Exception as e:
+        error_str = str(e)
+        print(f"MiniMax API call failed at stream creation: {error_str}")
+        print(traceback.format_exc())
+        raise  # Re-raise to trigger fallback
+    
     if collect_only:
         return collect_stream_response(stream)
     else:
         return stream_response_generator(stream)
+
 
 
 def call_mistral_api(client, messages, tools, system_prompt, collect_only=False):
@@ -1430,13 +1461,22 @@ def call_mistral_api(client, messages, tools, system_prompt, collect_only=False)
                 elif text_content:
                     mistral_messages.append({"role": "assistant", "content": text_content})
     
+    # Debug: Log Mistral messages being sent
+    print(f"[DEBUG] Mistral API call - Number of messages: {len(mistral_messages)}")
+    print(f"[DEBUG] Mistral API call - Tools: {len(tools) if tools else 0}")
+    
     # Make the API call
-    stream = client.chat.stream(
-        model=MISTRAL_MODEL,
-        messages=mistral_messages,
-        tools=tools,
-        tool_choice="auto"
-    )
+    try:
+        stream = client.chat.stream(
+            model=MISTRAL_MODEL,
+            messages=mistral_messages,
+            tools=tools if tools else None,
+            tool_choice="auto" if tools else None
+        )
+    except Exception as e:
+        print(f"[DEBUG] Mistral API call failed at stream creation: {str(e)}")
+        print(traceback.format_exc())
+        raise
     
     if collect_only:
         return mistral_collect_response(stream)
@@ -1696,16 +1736,22 @@ if st.session_state.processing:
     using_backup = False
     minimax_error_msg = None
     
+    # Debug: Log which clients are available
+    print(f"[DEBUG] MiniMax client available: {st.session_state.minimax_client is not None}")
+    print(f"[DEBUG] Mistral client available: {st.session_state.mistral_client is not None}")
+    
     try:
         # Try MiniMax API first (primary) if client is available
         minimax_succeeded = False
         
         if st.session_state.minimax_client:
             try:
+                print("[DEBUG] Attempting MiniMax API call...")
                 # First API call - collect to check for tool calls
                 response_text, tool_use_blocks, response = call_minimax_api(
                     st.session_state.minimax_client, api_messages, TOOLS, SYSTEM_PROMPT, collect_only=True
                 )
+                print(f"[DEBUG] MiniMax API call succeeded. Response length: {len(response_text)}, Tool calls: {len(tool_use_blocks)}")
                 all_tool_names.extend([tb["name"] for tb in tool_use_blocks])
                 
                 # Handle tool calls in a loop
@@ -1720,18 +1766,23 @@ if st.session_state.processing:
                     all_tool_names.extend([tb["name"] for tb in tool_use_blocks])
                 
                 minimax_succeeded = True
+                print("[DEBUG] MiniMax processing complete, minimax_succeeded=True")
                 
             except Exception as e:
                 # MiniMax failed - store error and try backup
                 minimax_error_msg = str(e)
-                print(f"MiniMax API failed: {minimax_error_msg}")
+                print(f"[DEBUG] MiniMax API failed: {minimax_error_msg}")
                 print(traceback.format_exc())
                 minimax_succeeded = False
+        else:
+            print("[DEBUG] MiniMax client not available, skipping to backup")
         
         # If MiniMax failed or not available, try Mistral backup
         if not minimax_succeeded:
+            print(f"[DEBUG] minimax_succeeded={minimax_succeeded}, checking for Mistral backup...")
             if st.session_state.mistral_client:
-                print(f"Switching to Mistral backup API...")
+                print(f"[DEBUG] Switching to Mistral backup API...")
+                status_placeholder.markdown(f'<div class="search-status"><span class="search-text">🔄 Switching to backup API...</span></div>', unsafe_allow_html=True)
                 using_backup = True
                 
                 # Reset messages for backup attempt (start fresh)
@@ -1739,10 +1790,12 @@ if st.session_state.processing:
                 all_tool_names = []
                 
                 try:
+                    print("[DEBUG] Attempting Mistral API call...")
                     # First API call - collect to check for tool calls
                     response_text, tool_use_blocks, response = call_mistral_api(
                         st.session_state.mistral_client, api_messages, MISTRAL_TOOLS, SYSTEM_PROMPT, collect_only=True
                     )
+                    print(f"[DEBUG] Mistral API call succeeded. Response length: {len(response_text)}, Tool calls: {len(tool_use_blocks)}")
                     all_tool_names.extend([tb["name"] for tb in tool_use_blocks])
                     
                     # Handle tool calls in a loop
