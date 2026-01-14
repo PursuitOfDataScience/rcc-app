@@ -1777,7 +1777,7 @@ if st.session_state.processing:
             print(f"[DEBUG] minimax_succeeded={minimax_succeeded}, checking for Mistral backup...")
             if st.session_state.mistral_client:
                 print(f"[DEBUG] Switching to Mistral backup API...")
-                status_placeholder.markdown(f'<div class="search-status"><span class="search-text">🔄 Switching to backup API...</span></div>', unsafe_allow_html=True)
+                # Don't show "switching" message to user - keep the original status message
                 using_backup = True
                 
                 # For Mistral, build messages in Mistral-native format from scratch
