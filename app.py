@@ -1441,6 +1441,12 @@ def call_mistral_api(client, messages, tools, system_prompt, collect_only=False)
     # Debug: Log Mistral messages being sent
     print(f"[DEBUG] Mistral API call - Number of messages: {len(mistral_messages)}")
     print(f"[DEBUG] Mistral API call - Tools: {len(tools) if tools else 0}")
+    # Log message roles for debugging
+    for i, m in enumerate(mistral_messages):
+        role = m.get('role', 'unknown')
+        has_tool_calls = 'tool_calls' in m
+        content_preview = str(m.get('content', ''))[:50] if m.get('content') else '(empty)'
+        print(f"[DEBUG]   Message {i}: role={role}, has_tool_calls={has_tool_calls}, content={content_preview}...")
     
     # Make the API call
     try:
@@ -1774,32 +1780,87 @@ if st.session_state.processing:
                 status_placeholder.markdown(f'<div class="search-status"><span class="search-text">🔄 Switching to backup API...</span></div>', unsafe_allow_html=True)
                 using_backup = True
                 
-                # Reset messages for backup attempt (start fresh)
-                api_messages = [{"role": m["role"], "content": m["content"]} for m in st.session_state.messages]
+                # For Mistral, build messages in Mistral-native format from scratch
+                # Only take the actual user messages (strings), not the complex Anthropic format
+                mistral_conversation = [{"role": "system", "content": SYSTEM_PROMPT}]
+                for m in st.session_state.messages:
+                    if m["role"] == "user":
+                        content = m["content"]
+                        if isinstance(content, str):
+                            mistral_conversation.append({"role": "user", "content": content})
+                        elif isinstance(content, list):
+                            # Extract text from content list
+                            text_parts = []
+                            for block in content:
+                                if isinstance(block, dict) and block.get("type") == "text":
+                                    text_parts.append(block.get("text", ""))
+                            if text_parts:
+                                mistral_conversation.append({"role": "user", "content": " ".join(text_parts)})
+                
                 all_tool_names = []
                 
                 try:
                     print("[DEBUG] Attempting Mistral API call...")
+                    print(f"[DEBUG] Mistral conversation has {len(mistral_conversation)} messages")
+                    
                     # First API call - collect to check for tool calls
-                    response_text, tool_use_blocks, response = call_mistral_api(
-                        st.session_state.mistral_client, api_messages, MISTRAL_TOOLS, SYSTEM_PROMPT, collect_only=True
+                    stream = st.session_state.mistral_client.chat.stream(
+                        model=MISTRAL_MODEL,
+                        messages=mistral_conversation,
+                        tools=MISTRAL_TOOLS,
+                        tool_choice="auto"
                     )
+                    response_text, tool_use_blocks, response = mistral_collect_response(stream)
                     print(f"[DEBUG] Mistral API call succeeded. Response length: {len(response_text)}, Tool calls: {len(tool_use_blocks)}")
                     all_tool_names.extend([tb["name"] for tb in tool_use_blocks])
                     
-                    # Handle tool calls in a loop
+                    # Handle tool calls in a loop (using Mistral-native format)
                     while tool_use_blocks:
-                        api_messages.append({"role": "assistant", "content": response.content})
-                        tool_results = [{"type": "tool_result", "tool_use_id": tb["id"], "name": tb["name"], "content": execute_tool(tb["name"], tb["input"])} for tb in tool_use_blocks]
-                        api_messages.append({"role": "user", "content": tool_results})
+                        # Add assistant message with tool_calls in Mistral format
+                        assistant_msg = {
+                            "role": "assistant",
+                            "content": response_text if response_text else "",
+                            "tool_calls": [
+                                {
+                                    "id": tb["id"],
+                                    "type": "function",
+                                    "function": {
+                                        "name": tb["name"],
+                                        "arguments": json.dumps(tb["input"])
+                                    }
+                                }
+                                for tb in tool_use_blocks
+                            ]
+                        }
+                        mistral_conversation.append(assistant_msg)
                         
-                        response_text, tool_use_blocks, response = call_mistral_api(
-                            st.session_state.mistral_client, api_messages, MISTRAL_TOOLS, SYSTEM_PROMPT, collect_only=True
+                        # Add tool results in Mistral format
+                        for tb in tool_use_blocks:
+                            tool_result = execute_tool(tb["name"], tb["input"])
+                            mistral_conversation.append({
+                                "role": "tool",
+                                "tool_call_id": tb["id"],
+                                "name": tb["name"],
+                                "content": tool_result
+                            })
+                        
+                        # Get next response
+                        stream = st.session_state.mistral_client.chat.stream(
+                            model=MISTRAL_MODEL,
+                            messages=mistral_conversation,
+                            tools=MISTRAL_TOOLS,
+                            tool_choice="auto"
                         )
+                        response_text, tool_use_blocks, response = mistral_collect_response(stream)
                         all_tool_names.extend([tb["name"] for tb in tool_use_blocks])
+                    
+                    # Store the api_messages for streaming later (for consistency with rest of code)
+                    api_messages = mistral_conversation
                         
                 except Exception as mistral_error:
                     # Both APIs failed
+                    print(f"[DEBUG] Mistral API failed: {mistral_error}")
+                    print(traceback.format_exc())
                     error_msg = f"Backup API also failed: {mistral_error}"
                     if minimax_error_msg:
                         error_msg = f"Primary API failed: {minimax_error_msg}. {error_msg}"
@@ -1822,10 +1883,14 @@ if st.session_state.processing:
                 
                 # Use appropriate API for streaming based on which one succeeded
                 if using_backup:
-                    # Use Mistral for streaming
-                    gen, _, final_msg_container = call_mistral_api(
-                        st.session_state.mistral_client, api_messages, MISTRAL_TOOLS, SYSTEM_PROMPT, collect_only=False
+                    # For Mistral backup, make a fresh streaming call with the conversation so far
+                    stream = st.session_state.mistral_client.chat.stream(
+                        model=MISTRAL_MODEL,
+                        messages=api_messages,  # api_messages is already mistral_conversation
+                        tools=MISTRAL_TOOLS,
+                        tool_choice="auto"
                     )
+                    gen, _, final_msg_container = mistral_stream_generator(stream)
                     streamed_text = st.write_stream(gen)
                     response = final_msg_container[0]
                 else:
@@ -1837,12 +1902,20 @@ if st.session_state.processing:
                         streamed_text = st.write_stream(gen)
                         response = final_msg_container[0]
                     except Exception as stream_error:
-                        # Fallback to Mistral for streaming
+                        # Fallback to Mistral for streaming - build Mistral conversation from scratch
                         if st.session_state.mistral_client:
                             print(f"MiniMax streaming failed, using Mistral: {stream_error}")
-                            gen, _, final_msg_container = call_mistral_api(
-                                st.session_state.mistral_client, api_messages, MISTRAL_TOOLS, SYSTEM_PROMPT, collect_only=False
+                            mistral_conv = [{"role": "system", "content": SYSTEM_PROMPT}]
+                            for m in st.session_state.messages:
+                                if m["role"] == "user" and isinstance(m["content"], str):
+                                    mistral_conv.append({"role": "user", "content": m["content"]})
+                            stream = st.session_state.mistral_client.chat.stream(
+                                model=MISTRAL_MODEL,
+                                messages=mistral_conv,
+                                tools=MISTRAL_TOOLS,
+                                tool_choice="auto"
                             )
+                            gen, _, final_msg_container = mistral_stream_generator(stream)
                             streamed_text = st.write_stream(gen)
                             response = final_msg_container[0]
                         else:
@@ -1853,10 +1926,14 @@ if st.session_state.processing:
             with st.chat_message("assistant"):
                 # Use appropriate API for streaming based on which one succeeded
                 if using_backup:
-                    # Use Mistral for streaming
-                    gen, _, final_msg_container = call_mistral_api(
-                        st.session_state.mistral_client, api_messages, MISTRAL_TOOLS, SYSTEM_PROMPT, collect_only=False
+                    # For Mistral backup, make a fresh streaming call
+                    stream = st.session_state.mistral_client.chat.stream(
+                        model=MISTRAL_MODEL,
+                        messages=api_messages,  # api_messages is already mistral_conversation
+                        tools=MISTRAL_TOOLS,
+                        tool_choice="auto"
                     )
+                    gen, _, final_msg_container = mistral_stream_generator(stream)
                     streamed_text = st.write_stream(gen)
                     response = final_msg_container[0]
                 else:
@@ -1868,12 +1945,20 @@ if st.session_state.processing:
                         streamed_text = st.write_stream(gen)
                         response = final_msg_container[0]
                     except Exception as stream_error:
-                        # Fallback to Mistral for streaming
+                        # Fallback to Mistral for streaming - build Mistral conversation from scratch
                         if st.session_state.mistral_client:
                             print(f"MiniMax streaming failed, using Mistral: {stream_error}")
-                            gen, _, final_msg_container = call_mistral_api(
-                                st.session_state.mistral_client, api_messages, MISTRAL_TOOLS, SYSTEM_PROMPT, collect_only=False
+                            mistral_conv = [{"role": "system", "content": SYSTEM_PROMPT}]
+                            for m in st.session_state.messages:
+                                if m["role"] == "user" and isinstance(m["content"], str):
+                                    mistral_conv.append({"role": "user", "content": m["content"]})
+                            stream = st.session_state.mistral_client.chat.stream(
+                                model=MISTRAL_MODEL,
+                                messages=mistral_conv,
+                                tools=MISTRAL_TOOLS,
+                                tool_choice="auto"
                             )
+                            gen, _, final_msg_container = mistral_stream_generator(stream)
                             streamed_text = st.write_stream(gen)
                             response = final_msg_container[0]
                         else:
