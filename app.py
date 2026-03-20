@@ -746,7 +746,7 @@ st.markdown("""
         overflow-x: auto !important;
     }
 
-    /* Streamlit code block copy button - keep within bounds */
+    /* Streamlit code block copy button - keep within bounds and position at LEFT */
     .stChatMessage .stCodeBlock {
         max-width: calc(var(--bubble-max) - 10px) !important;
         position: relative !important;
@@ -755,8 +755,9 @@ st.markdown("""
     .stChatMessage .stCodeBlock [data-testid="stCopyButton"],
     .stChatMessage .stCodeBlock button {
         position: absolute !important;
-        right: 8px !important;
+        left: 8px !important;
         top: 8px !important;
+        right: auto !important;
     }
 
     /* Fallback for any code block wrapper */
@@ -809,20 +810,19 @@ st.markdown("""
     }
 
     .search-text {
-        background: var(--gradient);
+        background: linear-gradient(90deg, var(--gradient-start), var(--gradient-end), var(--gradient-start));
         background-size: 200% 100%;
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         background-clip: text;
-        animation: shimmer 1.5s ease-in-out infinite;
-        font-weight: 500;
+        animation: shimmer 2s linear infinite;
+        font-weight: 600;
         font-size: clamp(0.8rem, 2vw, 0.9rem);
     }
 
     @keyframes shimmer {
-        0% { background-position: 100% 0; }
-        50% { background-position: 0% 0; }
-        100% { background-position: 100% 0; }
+        0% { background-position: 200% 0; }
+        100% { background-position: -200% 0; }
     }
 
     /* Streaming dots animation */
@@ -1146,8 +1146,19 @@ components.html("""
             if (mainContainer) {
                 mainContainer.scrollTop = mainContainer.scrollHeight;
             }
+            // Try body and html as last resort
+            doc.body.scrollTop = doc.body.scrollHeight;
+            if (doc.documentElement) {
+                doc.documentElement.scrollTop = doc.documentElement.scrollHeight;
+            }
         }
     }
+
+    // Scroll immediately on any new content (not just streaming)
+    const scrollObserver = new MutationObserver(function(mutations) {
+        autoScroll();
+    });
+    scrollObserver.observe(doc.body, { childList: true, subtree: true });
 
     // Keep scrolling during streaming - poll for new content
     setInterval(autoScroll, 300);
