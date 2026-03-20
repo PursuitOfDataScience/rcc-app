@@ -430,9 +430,9 @@ st.markdown("""
         --space-xl: 2rem;
 
         /* Sizing */
-        --content-max: min(900px, 95vw);
-        --input-max: min(800px, 95vw);
-        --bubble-max: 70%;
+        --content-max: min(720px, 90vw);
+        --input-max: min(680px, 90vw);
+        --bubble-max: 75%;
         --radius-sm: 8px;
         --radius-md: 16px;
         --radius-lg: 24px;
@@ -698,7 +698,7 @@ st.markdown("""
 
     /* ===== ASSISTANT MESSAGES ===== */
     .assistant-wrapper {
-        margin: clamp(0.5rem, 1.5vw, 1rem) 0 clamp(0.75rem, 2vw, 1.5rem) 0;
+        margin: clamp(0.5rem, 1.5vw, 1rem) 0 clamp(1.5rem, 4vw, 3rem) 0;
     }
 
     .stChatMessage {
@@ -1018,10 +1018,48 @@ components.html("""
         });
     }
 
+    // Animate example buttons with staggered delays
+    function animateExampleButtons() {
+        const allButtons = doc.querySelectorAll('.stButton button');
+        const exampleButtons = [];
+
+        allButtons.forEach(btn => {
+            const text = btn.innerText || '';
+            if (text.includes('How do I') || text.includes('What are the')) {
+                exampleButtons.push(btn);
+            }
+        });
+
+        if (exampleButtons.length === 0) return;
+
+        const delays = [0.3, 0.45, 0.6, 0.75, 0.9, 1.05];
+
+        exampleButtons.forEach((btn, idx) => {
+            if (btn.dataset.animated === 'true') return;
+            btn.dataset.animated = 'true';
+            btn.style.animationDelay = (delays[idx] || 0) + 's';
+
+            btn.addEventListener('mouseenter', function() {
+                this.style.background = 'linear-gradient(145deg, rgba(102, 126, 234, 0.25) 0%, rgba(118, 75, 162, 0.25) 100%)';
+                this.style.borderColor = 'rgba(102, 126, 234, 0.5)';
+                this.style.transform = 'translateY(-3px)';
+                this.style.boxShadow = '0 8px 25px rgba(102, 126, 234, 0.25)';
+            });
+
+            btn.addEventListener('mouseleave', function() {
+                this.style.background = 'linear-gradient(145deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0.03) 100%)';
+                this.style.borderColor = 'rgba(255,255,255,0.12)';
+                this.style.transform = 'translateY(0)';
+                this.style.boxShadow = '0 4px 15px rgba(0, 0, 0, 0.1)';
+            });
+        });
+    }
+
     function init() {
         updateScrollBehavior();
         addPaperclipButton();
         styleAttachmentChip();
+        animateExampleButtons();
         initialized = true;
     }
 
@@ -1034,13 +1072,25 @@ components.html("""
     }
     scheduleInit();
 
-    // Auto-scroll in chat mode
+    // Auto-scroll in chat mode - scrolls to bottom of page during streaming
     function autoScroll() {
         const chatContainer = doc.querySelector('.chat-container');
         if (chatContainer) {
-            window.parent.scrollTo({ top: doc.body.scrollHeight, behavior: 'smooth' });
+            // Scroll the main app container to the bottom
+            const appContainer = doc.querySelector('[data-testid="stAppViewContainer"]');
+            if (appContainer) {
+                appContainer.scrollTop = appContainer.scrollHeight;
+            }
+            // Also try main container
+            const mainContainer = doc.querySelector('[data-testid="stMain"]');
+            if (mainContainer) {
+                mainContainer.scrollTop = mainContainer.scrollHeight;
+            }
         }
     }
+
+    // Keep scrolling during streaming - poll for new content
+    setInterval(autoScroll, 300);
 
     // Auto-focus on typing
     doc.addEventListener('keydown', function(e) {
@@ -1057,6 +1107,7 @@ components.html("""
         updateScrollBehavior();
         if (!doc.getElementById('paperclip-btn')) addPaperclipButton();
         styleAttachmentChip();
+        animateExampleButtons();
         autoScroll();
     });
     observer.observe(doc.body, { childList: true, subtree: true });
