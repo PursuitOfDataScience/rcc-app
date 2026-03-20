@@ -736,20 +736,21 @@ st.markdown("""
         max-width: calc(var(--bubble-max) - 10px) !important;
     }
 
-    /* Constrain code blocks in chat messages */
-    .stChatMessage pre {
-        max-width: calc(var(--bubble-max) - 10px) !important;
+    /* Constrain code blocks to content width so copy button positions correctly */
+    .stChatMessage div[data-testid="stCodeBlock"] {
+        position: relative !important;
+        width: fit-content !important;
+        max-width: 100% !important;
+        min-width: min(100%, 300px) !important;
+    }
+
+    .stChatMessage div[data-testid="stCodeBlock"] pre {
+        max-width: 100% !important;
         overflow-x: auto !important;
     }
 
-    .stChatMessage code {
-        max-width: calc(var(--bubble-max) - 10px) !important;
-        overflow-x: auto !important;
-    }
-
-    /* Streamlit code block - JS handles copy button positioning */
-    div[data-testid="stCodeBlock"] {
-        position: relative;
+    .stChatMessage div[data-testid="stCodeBlock"] code {
+        max-width: 100% !important;
     }
 
     /* Hide Streamlit's native copy button - we replace it with our own */
@@ -1181,17 +1182,17 @@ components.html("""
             // Scroll the main app container to the bottom
             const appContainer = doc.querySelector('[data-testid="stAppViewContainer"]');
             if (appContainer) {
-                appContainer.scrollTop = appContainer.scrollHeight;
+                appContainer.scrollTop = appContainer.scrollHeight - appContainer.clientHeight;
             }
             // Also try main container
             const mainContainer = doc.querySelector('[data-testid="stMain"]');
             if (mainContainer) {
-                mainContainer.scrollTop = mainContainer.scrollHeight;
+                mainContainer.scrollTop = mainContainer.scrollHeight - mainContainer.clientHeight;
             }
             // Try body and html as last resort
-            doc.body.scrollTop = doc.body.scrollHeight;
+            doc.body.scrollTop = doc.body.scrollHeight - doc.body.clientHeight;
             if (doc.documentElement) {
-                doc.documentElement.scrollTop = doc.documentElement.scrollHeight;
+                doc.documentElement.scrollTop = doc.documentElement.scrollHeight - doc.documentElement.clientHeight;
             }
         }
     }
