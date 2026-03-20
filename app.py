@@ -12,7 +12,7 @@ import random
 import anthropic
 import streamlit as st
 from io import BytesIO
-from mistralai import Mistral
+from mistralai.client import Mistral
 import traceback
 
 # --- API Configuration ---
@@ -400,230 +400,212 @@ TOPICS: Accounts, SSH, Slurm jobs, storage, Python, R, MATLAB, GPUs, containers,
 # --- Streamlit App ---
 st.set_page_config(page_title="Sage", page_icon="🤖", layout="wide", initial_sidebar_state="collapsed")
 
-# CSS
+# CSS with variables for theming and responsive design
 st.markdown("""
 <style>
-    .stDeployButton, #MainMenu, footer {display: none !important; visibility: hidden !important;}
+    /* ===== CSS VARIABLES ===== */
+    :root {
+        /* Primary gradient */
+        --gradient-start: #667eea;
+        --gradient-end: #764ba2;
+        --gradient: linear-gradient(135deg, var(--gradient-start), var(--gradient-end));
+
+        /* Colors */
+        --text-primary: #e5e7eb;
+        --text-secondary: #9ca3af;
+        --text-dark: #374151;
+        --border-default: #e5e7eb;
+        --border-focus: #667eea;
+
+        /* Shadows */
+        --shadow-sm: 0 2px 8px rgba(102, 126, 234, 0.3);
+        --shadow-md: 0 4px 15px rgba(0, 0, 0, 0.1);
+        --shadow-lg: 0 8px 25px rgba(102, 126, 234, 0.2);
+
+        /* Spacing */
+        --space-xs: 0.25rem;
+        --space-sm: 0.5rem;
+        --space-md: 1rem;
+        --space-lg: 1.5rem;
+        --space-xl: 2rem;
+
+        /* Sizing */
+        --content-max: min(900px, 95vw);
+        --input-max: min(800px, 95vw);
+        --bubble-max: 70%;
+        --radius-sm: 8px;
+        --radius-md: 16px;
+        --radius-lg: 24px;
+
+        /* Transitions */
+        --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    /* ===== BASE RESETS ===== */
+    .stDeployButton, #MainMenu, footer {display: none !important;}
     [data-testid="stSidebar"], [data-testid="stSidebarCollapsedControl"] {display: none !important;}
-    
+
     .main .block-container {
         padding-top: 0 !important;
         padding-bottom: 0;
-        max-width: 900px;
+        max-width: var(--content-max);
     }
-    
-    /* Kill all Streamlit default spacing */
+
     [data-testid="stVerticalBlock"] > div {
         margin-bottom: 0 !important;
         padding-bottom: 0 !important;
     }
-    
-    [data-testid="stVerticalBlock"] {
-        gap: 0 !important;
+
+    [data-testid="stVerticalBlock"] { gap: 0 !important; }
+    .stMarkdown { margin: 0 !important; padding: 0 !important; }
+    .element-container { margin: 0 !important; padding: 0 !important; }
+
+    [data-testid="stMainBlockContainer"] { padding-top: 0.5rem !important; }
+
+    html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
+        overflow-x: hidden !important;
     }
-    
-    .stMarkdown {
-        margin: 0 !important;
-        padding: 0 !important;
-    }
-    
-    .element-container {
-        margin: 0 !important;
-        padding: 0 !important;
-    }
-    
-    /* Reduce spacing in main area */
-    [data-testid="stMainBlockContainer"] {
-        padding-top: 0.5rem !important;
-    }
-    
-    /* Trash button - position fixed at top right of chat area */
+
+    /* ===== TRASH BUTTON ===== */
     .trash-btn-wrapper {
         position: fixed;
         top: 10px;
         right: 20px;
         z-index: 1000;
     }
-    
+
     .trash-btn-wrapper .stButton > button {
         background: rgba(31, 41, 55, 0.8) !important;
         border: 1px solid #374151 !important;
-        border-radius: 8px !important;
+        border-radius: var(--radius-sm) !important;
         padding: 6px 10px !important;
         min-height: 36px !important;
         min-width: 36px !important;
-        opacity: 1 !important;
-        transform: none !important;
-        animation: none !important;
         backdrop-filter: blur(8px);
+        transition: var(--transition) !important;
     }
-    
+
     .trash-btn-wrapper .stButton > button:hover {
         background: rgba(239, 68, 68, 0.2) !important;
         border-color: #ef4444 !important;
-        transform: none !important;
-        box-shadow: none !important;
     }
-    
-    /* Welcome screen */
+
+    /* ===== WELCOME SCREEN ===== */
     .welcome-container {
         display: flex;
         flex-direction: column;
         align-items: center;
         justify-content: center;
         text-align: center;
-        padding: 2rem 1rem;
+        padding: var(--space-lg) var(--space-md);
         margin-top: 8vh;
         animation: fadeInDown 0.6s ease-out;
     }
-    
+
     @keyframes fadeInDown {
-        from {
-            opacity: 0;
-            transform: translateY(-20px);
-        }
-        to {
-            opacity: 1;
-            transform: translateY(0);
-        }
+        from { opacity: 0; transform: translateY(-20px); }
+        to { opacity: 1; transform: translateY(0); }
     }
-    
+
     .welcome-icon {
-        font-size: 3rem;
-        margin-bottom: 0.5rem;
+        font-size: clamp(2rem, 5vw, 3rem);
+        margin-bottom: var(--space-sm);
         animation: bounceIn 0.8s ease-out 0.2s both;
     }
-    
+
     @keyframes bounceIn {
-        0% {
-            opacity: 0;
-            transform: scale(0.3);
-        }
-        50% {
-            transform: scale(1.1);
-        }
-        70% {
-            transform: scale(0.9);
-        }
-        100% {
-            opacity: 1;
-            transform: scale(1);
-        }
+        0% { opacity: 0; transform: scale(0.3); }
+        50% { transform: scale(1.1); }
+        70% { transform: scale(0.9); }
+        100% { opacity: 1; transform: scale(1); }
     }
-    
+
     .welcome-title {
-        font-size: 2.2rem;
+        font-size: clamp(1.5rem, 4vw, 2.2rem);
         font-weight: 600;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        background: var(--gradient);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         background-clip: text;
-        margin-bottom: 2rem;
+        margin-bottom: var(--space-xl);
         animation: fadeInUp 0.6s ease-out 0.3s both;
     }
-    
+
     @keyframes fadeInUp {
-        from {
-            opacity: 0;
-            transform: translateY(20px);
-        }
-        to {
-            opacity: 1;
-            transform: translateY(0);
-        }
+        from { opacity: 0; transform: translateY(20px); }
+        to { opacity: 1; transform: translateY(0); }
     }
-    
-    /* Examples grid wrapper */
+
+    /* ===== EXAMPLES GRID ===== */
     .examples-grid-wrapper {
-        max-width: 680px;
+        max-width: min(680px, 90vw);
         margin: 0 auto;
-        padding: 0 1rem;
+        padding: 0 var(--space-md);
     }
-    
-    /* Style the Streamlit columns in examples grid */
+
     .examples-grid-wrapper [data-testid="stHorizontalBlock"] {
         gap: 0.75rem !important;
         margin-bottom: 0.6rem !important;
     }
-    
-    /* Style the example buttons */
+
     .examples-grid-wrapper .stButton button {
-        background: linear-gradient(145deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0.03) 100%) !important;
+        background: linear-gradient(145deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0.03) 100%);
         border: 1px solid rgba(255,255,255,0.12) !important;
-        border-radius: 16px !important;
+        border-radius: var(--radius-md) !important;
         padding: 12px 16px !important;
         text-align: center !important;
-        font-size: 0.88rem !important;
-        color: #e5e7eb !important;
+        font-size: clamp(0.75rem, 2vw, 0.88rem) !important;
+        color: var(--text-primary) !important;
         height: auto !important;
         min-height: auto !important;
-        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+        transition: var(--transition) !important;
         backdrop-filter: blur(10px);
-        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1) !important;
+        box-shadow: var(--shadow-md) !important;
+        opacity: 0;
+        transform: translateY(25px);
+        animation: exampleFadeIn 0.5s ease-out forwards;
     }
-    
+
+    .examples-grid-wrapper .stButton button:nth-child(1) { animation-delay: 0.3s; }
+    .examples-grid-wrapper .stButton button:nth-child(2) { animation-delay: 0.45s; }
+
+    @keyframes exampleFadeIn {
+        to { opacity: 1; transform: translateY(0); }
+    }
+
     .examples-grid-wrapper .stButton button:hover {
-        background: linear-gradient(145deg, rgba(102, 126, 234, 0.25) 0%, rgba(118, 75, 162, 0.25) 100%) !important;
+        background: linear-gradient(145deg, rgba(102, 126, 234, 0.25) 0%, rgba(118, 75, 162, 0.25) 100%);
         border-color: rgba(102, 126, 234, 0.5) !important;
         transform: translateY(-3px) !important;
-        box-shadow: 0 8px 25px rgba(102, 126, 234, 0.2) !important;
+        box-shadow: var(--shadow-lg) !important;
     }
-    
+
     .examples-grid-wrapper .stButton button:active {
         transform: translateY(-1px) !important;
     }
-    
-    /* Light mode */
-    @media (prefers-color-scheme: light) {
-        .examples-grid-wrapper .stButton button {
-            background: linear-gradient(145deg, #ffffff 0%, #f8fafc 100%) !important;
-            border: 1px solid #e2e8f0 !important;
-            color: #374151 !important;
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.06) !important;
-        }
-        
-        .examples-grid-wrapper .stButton button:hover {
-            background: linear-gradient(145deg, #eef2ff 0%, #e0e7ff 100%) !important;
-            border-color: #a5b4fc !important;
-        }
-    }
-    
-    /* Animation keyframes for example buttons */
-    @keyframes exampleFadeIn {
-        0% {
-            opacity: 0;
-            transform: translateY(25px);
-        }
-        100% {
-            opacity: 1;
-            transform: translateY(0);
-        }
-    }
-    
-    /* Chat input */
+
+    /* ===== CHAT INPUT ===== */
     .stChatInput {
-        max-width: 800px !important;
+        max-width: var(--input-max) !important;
         margin: 0 auto !important;
         position: relative !important;
         z-index: 100 !important;
     }
-    
-    /* Force chat input container to have no top margin/padding */
+
     [data-testid="stChatInput"] {
         margin-top: 0 !important;
         padding-top: 0 !important;
     }
-    
-    /* Kill spacing on elements immediately before chat input */
+
     [data-testid="stChatInput"] ~ *,
     * + [data-testid="stChatInput"] {
         margin-bottom: 0 !important;
         padding-bottom: 0 !important;
     }
-    
+
     .stChatInput > div {
-        border-radius: 24px !important;
-        border: 2px solid #e5e7eb !important;
+        border-radius: var(--radius-lg) !important;
+        border: 2px solid var(--border-default) !important;
         box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1) !important;
         min-height: 56px !important;
         display: flex !important;
@@ -631,15 +613,16 @@ st.markdown("""
         padding-left: 50px !important;
         position: relative !important;
         z-index: 100 !important;
+        transition: var(--transition) !important;
     }
-    
+
     .stChatInput > div:focus-within {
-        border-color: #667eea !important;
+        border-color: var(--border-focus) !important;
         box-shadow: 0 4px 20px rgba(102, 126, 234, 0.25) !important;
     }
-    
+
     .stChatInput textarea {
-        font-size: 1.1rem !important;
+        font-size: clamp(0.95rem, 2.5vw, 1.1rem) !important;
         padding: 16px 24px !important;
         line-height: 1.5 !important;
         display: flex !important;
@@ -651,29 +634,26 @@ st.markdown("""
         position: relative !important;
         z-index: 101 !important;
     }
-    
+
     .stChatInput textarea:not(:focus) {
         padding-top: 16px !important;
         padding-bottom: 16px !important;
     }
-    
+
     .stChatInput textarea::placeholder {
-        font-size: 1.1rem !important;
-        color: #9ca3af !important;
+        font-size: clamp(0.95rem, 2.5vw, 1.1rem) !important;
+        color: var(--text-secondary) !important;
         line-height: 1.5 !important;
     }
-    
-    .stChatInput div[data-baseweb="textarea"] {
-        padding: 0 !important;
-    }
-    
+
+    .stChatInput div[data-baseweb="textarea"] { padding: 0 !important; }
     .stChatInput div[data-baseweb="base-input"] {
         min-height: 56px !important;
         display: flex !important;
         align-items: center !important;
     }
-    
-    /* Hide file uploader completely */
+
+    /* ===== FILE UPLOADER (hidden) ===== */
     [data-testid="stFileUploader"] {
         position: absolute !important;
         width: 1px !important;
@@ -685,30 +665,26 @@ st.markdown("""
         white-space: nowrap !important;
         border: 0 !important;
     }
-    
-    /* User message */
+
+    /* ===== USER MESSAGES ===== */
     .user-message {
         display: flex;
         justify-content: flex-end;
-        margin: 2rem 0 1rem 0;
-        padding-right: 1rem;
+        margin: clamp(1rem, 3vw, 2rem) 0 clamp(0.5rem, 2vw, 1rem) 0;
+        padding-right: clamp(0.25rem, 2vw, 1rem);
     }
-    
-    .user-message:first-child {
-        margin-top: 0;
-    }
-    
+
     .user-bubble, .user-bubble-with-attachment {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        background: var(--gradient);
         color: white;
         padding: 12px 18px;
         border-radius: 18px 18px 4px 18px;
-        font-size: 0.95rem;
+        font-size: clamp(0.85rem, 2vw, 0.95rem);
         line-height: 1.5;
-        max-width: 70%;
-        box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+        max-width: var(--bubble-max);
+        box-shadow: var(--shadow-sm);
     }
-    
+
     .attachment-badge {
         display: inline-flex;
         align-items: center;
@@ -719,31 +695,23 @@ st.markdown("""
         font-size: 0.8rem;
         margin-bottom: 8px;
     }
-    
-    /* Assistant message */
+
+    /* ===== ASSISTANT MESSAGES ===== */
     .assistant-wrapper {
-        margin: 1rem 0 2rem 0;
+        margin: clamp(0.5rem, 2vw, 1rem) 0 clamp(1rem, 3vw, 2rem) 0;
     }
-    
+
     .stChatMessage {
         background: transparent !important;
         border: none !important;
         padding: 0 !important;
     }
-    
+
     .stChatMessage [data-testid="chatAvatarIcon-assistant"] {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+        background: var(--gradient) !important;
     }
-    
-    /* Hide anchor links */
-    .stMarkdown a.header-anchor,
-    .stMarkdown h1 a, .stMarkdown h2 a, .stMarkdown h3 a,
-    .stMarkdown h4 a, .stMarkdown h5 a, .stMarkdown h6 a,
-    a[href^="#"], a:empty {
-        display: none !important;
-    }
-    
-    /* Tool badge */
+
+    /* ===== TOOL BADGE ===== */
     .tool-badge {
         display: inline-block;
         background: #f0f9ff;
@@ -754,52 +722,187 @@ st.markdown("""
         margin-bottom: 6px;
         border: 1px solid #bae6fd;
     }
-    
-    /* Chat container */
+
+    /* ===== CHAT CONTAINER ===== */
     .chat-container {
-        padding-bottom: 140px;
+        padding-bottom: clamp(80px, 15vh, 140px);
         margin-top: 0;
         padding-top: 0.5rem;
     }
-    
+
     .chat-container > div:first-child {
         margin-top: 0 !important;
         padding-top: 0 !important;
     }
-    
-    /* Status animation */
+
+    /* ===== STATUS & STREAMING ===== */
     .search-status {
         padding: 0.5rem 1rem;
         margin: 0.5rem 0;
+        display: flex;
+        align-items: center;
+        gap: 8px;
     }
-    
+
     .search-text {
-        background: linear-gradient(90deg, #667eea, #764ba2, #667eea);
+        background: var(--gradient);
         background-size: 200% 100%;
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         background-clip: text;
         animation: shimmer 1.5s ease-in-out infinite;
         font-weight: 500;
-        font-size: 0.9rem;
+        font-size: clamp(0.8rem, 2vw, 0.9rem);
     }
-    
+
     @keyframes shimmer {
         0% { background-position: 100% 0; }
         50% { background-position: 0% 0; }
         100% { background-position: 100% 0; }
     }
-    
-    /* Remove scrollbar on landing page */
-    html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
-        overflow-x: hidden !important;
+
+    /* Streaming dots animation */
+    .streaming-dots {
+        display: inline-flex;
+        gap: 4px;
+        margin-left: 8px;
     }
-    
-    .no-scroll {
-        overflow: hidden !important;
-        height: 100vh !important;
+
+    .streaming-dots span {
+        width: 6px;
+        height: 6px;
+        background: var(--gradient-start);
+        border-radius: 50%;
+        animation: bounceDot 1.4s ease-in-out infinite;
     }
-    
+
+    .streaming-dots span:nth-child(1) { animation-delay: 0s; }
+    .streaming-dots span:nth-child(2) { animation-delay: 0.2s; }
+    .streaming-dots span:nth-child(3) { animation-delay: 0.4s; }
+
+    @keyframes bounceDot {
+        0%, 80%, 100% { transform: scale(0.6); opacity: 0.5; }
+        40% { transform: scale(1); opacity: 1; }
+    }
+
+    /* ===== ERROR HANDLING ===== */
+    .error-container {
+        background: linear-gradient(135deg, rgba(239, 68, 68, 0.15) 0%, rgba(220, 38, 38, 0.1) 100%);
+        border: 1px solid rgba(239, 68, 68, 0.3);
+        border-radius: var(--radius-md);
+        padding: var(--space-md) var(--space-lg);
+        margin: var(--space-md) 0;
+        text-align: center;
+    }
+
+    .error-icon {
+        font-size: 1.5rem;
+        margin-bottom: var(--space-sm);
+    }
+
+    .error-message {
+        color: #fef2f2;
+        font-size: 0.95rem;
+        margin-bottom: var(--space-md);
+    }
+
+    .error-container .stButton > button {
+        background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%) !important;
+        border: none !important;
+        border-radius: var(--radius-sm) !important;
+        padding: 8px 20px !important;
+        color: white !important;
+        font-weight: 500 !important;
+        transition: var(--transition) !important;
+    }
+
+    .error-container .stButton > button:hover {
+        transform: translateY(-2px) !important;
+        box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3) !important;
+    }
+
+    /* ===== HIDE ANCHOR LINKS ===== */
+    .stMarkdown a.header-anchor,
+    .stMarkdown h1 a, .stMarkdown h2 a, .stMarkdown h3 a,
+    .stMarkdown h4 a, .stMarkdown h5 a, .stMarkdown h6 a,
+    a[href^="#"], a:empty {
+        display: none !important;
+    }
+
+    /* ===== RESPONSIVE: MOBILE ===== */
+    @media (max-width: 640px) {
+        .examples-grid-wrapper [data-testid="stHorizontalBlock"] {
+            flex-direction: column !important;
+            gap: 0.5rem !important;
+        }
+
+        .examples-grid-wrapper .stButton button {
+            width: 100% !important;
+        }
+
+        .user-message {
+            padding-right: 0 !important;
+        }
+
+        .user-bubble, .user-bubble-with-attachment {
+            max-width: 85%;
+        }
+
+        .trash-btn-wrapper {
+            top: 5px;
+            right: 10px;
+        }
+    }
+
+    /* ===== RESPONSIVE: TABLET ===== */
+    @media (min-width: 641px) and (max-width: 1024px) {
+        .examples-grid-wrapper {
+            max-width: min(600px, 92vw);
+        }
+    }
+
+    /* ===== LIGHT MODE ===== */
+    @media (prefers-color-scheme: light) {
+        :root {
+            --text-primary: #374151;
+            --text-secondary: #6b7280;
+            --text-dark: #1f2937;
+            --border-default: #d1d5db;
+        }
+
+        .examples-grid-wrapper .stButton button {
+            background: linear-gradient(145deg, #ffffff 0%, #f8fafc 100%);
+            border: 1px solid #e2e8f0 !important;
+            color: var(--text-dark) !important;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.06) !important;
+        }
+
+        .examples-grid-wrapper .stButton button:hover {
+            background: linear-gradient(145deg, #eef2ff 0%, #e0e7ff 100%);
+            border-color: #a5b4fc !important;
+        }
+
+        .tool-badge {
+            background: #f0f9ff;
+            color: #0369a1;
+            border-color: #bae6fd;
+        }
+
+        .error-container {
+            background: linear-gradient(135deg, rgba(239, 68, 68, 0.1) 0%, rgba(220, 38, 38, 0.05) 100%);
+            border-color: rgba(239, 68, 68, 0.2);
+        }
+
+        .error-message {
+            color: #991b1b;
+        }
+
+        .stChatInput > div {
+            border-color: #d1d5db !important;
+        }
+    }
+
+    /* ===== DARK MODE TOOL BADGE ===== */
     @media (prefers-color-scheme: dark) {
         .tool-badge {
             background: #1e3a5f;
@@ -816,156 +919,59 @@ components.html("""
 <script>
 (function() {
     const doc = window.parent.document;
-    
+    let initialized = false;
+
     function updateScrollBehavior() {
         const chatContainer = doc.querySelector('.chat-container');
         const appContainer = doc.querySelector('[data-testid="stAppViewContainer"]');
         const mainContainer = doc.querySelector('[data-testid="stMain"]');
-        
-        if (chatContainer) {
-            if (appContainer) appContainer.style.overflow = 'auto';
-            if (mainContainer) mainContainer.style.overflow = 'auto';
-            doc.body.style.overflow = 'auto';
-        } else {
-            if (appContainer) appContainer.style.overflow = 'hidden';
-            if (mainContainer) mainContainer.style.overflow = 'hidden';
-            doc.body.style.overflow = 'hidden';
-        }
+        const hasChat = !!chatContainer;
+
+        if (appContainer) appContainer.style.overflow = hasChat ? 'auto' : 'hidden';
+        if (mainContainer) mainContainer.style.overflow = hasChat ? 'auto' : 'hidden';
+        doc.body.style.overflow = hasChat ? 'auto' : 'hidden';
     }
-    
+
     function addPaperclipButton() {
         const chatInput = doc.querySelector('[data-testid="stChatInput"]');
         if (!chatInput || doc.getElementById('paperclip-btn')) return;
-        
+
         const btn = doc.createElement('button');
         btn.id = 'paperclip-btn';
         btn.type = 'button';
         btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>';
         btn.title = 'Attach file (PDF, TXT, MD, PY, JSON, CSV)';
         btn.style.cssText = 'position:absolute;left:12px;top:50%;transform:translateY(-50%);z-index:1000;background:transparent;border:none;cursor:pointer;padding:8px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#9ca3af;transition:all 0.2s;';
-        
+
         btn.onmouseenter = function() { this.style.background='rgba(102,126,234,0.1)'; this.style.color='#667eea'; };
         btn.onmouseleave = function() { this.style.background='transparent'; this.style.color='#9ca3af'; };
-        
+
         btn.onclick = function(e) {
             e.preventDefault();
             e.stopPropagation();
             const fileInput = doc.querySelector('[data-testid="stFileUploader"] input[type="file"]');
             if (fileInput) fileInput.click();
         };
-        
+
         chatInput.style.position = 'relative';
         chatInput.insertBefore(btn, chatInput.firstChild);
     }
-    
-    function animateExampleButtons() {
-        // Find example buttons by their keys (ex_0 through ex_5)
-        // These buttons contain the example questions text
-        const allButtons = doc.querySelectorAll('.stButton button');
-        const exampleButtons = [];
-        
-        allButtons.forEach(btn => {
-            const text = btn.innerText || '';
-            // Match buttons that contain emoji + question pattern (our example questions)
-            if (text.includes('How do I') || text.includes('What are the')) {
-                exampleButtons.push(btn);
-            }
-        });
-        
-        if (exampleButtons.length === 0) return;
-        
-        const delays = [0.3, 0.45, 0.6, 0.75, 0.9, 1.05];
-        let needsAnimation = false;
-        
-        exampleButtons.forEach((btn, idx) => {
-            // Check if this specific button needs styling
-            if (btn.dataset.animated !== 'true') {
-                needsAnimation = true;
-                btn.dataset.animated = 'true';
-                
-                // Apply styling for the cool look
-                btn.style.cssText = `
-                    background: linear-gradient(145deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0.03) 100%) !important;
-                    border: 1px solid rgba(255,255,255,0.15) !important;
-                    border-radius: 16px !important;
-                    padding: 12px 16px !important;
-                    text-align: center !important;
-                    font-size: 0.88rem !important;
-                    color: #e5e7eb !important;
-                    height: auto !important;
-                    min-height: auto !important;
-                    max-width: 100% !important;
-                    backdrop-filter: blur(10px);
-                    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15) !important;
-                    opacity: 0;
-                    transform: translateY(25px);
-                    animation: exampleFadeIn 0.5s ease-out forwards;
-                    animation-delay: ${delays[idx]}s;
-                    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
-                `;
-                
-                // Add hover effect via event listeners (only add once)
-                btn.addEventListener('mouseenter', function() {
-                    this.style.background = 'linear-gradient(145deg, rgba(102, 126, 234, 0.25) 0%, rgba(118, 75, 162, 0.25) 100%)';
-                    this.style.borderColor = 'rgba(102, 126, 234, 0.5)';
-                    this.style.transform = 'translateY(-3px)';
-                    this.style.boxShadow = '0 8px 25px rgba(102, 126, 234, 0.25)';
-                });
-                
-                btn.addEventListener('mouseleave', function() {
-                    this.style.background = 'linear-gradient(145deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0.03) 100%)';
-                    this.style.borderColor = 'rgba(255,255,255,0.15)';
-                    this.style.transform = 'translateY(0)';
-                    this.style.boxShadow = '0 4px 15px rgba(0, 0, 0, 0.15)';
-                });
-            }
-            
-            // Always ensure the parent container has proper width constraints
-            const btnContainer = btn.closest('.stButton');
-            if (btnContainer && btnContainer.dataset.widthSet !== 'true') {
-                btnContainer.dataset.widthSet = 'true';
-                btnContainer.style.maxWidth = '100%';
-            }
-        });
-        
-        // Also style the column containers for proper spacing and width
-        const horizontalBlocks = doc.querySelectorAll('[data-testid="stHorizontalBlock"]');
-        horizontalBlocks.forEach(block => {
-            // Check if this block contains example buttons
-            const hasExampleBtn = block.querySelector('.stButton button[data-animated="true"]');
-            if (hasExampleBtn && block.dataset.styled !== 'true') {
-                block.dataset.styled = 'true';
-                block.style.gap = '0.75rem';
-                block.style.marginBottom = '0.6rem';
-                block.style.maxWidth = '680px';
-                block.style.marginLeft = 'auto';
-                block.style.marginRight = 'auto';
-            }
-        });
-    }
-    
-    function positionAttachmentChip() {
-        const chatInput = doc.querySelector('[data-testid="stChatInput"]');
-        if (!chatInput) return;
-        
-        // Find attachment chip button by its unique content (contains ✕)
+
+    function styleAttachmentChip() {
         const buttons = doc.querySelectorAll('.stButton button');
         let chipButton = null;
         let chipContainer = null;
-        
+
         buttons.forEach(btn => {
             if (btn.innerText && btn.innerText.includes('✕')) {
                 chipButton = btn;
                 chipContainer = btn.closest('.stButton');
             }
         });
-        
-        if (!chipButton || !chipContainer) return;
-        if (chipButton.dataset.styled === 'true') return;
-        
+
+        if (!chipButton || !chipContainer || chipButton.dataset.styled === 'true') return;
         chipButton.dataset.styled = 'true';
-        
-        // Style the button as a compact chip - DON'T move it, just style it
+
         chipButton.style.cssText = `
             background: linear-gradient(135deg, rgba(34, 197, 94, 0.2) 0%, rgba(34, 197, 94, 0.1) 100%) !important;
             border: 1px solid rgba(34, 197, 94, 0.4) !important;
@@ -981,79 +987,57 @@ components.html("""
             cursor: pointer !important;
             margin: 0 !important;
         `;
-        
-        // Make sure the stButton wrapper doesn't force full width and has no margin
-        chipContainer.style.cssText = `
-            width: auto !important;
-            display: inline-block !important;
-            margin: 0 !important;
-            padding: 0 !important;
-        `;
-        
-        // Style the immediate parent containers - kill all margins and gaps
+
+        chipContainer.style.cssText = 'width: auto !important; display: inline-block !important; margin: 0 !important; padding: 0 !important;';
+
         let parent = chipContainer.parentElement;
         let levelsUp = 0;
         while (parent && parent !== doc.body && levelsUp < 5) {
-            parent.style.margin = '0';
-            parent.style.marginBottom = '0';
-            parent.style.marginTop = '0';
-            parent.style.padding = '0';
-            parent.style.paddingBottom = '0';
-            parent.style.paddingTop = '0';
-            parent.style.gap = '0';
-            
-            // Find the vertical block that contains the attachment button
             if (parent.getAttribute && parent.getAttribute('data-testid') === 'stVerticalBlock') {
-                parent.style.cssText = `
-                    max-width: 800px !important;
-                    margin: 0 auto !important;
-                    padding: 0 1rem !important;
-                    display: flex !important;
-                    justify-content: flex-start !important;
-                    gap: 0 !important;
-                `;
+                parent.style.cssText = 'max-width: min(800px, 95vw) !important; margin: 0 auto !important; padding: 0 1rem !important; display: flex !important; justify-content: flex-start !important; gap: 0 !important;';
                 break;
             }
             parent = parent.parentElement;
             levelsUp++;
         }
-        
-        // Add hover effect for the X functionality visual feedback
+
         chipButton.addEventListener('mouseenter', function() {
             this.style.background = 'linear-gradient(135deg, rgba(239, 68, 68, 0.2) 0%, rgba(239, 68, 68, 0.1) 100%)';
             this.style.borderColor = 'rgba(239, 68, 68, 0.5)';
             this.style.color = '#ef4444';
         });
-        
+
         chipButton.addEventListener('mouseleave', function() {
             this.style.background = 'linear-gradient(135deg, rgba(34, 197, 94, 0.2) 0%, rgba(34, 197, 94, 0.1) 100%)';
             this.style.borderColor = 'rgba(34, 197, 94, 0.4)';
             this.style.color = '#22c55e';
         });
     }
-    
+
     function init() {
         updateScrollBehavior();
         addPaperclipButton();
-        animateExampleButtons();
-        positionAttachmentChip();
+        styleAttachmentChip();
+        initialized = true;
     }
-    
-    // Run init multiple times with delays to catch late-rendering elements
-    init();
-    setTimeout(init, 100);
-    setTimeout(init, 300);
-    setTimeout(init, 600);
-    setTimeout(init, 1000);
-    
+
+    // Use requestAnimationFrame for faster initial render
+    function scheduleInit() {
+        if (!initialized) {
+            requestAnimationFrame(init);
+            setTimeout(scheduleInit, 50);
+        }
+    }
+    scheduleInit();
+
     // Auto-scroll in chat mode
-    setTimeout(function() {
+    function autoScroll() {
         const chatContainer = doc.querySelector('.chat-container');
         if (chatContainer) {
             window.parent.scrollTo({ top: doc.body.scrollHeight, behavior: 'smooth' });
         }
-    }, 100);
-    
+    }
+
     // Auto-focus on typing
     doc.addEventListener('keydown', function(e) {
         if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
@@ -1063,13 +1047,13 @@ components.html("""
         const input = doc.querySelector('textarea[data-testid="stChatInputTextArea"]');
         if (input) input.focus();
     });
-    
-    // Re-run on DOM changes
+
+    // Lightweight observer - only for scroll and attachment chip
     const observer = new MutationObserver(function() {
         updateScrollBehavior();
-        addPaperclipButton();
-        animateExampleButtons();
-        positionAttachmentChip();
+        if (!doc.getElementById('paperclip-btn')) addPaperclipButton();
+        styleAttachmentChip();
+        autoScroll();
     });
     observer.observe(doc.body, { childList: true, subtree: true });
 })();
@@ -1651,16 +1635,22 @@ else:
             if text:
                 render_assistant_message(text, msg.get("tool_names"))
     
-    # Display any stored error message
+    # Display any stored error message with custom styling
     if "last_error" in st.session_state:
-        st.error(f"⚠️ Error: {st.session_state.last_error}")
-        # Add a button to dismiss the error and try again
-        if st.button("🔄 Try Again", key="dismiss_error"):
-            # Remove the last user message that caused the error
-            if st.session_state.messages and st.session_state.messages[-1]["role"] == "user":
-                st.session_state.messages.pop()
-            del st.session_state.last_error
-            st.rerun()
+        st.markdown(f'''
+        <div class="error-container">
+            <div class="error-icon">⚠️</div>
+            <div class="error-message">Error: {st.session_state.last_error}</div>
+        </div>
+        ''', unsafe_allow_html=True)
+        col1, col2, col3 = st.columns([1, 1, 1])
+        with col2:
+            if st.button("🔄 Try Again", key="dismiss_error", use_container_width=True):
+                # Remove the last user message that caused the error
+                if st.session_state.messages and st.session_state.messages[-1]["role"] == "user":
+                    st.session_state.messages.pop()
+                del st.session_state.last_error
+                st.rerun()
     
     st.markdown('</div>', unsafe_allow_html=True)
 
@@ -1721,10 +1711,13 @@ if st.session_state.processing:
     file_info = last_user_msg.get("file_info")
     render_user_message(display_text, file_info)
     
-    # Show initial status message
+    # Show initial status message with streaming indicator
     status_placeholder = st.empty()
     status_messages = ["🧠 Contemplating...", "✨ Vibing...", "⏳ Brewing...", "🎨 Crafting...", "🔧 Tinkering..."]
-    status_placeholder.markdown(f'<div class="search-status"><span class="search-text">{random.choice(status_messages)}</span></div>', unsafe_allow_html=True)
+    status_placeholder.markdown(
+        f'<div class="search-status"><span class="search-text">{random.choice(status_messages)}</span><div class="streaming-dots"><span></span><span></span><span></span></div></div>',
+        unsafe_allow_html=True
+    )
     
     api_messages = [{"role": m["role"], "content": m["content"]} for m in st.session_state.messages]
     all_tool_names = []
