@@ -497,8 +497,9 @@ st.markdown("""
         align-items: center;
         justify-content: center;
         text-align: center;
-        padding: var(--space-xl) var(--space-md);
+        padding: clamp(1rem, 3vw, 1.5rem) var(--space-md);
         margin-top: clamp(2vh, 5vw, 5vh);
+        margin-bottom: 0.5rem;
         animation: fadeInDown 0.6s ease-out;
     }
 
@@ -538,23 +539,23 @@ st.markdown("""
 
     /* ===== EXAMPLES GRID ===== */
     .examples-grid-wrapper {
-        max-width: min(680px, 80vw);
+        max-width: min(560px, 85vw);
         margin: 0 auto;
         padding: 0 var(--space-md);
     }
 
     .examples-grid-wrapper [data-testid="stHorizontalBlock"] {
-        gap: 0.75rem !important;
-        margin-bottom: 1rem !important;
+        gap: 0.6rem !important;
+        margin-bottom: 0.6rem !important;
     }
 
     .examples-grid-wrapper .stButton button {
-        background: linear-gradient(145deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0.03) 100%);
-        border: 1px solid rgba(255,255,255,0.12) !important;
-        border-radius: var(--radius-md) !important;
-        padding: 12px 16px !important;
+        background: linear-gradient(145deg, rgba(255,255,255,0.08) 0%, rgba(255,255,255,0.02) 100%);
+        border: 1px solid rgba(255,255,255,0.1) !important;
+        border-radius: 12px !important;
+        padding: 10px 14px !important;
         text-align: center !important;
-        font-size: clamp(0.75rem, 2vw, 0.88rem) !important;
+        font-size: clamp(0.72rem, 1.8vw, 0.82rem) !important;
         color: var(--text-primary) !important;
         height: auto !important;
         min-height: auto !important;
@@ -751,6 +752,12 @@ st.markdown("""
         position: relative;
     }
 
+    /* Hide Streamlit's native copy button - we replace it with our own */
+    .stChatMessage div[data-testid="stCodeBlock"] > button,
+    .stChatMessage div[data-testid="stCodeBlock"] > div > button {
+        display: none !important;
+    }
+
     .stChatMessage [data-testid="chatAvatarIcon-assistant"] {
         background: var(--gradient) !important;
     }
@@ -911,7 +918,7 @@ st.markdown("""
     /* ===== RESPONSIVE: TABLET ===== */
     @media (min-width: 641px) and (max-width: 1024px) {
         .examples-grid-wrapper {
-            max-width: min(600px, 85vw);
+            max-width: min(560px, 85vw);
         }
     }
 
@@ -1110,21 +1117,40 @@ components.html("""
         var codeBlocks = doc.querySelectorAll('.stChatMessage div[data-testid="stCodeBlock"]');
         codeBlocks.forEach(function(block) {
             if (block.dataset.copyFixed === 'true') return;
-            var btn = block.querySelector('button');
             var pre = block.querySelector('pre');
-            if (!btn || !pre) return;
+            var code = block.querySelector('code');
+            if (!pre || !code) return;
 
-            // Move button inside the pre element
+            // Create our own copy button
+            var copyBtn = doc.createElement('button');
+            copyBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>';
+            copyBtn.title = 'Copy to clipboard';
+            copyBtn.style.cssText = 'position:absolute;top:8px;right:8px;z-index:10;background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);border-radius:6px;padding:4px 6px;cursor:pointer;color:#9ca3af;display:flex;align-items:center;justify-content:center;transition:all 0.2s;';
+
+            copyBtn.onmouseenter = function() {
+                this.style.background = 'rgba(255,255,255,0.2)';
+                this.style.color = '#e5e7eb';
+            };
+            copyBtn.onmouseleave = function() {
+                this.style.background = 'rgba(255,255,255,0.1)';
+                this.style.color = '#9ca3af';
+            };
+
+            copyBtn.onclick = function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                var text = code.innerText || code.textContent || '';
+                navigator.clipboard.writeText(text).then(function() {
+                    copyBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>';
+                    setTimeout(function() {
+                        copyBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>';
+                    }, 2000);
+                });
+            };
+
+            // pre is the dark box - make it the positioning context
             pre.style.setProperty('position', 'relative', 'important');
-            pre.appendChild(btn);
-
-            // Position button at top-right of the pre (which is the dark code box)
-            btn.style.setProperty('position', 'sticky', 'important');
-            btn.style.setProperty('float', 'right', 'important');
-            btn.style.setProperty('top', '0.5rem', 'important');
-            btn.style.setProperty('right', '0', 'important');
-            btn.style.setProperty('z-index', '10', 'important');
-            btn.style.setProperty('margin-top', '-1.5rem', 'important');
+            pre.appendChild(copyBtn);
 
             block.dataset.copyFixed = 'true';
         });
