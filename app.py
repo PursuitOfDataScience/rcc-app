@@ -746,22 +746,9 @@ st.markdown("""
         overflow-x: auto !important;
     }
 
-    /* Streamlit code block - keep copy button within bounds */
-    .stChatMessage div[data-testid="stCodeBlock"] {
-        position: relative !important;
-        max-width: calc(var(--bubble-max) - 10px) !important;
-        overflow: hidden !important;
-    }
-
-    .stChatMessage div[data-testid="stCodeBlock"] pre {
-        overflow-x: auto !important;
-    }
-
-    .stChatMessage div[data-testid="stCodeBlock"] button {
-        position: absolute !important;
-        top: 0.5rem !important;
-        right: 0.5rem !important;
-        z-index: 10 !important;
+    /* Streamlit code block - JS handles copy button positioning */
+    div[data-testid="stCodeBlock"] {
+        position: relative;
     }
 
     .stChatMessage [data-testid="chatAvatarIcon-assistant"] {
@@ -1118,11 +1105,33 @@ components.html("""
         });
     }
 
+    // Fix copy button position in code blocks
+    function fixCodeBlockCopyButtons() {
+        const codeBlocks = doc.querySelectorAll('.stChatMessage div[data-testid="stCodeBlock"]');
+        codeBlocks.forEach(function(block) {
+            if (block.dataset.copyFixed === 'true') return;
+            const btn = block.querySelector('button');
+            if (!btn) return;
+            block.style.setProperty('position', 'relative', 'important');
+            block.style.setProperty('overflow', 'hidden', 'important');
+            var parent = block.parentElement;
+            if (parent && parent.clientWidth > 0) {
+                block.style.setProperty('max-width', parent.clientWidth + 'px', 'important');
+            }
+            btn.style.setProperty('position', 'absolute', 'important');
+            btn.style.setProperty('top', '0.5rem', 'important');
+            btn.style.setProperty('right', '0.5rem', 'important');
+            btn.style.setProperty('z-index', '10', 'important');
+            block.dataset.copyFixed = 'true';
+        });
+    }
+
     function init() {
         updateScrollBehavior();
         addPaperclipButton();
         styleAttachmentChip();
         animateExampleButtons();
+        fixCodeBlockCopyButtons();
         initialized = true;
     }
 
@@ -1160,6 +1169,7 @@ components.html("""
     // Scroll immediately on any new content (not just streaming)
     const scrollObserver = new MutationObserver(function(mutations) {
         autoScroll();
+        fixCodeBlockCopyButtons();
     });
     scrollObserver.observe(doc.body, { childList: true, subtree: true });
 
@@ -1182,6 +1192,7 @@ components.html("""
         if (!doc.getElementById('paperclip-btn')) addPaperclipButton();
         styleAttachmentChip();
         animateExampleButtons();
+        fixCodeBlockCopyButtons();
         autoScroll();
     });
     observer.observe(doc.body, { childList: true, subtree: true });
