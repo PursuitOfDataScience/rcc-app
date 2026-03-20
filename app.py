@@ -1114,24 +1114,17 @@ components.html("""
             var pre = block.querySelector('pre');
             if (!btn || !pre) return;
 
-            // 1. Measure pre's current rendered width BEFORE changing anything
-            var preWidth = pre.getBoundingClientRect().width;
-            if (preWidth <= 0) return;
+            // Move button inside the pre element
+            pre.style.setProperty('position', 'relative', 'important');
+            pre.appendChild(btn);
 
-            // 2. Constrain the code block container to match the pre's width
-            block.style.setProperty('position', 'relative', 'important');
-            block.style.setProperty('overflow', 'hidden', 'important');
-            block.style.setProperty('max-width', Math.ceil(preWidth) + 'px', 'important');
-
-            // 3. Now that block is constrained, let pre fill 100% of it
-            //    (without this, pre would shrink further since its CSS max-width is percentage-based)
-            pre.style.setProperty('max-width', '100%', 'important');
-
-            // 4. Position the copy button at top-right of the now-constrained block
-            btn.style.setProperty('position', 'absolute', 'important');
+            // Position button at top-right of the pre (which is the dark code box)
+            btn.style.setProperty('position', 'sticky', 'important');
+            btn.style.setProperty('float', 'right', 'important');
             btn.style.setProperty('top', '0.5rem', 'important');
-            btn.style.setProperty('right', '0.5rem', 'important');
+            btn.style.setProperty('right', '0', 'important');
             btn.style.setProperty('z-index', '10', 'important');
+            btn.style.setProperty('margin-top', '-1.5rem', 'important');
 
             block.dataset.copyFixed = 'true';
         });
