@@ -730,6 +730,22 @@ st.markdown("""
         margin-top: 0 !important;
     }
 
+    /* Chat message content - keep close to avatar */
+    .stChatMessage > div:nth-child(2) {
+        max-width: calc(var(--bubble-max) - 10px) !important;
+    }
+
+    /* Constrain code blocks in chat messages */
+    .stChatMessage pre {
+        max-width: calc(var(--bubble-max) - 10px) !important;
+        overflow-x: auto !important;
+    }
+
+    .stChatMessage code {
+        max-width: calc(var(--bubble-max) - 10px) !important;
+        overflow-x: auto !important;
+    }
+
     .stChatMessage [data-testid="chatAvatarIcon-assistant"] {
         background: var(--gradient) !important;
     }
@@ -766,9 +782,12 @@ st.markdown("""
     .search-status {
         padding: 0.25rem 1rem;
         margin: 0.25rem 0;
+        margin-left: 40px;
         display: flex;
         align-items: center;
         gap: 8px;
+        max-width: var(--bubble-max);
+    }
     }
 
     .search-text {
