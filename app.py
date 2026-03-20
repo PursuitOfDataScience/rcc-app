@@ -545,7 +545,7 @@ st.markdown("""
 
     .examples-grid-wrapper [data-testid="stHorizontalBlock"] {
         gap: 0.75rem !important;
-        margin-bottom: 0.6rem !important;
+        margin-bottom: 1rem !important;
     }
 
     .examples-grid-wrapper .stButton button {
@@ -725,7 +725,7 @@ st.markdown("""
 
     /* ===== CHAT CONTAINER ===== */
     .chat-container {
-        padding-bottom: clamp(80px, 15vh, 140px);
+        padding-bottom: clamp(60px, 12vh, 100px);
         padding-top: 0;
     }
 
