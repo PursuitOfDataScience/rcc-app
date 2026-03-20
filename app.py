@@ -430,8 +430,8 @@ st.markdown("""
         --space-xl: 2rem;
 
         /* Sizing */
-        --content-max: min(720px, 85vw);
-        --input-max: min(680px, 85vw);
+        --content-max: min(720px, 92vw);
+        --input-max: min(680px, 92vw);
         --bubble-max: 75%;
         --radius-sm: 8px;
         --radius-md: 16px;
@@ -538,7 +538,7 @@ st.markdown("""
 
     /* ===== EXAMPLES GRID ===== */
     .examples-grid-wrapper {
-        max-width: min(680px, 85vw);
+        max-width: min(680px, 92vw);
         margin: 0 auto;
         padding: 0 var(--space-md);
     }
