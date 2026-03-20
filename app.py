@@ -752,9 +752,16 @@ st.markdown("""
         position: relative !important;
     }
 
+    .stChatMessage .stCodeBlock [data-testid="stCopyButton"],
     .stChatMessage .stCodeBlock button {
+        position: absolute !important;
         right: 8px !important;
         top: 8px !important;
+    }
+
+    /* Fallback for any code block wrapper */
+    .element-container:has(.stCodeBlock) {
+        max-width: calc(var(--bubble-max) - 10px) !important;
     }
 
     .stChatMessage [data-testid="chatAvatarIcon-assistant"] {
