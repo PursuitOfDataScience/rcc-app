@@ -746,6 +746,17 @@ st.markdown("""
         overflow-x: auto !important;
     }
 
+    /* Streamlit code block copy button - keep within bounds */
+    .stChatMessage .stCodeBlock {
+        max-width: calc(var(--bubble-max) - 10px) !important;
+        position: relative !important;
+    }
+
+    .stChatMessage .stCodeBlock button {
+        right: 8px !important;
+        top: 8px !important;
+    }
+
     .stChatMessage [data-testid="chatAvatarIcon-assistant"] {
         background: var(--gradient) !important;
     }
