@@ -746,23 +746,22 @@ st.markdown("""
         overflow-x: auto !important;
     }
 
-    /* Streamlit code block copy button - keep within bounds and position at LEFT */
-    .stChatMessage .stCodeBlock {
-        max-width: calc(var(--bubble-max) - 10px) !important;
+    /* Streamlit code block - keep copy button within bounds */
+    .stChatMessage div[data-testid="stCodeBlock"] {
         position: relative !important;
-    }
-
-    .stChatMessage .stCodeBlock [data-testid="stCopyButton"],
-    .stChatMessage .stCodeBlock button {
-        position: absolute !important;
-        left: 8px !important;
-        top: 8px !important;
-        right: auto !important;
-    }
-
-    /* Fallback for any code block wrapper */
-    .element-container:has(.stCodeBlock) {
         max-width: calc(var(--bubble-max) - 10px) !important;
+        overflow: hidden !important;
+    }
+
+    .stChatMessage div[data-testid="stCodeBlock"] pre {
+        overflow-x: auto !important;
+    }
+
+    .stChatMessage div[data-testid="stCodeBlock"] button {
+        position: absolute !important;
+        top: 0.5rem !important;
+        right: 0.5rem !important;
+        z-index: 10 !important;
     }
 
     .stChatMessage [data-testid="chatAvatarIcon-assistant"] {
@@ -807,22 +806,26 @@ st.markdown("""
         gap: 8px;
         max-width: var(--bubble-max);
     }
-    }
 
     .search-text {
-        background: linear-gradient(90deg, var(--gradient-start), var(--gradient-end), var(--gradient-start));
+        background: linear-gradient(
+            90deg,
+            var(--gradient-start) 0%,
+            var(--gradient-end) 50%,
+            var(--gradient-start) 100%
+        );
         background-size: 200% 100%;
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         background-clip: text;
-        animation: shimmer 2s linear infinite;
+        animation: shimmer 1.5s ease-in-out infinite;
         font-weight: 600;
         font-size: clamp(0.8rem, 2vw, 0.9rem);
     }
 
     @keyframes shimmer {
-        0% { background-position: 200% 0; }
-        100% { background-position: -200% 0; }
+        0% { background-position: 100% 0; }
+        100% { background-position: -100% 0; }
     }
 
     /* Streaming dots animation */
