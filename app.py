@@ -719,6 +719,15 @@ st.markdown("""
         max-width: var(--bubble-max) !important;
         overflow-wrap: break-word !important;
         word-wrap: break-word !important;
+        margin-top: 0 !important;
+    }
+
+    .stChatMessage p:first-child {
+        margin-top: 0 !important;
+    }
+
+    .stChatMessage > div {
+        margin-top: 0 !important;
     }
 
     .stChatMessage [data-testid="chatAvatarIcon-assistant"] {
@@ -733,7 +742,7 @@ st.markdown("""
         padding: 3px 8px;
         border-radius: 10px;
         font-size: 0.7rem;
-        margin-bottom: 6px;
+        margin: 0 0 6px 0;
         border: 1px solid #bae6fd;
     }
 
