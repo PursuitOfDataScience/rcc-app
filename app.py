@@ -683,6 +683,8 @@ st.markdown("""
         line-height: 1.5;
         max-width: var(--bubble-max);
         box-shadow: var(--shadow-sm);
+        overflow-wrap: break-word !important;
+        word-wrap: break-word !important;
     }
 
     .attachment-badge {
@@ -710,6 +712,13 @@ st.markdown("""
 
     .stChatMessage > div {
         max-width: var(--bubble-max) !important;
+    }
+
+    /* Constrain assistant markdown content */
+    .stChatMessage p {
+        max-width: var(--bubble-max) !important;
+        overflow-wrap: break-word !important;
+        word-wrap: break-word !important;
     }
 
     .stChatMessage [data-testid="chatAvatarIcon-assistant"] {
