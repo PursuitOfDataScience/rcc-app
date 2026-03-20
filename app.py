@@ -460,7 +460,7 @@ st.markdown("""
     .stMarkdown { margin: 0 !important; padding: 0 !important; }
     .element-container { margin: 0 !important; padding: 0 !important; }
 
-    [data-testid="stMainBlockContainer"] { padding-top: 0.5rem !important; }
+    [data-testid="stMainBlockContainer"] { padding-top: 0 !important; }
 
     html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
         overflow-x: hidden !important;
@@ -497,8 +497,8 @@ st.markdown("""
         align-items: center;
         justify-content: center;
         text-align: center;
-        padding: var(--space-lg) var(--space-md);
-        margin-top: 8vh;
+        padding: var(--space-xl) var(--space-md);
+        margin-top: clamp(2vh, 5vw, 5vh);
         animation: fadeInDown 0.6s ease-out;
     }
 
@@ -527,7 +527,7 @@ st.markdown("""
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         background-clip: text;
-        margin-bottom: var(--space-xl);
+        margin-bottom: var(--space-lg);
         animation: fadeInUp 0.6s ease-out 0.3s both;
     }
 
@@ -670,7 +670,7 @@ st.markdown("""
     .user-message {
         display: flex;
         justify-content: flex-end;
-        margin: clamp(1rem, 3vw, 2rem) 0 clamp(0.5rem, 2vw, 1rem) 0;
+        margin: clamp(0.75rem, 2vw, 1.5rem) 0 clamp(0.5rem, 2vw, 1rem) 0;
         padding-right: clamp(0.25rem, 2vw, 1rem);
     }
 
@@ -698,7 +698,7 @@ st.markdown("""
 
     /* ===== ASSISTANT MESSAGES ===== */
     .assistant-wrapper {
-        margin: clamp(0.5rem, 2vw, 1rem) 0 clamp(1rem, 3vw, 2rem) 0;
+        margin: clamp(0.5rem, 1.5vw, 1rem) 0 clamp(0.75rem, 2vw, 1.5rem) 0;
     }
 
     .stChatMessage {
@@ -726,8 +726,7 @@ st.markdown("""
     /* ===== CHAT CONTAINER ===== */
     .chat-container {
         padding-bottom: clamp(80px, 15vh, 140px);
-        margin-top: 0;
-        padding-top: 0.5rem;
+        padding-top: 0;
     }
 
     .chat-container > div:first-child {
@@ -735,10 +734,15 @@ st.markdown("""
         padding-top: 0 !important;
     }
 
+    /* First user message - tighter to top */
+    .chat-container > div:first-child .user-message {
+        margin-top: 0 !important;
+    }
+
     /* ===== STATUS & STREAMING ===== */
     .search-status {
-        padding: 0.5rem 1rem;
-        margin: 0.5rem 0;
+        padding: 0.25rem 1rem;
+        margin: 0.25rem 0;
         display: flex;
         align-items: center;
         gap: 8px;
@@ -1713,7 +1717,7 @@ if st.session_state.processing:
     
     # Show initial status message with streaming indicator
     status_placeholder = st.empty()
-    status_messages = ["🧠 Contemplating...", "✨ Vibing...", "⏳ Brewing...", "🎨 Crafting...", "🔧 Tinkering..."]
+    status_messages = ["🧠 Contemplating", "✨ Vibing", "⏳ Brewing", "🎨 Crafting", "🔧 Tinkering"]
     status_placeholder.markdown(
         f'<div class="search-status"><span class="search-text">{random.choice(status_messages)}</span><div class="streaming-dots"><span></span><span></span><span></span></div></div>',
         unsafe_allow_html=True
