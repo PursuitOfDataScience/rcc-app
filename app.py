@@ -796,6 +796,12 @@ st.markdown("""
         max-width: var(--bubble-max);
     }
 
+    .search-status.generating {
+        background: linear-gradient(135deg, rgba(251, 191, 36, 0.08) 0%, rgba(217, 119, 6, 0.05) 100%);
+        border: 1px solid rgba(251, 191, 36, 0.2);
+        border-radius: 12px;
+    }
+
     .search-text {
         background: linear-gradient(
             90deg,
@@ -1878,16 +1884,17 @@ if st.session_state.processing:
 
     def show_status(text):
         status_placeholder.empty()
+        extra_class = " generating" if "Generating" in text else ""
         with status_placeholder.container():
             st.markdown('<div class="assistant-wrapper">', unsafe_allow_html=True)
             with st.chat_message("assistant"):
                 st.markdown(
-                    f'<div class="search-status"><span class="search-text">{text}</span><div class="streaming-dots"><span></span><span></span><span></span></div></div>',
+                    f'<div class="search-status{extra_class}"><span class="search-text">{text}</span><div class="streaming-dots"><span></span><span></span><span></span></div></div>',
                     unsafe_allow_html=True
                 )
             st.markdown('</div>', unsafe_allow_html=True)
 
-    show_status("🔍 Searching documentation")
+    show_status("💭 Thinking")
     
     api_messages = [{"role": m["role"], "content": m["content"]} for m in st.session_state.messages]
     all_tool_names = []
