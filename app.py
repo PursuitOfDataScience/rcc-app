@@ -756,20 +756,13 @@ st.markdown("""
         display: none !important;
     }
 
-    .stChatMessage [data-testid="chatAvatarIcon-assistant"] {
-        background: var(--gradient) !important;
+    /* Hide assistant avatar - cleaner layout */
+    .stChatMessage [data-testid="chatAvatarIcon-assistant"],
+    .stChatMessage img[data-testid="chatAvatarIcon-assistant"] {
+        display: none !important;
     }
-
-    /* ===== TOOL BADGE ===== */
-    .tool-badge {
-        display: inline-block;
-        background: #f0f9ff;
-        color: #0369a1;
-        padding: 3px 8px;
-        border-radius: 10px;
-        font-size: 0.7rem;
-        margin: 0 0 6px 0;
-        border: 1px solid #bae6fd;
+    .stChatMessage > div:first-child {
+        display: none !important;
     }
 
     /* ===== CHAT CONTAINER ===== */
@@ -941,12 +934,6 @@ st.markdown("""
             border-color: #a5b4fc !important;
         }
 
-        .tool-badge {
-            background: #f0f9ff;
-            color: #0369a1;
-            border-color: #bae6fd;
-        }
-
         .error-container {
             background: linear-gradient(135deg, rgba(239, 68, 68, 0.1) 0%, rgba(220, 38, 38, 0.05) 100%);
             border-color: rgba(239, 68, 68, 0.2);
@@ -958,15 +945,6 @@ st.markdown("""
 
         .stChatInput > div {
             border-color: #d1d5db !important;
-        }
-    }
-
-    /* ===== DARK MODE TOOL BADGE ===== */
-    @media (prefers-color-scheme: dark) {
-        .tool-badge {
-            background: #1e3a5f;
-            color: #7dd3fc;
-            border-color: #0369a1;
         }
     }
 </style>
@@ -1703,8 +1681,6 @@ def render_assistant_message(content, tool_names=None):
     content = fix_markdown_links(content)
     st.markdown('<div class="assistant-wrapper">', unsafe_allow_html=True)
     with st.chat_message("assistant"):
-        if tool_names:
-            st.markdown(f'<span class="tool-badge">📚 {format_tool_names(tool_names)}</span>', unsafe_allow_html=True)
         st.markdown(content)
     st.markdown('</div>', unsafe_allow_html=True)
 
@@ -2040,8 +2016,7 @@ if st.session_state.processing:
         if all_tool_names:
             st.markdown('<div class="assistant-wrapper">', unsafe_allow_html=True)
             with st.chat_message("assistant"):
-                st.markdown(f'<span class="tool-badge">📚 {format_tool_names(all_tool_names)}</span>', unsafe_allow_html=True)
-                
+
                 # Use appropriate API for streaming based on which one succeeded
                 if using_backup:
                     # For Mistral backup, make a fresh streaming call with the conversation so far
