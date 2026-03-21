@@ -1876,14 +1876,18 @@ if st.session_state.processing:
     # Show initial status message with streaming indicator
     status_placeholder = st.empty()
 
-    def update_status(placeholder, text):
-        """Update the status indicator with new text."""
-        placeholder.markdown(
-            f'<div class="search-status"><span class="search-text">{text}</span><div class="streaming-dots"><span></span><span></span><span></span></div></div>',
-            unsafe_allow_html=True
-        )
+    def show_status(text):
+        status_placeholder.empty()
+        with status_placeholder.container():
+            st.markdown('<div class="assistant-wrapper">', unsafe_allow_html=True)
+            with st.chat_message("assistant"):
+                st.markdown(
+                    f'<div class="search-status"><span class="search-text">{text}</span><div class="streaming-dots"><span></span><span></span><span></span></div></div>',
+                    unsafe_allow_html=True
+                )
+            st.markdown('</div>', unsafe_allow_html=True)
 
-    update_status(status_placeholder, "🔍 Searching documentation")
+    show_status("🔍 Searching documentation")
     
     api_messages = [{"role": m["role"], "content": m["content"]} for m in st.session_state.messages]
     all_tool_names = []
@@ -1909,7 +1913,7 @@ if st.session_state.processing:
                 all_tool_names.extend([tb["name"] for tb in tool_use_blocks])
 
                 if not tool_use_blocks:
-                    update_status(status_placeholder, "✨ Generating response")
+                    show_status("✨ Generating response")
 
                 # Handle tool calls in a loop
                 while tool_use_blocks:
@@ -1922,7 +1926,7 @@ if st.session_state.processing:
                     )
                     all_tool_names.extend([tb["name"] for tb in tool_use_blocks])
 
-                update_status(status_placeholder, "✨ Generating response")
+                show_status("✨ Generating response")
                 minimax_succeeded = True
                 print("[DEBUG] MiniMax processing complete, minimax_succeeded=True")
                 
@@ -1978,7 +1982,7 @@ if st.session_state.processing:
                     all_tool_names.extend([tb["name"] for tb in tool_use_blocks])
 
                     if not tool_use_blocks:
-                        update_status(status_placeholder, "✨ Generating response")
+                        show_status("✨ Generating response")
 
                     # Handle tool calls in a loop (using Mistral-native format)
                     while tool_use_blocks:
@@ -2020,7 +2024,7 @@ if st.session_state.processing:
                         response_text, tool_use_blocks, response = mistral_collect_response(stream)
                         all_tool_names.extend([tb["name"] for tb in tool_use_blocks])
 
-                    update_status(status_placeholder, "✨ Generating response")
+                    show_status("✨ Generating response")
                     # Store the api_messages for streaming later (for consistency with rest of code)
                     api_messages = mistral_conversation
                         
@@ -2045,8 +2049,6 @@ if st.session_state.processing:
         if all_tool_names:
             st.markdown('<div class="assistant-wrapper">', unsafe_allow_html=True)
             with st.chat_message("assistant"):
-                inner_status = st.empty()
-                update_status(inner_status, "✨ Generating response")
 
                 # Use appropriate API for streaming based on which one succeeded
                 if using_backup:
@@ -2058,7 +2060,7 @@ if st.session_state.processing:
                         tool_choice="auto"
                     )
                     gen, _, final_msg_container = mistral_stream_generator(stream)
-                    streamed_text = st.write_stream(wrap_generator_clear_status(gen, inner_status))
+                    streamed_text = st.write_stream(wrap_generator_clear_status(gen, status_placeholder))
                     response = final_msg_container[0]
                 else:
                     # Try MiniMax for streaming, fallback to Mistral if it fails
@@ -2066,7 +2068,7 @@ if st.session_state.processing:
                         gen, _, final_msg_container = call_minimax_api(
                             st.session_state.minimax_client, api_messages, TOOLS, SYSTEM_PROMPT, collect_only=False
                         )
-                        streamed_text = st.write_stream(wrap_generator_clear_status(gen, inner_status))
+                        streamed_text = st.write_stream(wrap_generator_clear_status(gen, status_placeholder))
                         response = final_msg_container[0]
                     except Exception as stream_error:
                         # Fallback to Mistral for streaming - build Mistral conversation from scratch
@@ -2083,7 +2085,7 @@ if st.session_state.processing:
                                 tool_choice="auto"
                             )
                             gen, _, final_msg_container = mistral_stream_generator(stream)
-                            streamed_text = st.write_stream(wrap_generator_clear_status(gen, inner_status))
+                            streamed_text = st.write_stream(wrap_generator_clear_status(gen, status_placeholder))
                             response = final_msg_container[0]
                         else:
                             raise
@@ -2091,8 +2093,6 @@ if st.session_state.processing:
         else:
             st.markdown('<div class="assistant-wrapper">', unsafe_allow_html=True)
             with st.chat_message("assistant"):
-                inner_status = st.empty()
-                update_status(inner_status, "✨ Generating response")
 
                 # Use appropriate API for streaming based on which one succeeded
                 if using_backup:
@@ -2104,7 +2104,7 @@ if st.session_state.processing:
                         tool_choice="auto"
                     )
                     gen, _, final_msg_container = mistral_stream_generator(stream)
-                    streamed_text = st.write_stream(wrap_generator_clear_status(gen, inner_status))
+                    streamed_text = st.write_stream(wrap_generator_clear_status(gen, status_placeholder))
                     response = final_msg_container[0]
                 else:
                     # Try MiniMax for streaming, fallback to Mistral if it fails
@@ -2112,7 +2112,7 @@ if st.session_state.processing:
                         gen, _, final_msg_container = call_minimax_api(
                             st.session_state.minimax_client, api_messages, TOOLS, SYSTEM_PROMPT, collect_only=False
                         )
-                        streamed_text = st.write_stream(wrap_generator_clear_status(gen, inner_status))
+                        streamed_text = st.write_stream(wrap_generator_clear_status(gen, status_placeholder))
                         response = final_msg_container[0]
                     except Exception as stream_error:
                         # Fallback to Mistral for streaming - build Mistral conversation from scratch
@@ -2129,7 +2129,7 @@ if st.session_state.processing:
                                 tool_choice="auto"
                             )
                             gen, _, final_msg_container = mistral_stream_generator(stream)
-                            streamed_text = st.write_stream(wrap_generator_clear_status(gen, inner_status))
+                            streamed_text = st.write_stream(wrap_generator_clear_status(gen, status_placeholder))
                             response = final_msg_container[0]
                         else:
                             raise
