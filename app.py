@@ -430,8 +430,8 @@ st.markdown("""
         --space-xl: 2rem;
 
         /* Sizing */
-        --content-max: min(720px, 80vw);
-        --input-max: min(680px, 80vw);
+        --content-max: min(820px, 90vw);
+        --input-max: min(780px, 85vw);
         --bubble-max: 75%;
         --radius-sm: 8px;
         --radius-md: 16px;
@@ -708,13 +708,13 @@ st.markdown("""
         background: transparent !important;
         border: none !important;
         padding: 0 !important;
-        max-width: var(--bubble-max) !important;
-        width: fit-content !important;
+        max-width: 100% !important;
+        width: auto !important;
     }
 
     /* Constrain assistant markdown content */
     .stChatMessage p {
-        max-width: var(--bubble-max) !important;
+        max-width: 100% !important;
         overflow-wrap: break-word !important;
         word-wrap: break-word !important;
         margin-top: 0 !important;
@@ -737,8 +737,8 @@ st.markdown("""
     .stChatMessage div[data-testid="stCodeBlock"] {
         position: relative !important;
         width: fit-content !important;
-        max-width: min(540px, 65vw) !important;
-        min-width: min(300px, 65vw) !important;
+        max-width: min(700px, 80vw) !important;
+        min-width: min(300px, 70vw) !important;
     }
 
     .stChatMessage div[data-testid="stCodeBlock"] pre {
