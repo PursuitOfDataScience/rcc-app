@@ -845,20 +845,19 @@ st.markdown("""
         40% { transform: scale(1); opacity: 1; }
     }
 
-    /* Spinning loader icon */
+    /* Pulsing circle icon */
     .search-status .spinner {
         display: inline-block;
-        width: 16px;
-        height: 16px;
-        border: 2px solid rgba(102, 126, 234, 0.2);
-        border-top: 2px solid var(--gradient-start);
+        width: 10px;
+        height: 10px;
+        background: var(--gradient);
         border-radius: 50%;
-        animation: spin 0.8s linear infinite;
+        animation: pulse 1.5s ease-in-out infinite;
     }
 
-    @keyframes spin {
-        from { transform: rotate(0deg); }
-        to { transform: rotate(360deg); }
+    @keyframes pulse {
+        0%, 100% { transform: scale(0.6); opacity: 0.4; }
+        50% { transform: scale(1.1); opacity: 1; }
     }
 
     /* ===== ERROR HANDLING ===== */
@@ -1905,7 +1904,7 @@ if st.session_state.processing:
                 )
             st.markdown('</div>', unsafe_allow_html=True)
 
-    show_status("💭 Thinking")
+    show_status("Thinking")
     
     api_messages = [{"role": m["role"], "content": m["content"]} for m in st.session_state.messages]
     all_tool_names = []
@@ -1931,7 +1930,7 @@ if st.session_state.processing:
                 all_tool_names.extend([tb["name"] for tb in tool_use_blocks])
 
                 if not tool_use_blocks:
-                    show_status("✨ Generating response")
+                    show_status("Generating response")
 
                 # Handle tool calls in a loop
                 while tool_use_blocks:
@@ -1944,7 +1943,7 @@ if st.session_state.processing:
                     )
                     all_tool_names.extend([tb["name"] for tb in tool_use_blocks])
 
-                show_status("✨ Generating response")
+                show_status("Generating response")
                 minimax_succeeded = True
                 print("[DEBUG] MiniMax processing complete, minimax_succeeded=True")
                 
@@ -2000,7 +1999,7 @@ if st.session_state.processing:
                     all_tool_names.extend([tb["name"] for tb in tool_use_blocks])
 
                     if not tool_use_blocks:
-                        show_status("✨ Generating response")
+                        show_status("Generating response")
 
                     # Handle tool calls in a loop (using Mistral-native format)
                     while tool_use_blocks:
@@ -2042,7 +2041,7 @@ if st.session_state.processing:
                         response_text, tool_use_blocks, response = mistral_collect_response(stream)
                         all_tool_names.extend([tb["name"] for tb in tool_use_blocks])
 
-                    show_status("✨ Generating response")
+                    show_status("Generating response")
                     # Store the api_messages for streaming later (for consistency with rest of code)
                     api_messages = mistral_conversation
                         
