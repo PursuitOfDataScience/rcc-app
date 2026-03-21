@@ -8,7 +8,6 @@ Includes Mistral API as backup when primary MiniMax API fails.
 import os
 import sys
 import json
-import random
 import anthropic
 import streamlit as st
 from io import BytesIO
@@ -671,7 +670,7 @@ st.markdown("""
     .user-message {
         display: flex;
         justify-content: flex-end;
-        margin: clamp(0.75rem, 2vw, 1.5rem) 0 clamp(0.5rem, 2vw, 1rem) 0;
+        margin: clamp(1.5rem, 3vw, 2.5rem) 0 clamp(0.75rem, 2vw, 1.25rem) 0;
         padding-right: clamp(0.25rem, 2vw, 1rem);
     }
 
@@ -767,7 +766,7 @@ st.markdown("""
 
     /* ===== CHAT CONTAINER ===== */
     .chat-container {
-        padding-bottom: 80px;
+        padding-bottom: 100px;
         padding-top: 0;
     }
 
@@ -789,8 +788,7 @@ st.markdown("""
     /* ===== STATUS & STREAMING ===== */
     .search-status {
         padding: 0.25rem 1rem;
-        margin: 0.25rem 0;
-        margin-left: 40px;
+        margin: 0.75rem 0 1.5rem 0;
         display: flex;
         align-items: center;
         gap: 8px;
@@ -1876,11 +1874,15 @@ if st.session_state.processing:
     
     # Show initial status message with streaming indicator
     status_placeholder = st.empty()
-    status_messages = ["🧠 Contemplating", "✨ Vibing", "⏳ Brewing", "🎨 Crafting", "🔧 Tinkering"]
-    status_placeholder.markdown(
-        f'<div class="search-status"><span class="search-text">{random.choice(status_messages)}</span><div class="streaming-dots"><span></span><span></span><span></span></div></div>',
-        unsafe_allow_html=True
-    )
+
+    def update_status(placeholder, text):
+        """Update the status indicator with new text."""
+        placeholder.markdown(
+            f'<div class="search-status"><span class="search-text">{text}</span><div class="streaming-dots"><span></span><span></span><span></span></div></div>',
+            unsafe_allow_html=True
+        )
+
+    update_status(status_placeholder, "🔍 Searching documentation")
     
     api_messages = [{"role": m["role"], "content": m["content"]} for m in st.session_state.messages]
     all_tool_names = []
@@ -1904,7 +1906,10 @@ if st.session_state.processing:
                 )
                 print(f"[DEBUG] MiniMax API call succeeded. Response length: {len(response_text)}, Tool calls: {len(tool_use_blocks)}")
                 all_tool_names.extend([tb["name"] for tb in tool_use_blocks])
-                
+
+                if not tool_use_blocks:
+                    update_status(status_placeholder, "✨ Generating response")
+
                 # Handle tool calls in a loop
                 while tool_use_blocks:
                     api_messages.append({"role": "assistant", "content": response.content})
@@ -1915,7 +1920,8 @@ if st.session_state.processing:
                         st.session_state.minimax_client, api_messages, TOOLS, SYSTEM_PROMPT, collect_only=True
                     )
                     all_tool_names.extend([tb["name"] for tb in tool_use_blocks])
-                
+
+                update_status(status_placeholder, "✨ Generating response")
                 minimax_succeeded = True
                 print("[DEBUG] MiniMax processing complete, minimax_succeeded=True")
                 
@@ -1969,7 +1975,10 @@ if st.session_state.processing:
                     response_text, tool_use_blocks, response = mistral_collect_response(stream)
                     print(f"[DEBUG] Mistral API call succeeded. Response length: {len(response_text)}, Tool calls: {len(tool_use_blocks)}")
                     all_tool_names.extend([tb["name"] for tb in tool_use_blocks])
-                    
+
+                    if not tool_use_blocks:
+                        update_status(status_placeholder, "✨ Generating response")
+
                     # Handle tool calls in a loop (using Mistral-native format)
                     while tool_use_blocks:
                         # Add assistant message with tool_calls in Mistral format
@@ -2009,7 +2018,8 @@ if st.session_state.processing:
                         )
                         response_text, tool_use_blocks, response = mistral_collect_response(stream)
                         all_tool_names.extend([tb["name"] for tb in tool_use_blocks])
-                    
+
+                    update_status(status_placeholder, "✨ Generating response")
                     # Store the api_messages for streaming later (for consistency with rest of code)
                     api_messages = mistral_conversation
                         
