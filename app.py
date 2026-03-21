@@ -796,10 +796,8 @@ st.markdown("""
         max-width: var(--bubble-max);
     }
 
-    .search-status.generating {
-        background: linear-gradient(135deg, rgba(251, 191, 36, 0.08) 0%, rgba(217, 119, 6, 0.05) 100%);
-        border: 1px solid rgba(251, 191, 36, 0.2);
-        border-radius: 12px;
+    .search-status.generating .search-text {
+        color: #d97706;
     }
 
     .search-text {
