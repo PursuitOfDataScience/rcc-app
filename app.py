@@ -2043,8 +2043,6 @@ if st.session_state.processing:
                 else:
                     raise Exception("No API client available. Please set ANTHROPIC_API_KEY or MISTRAL_API_KEY.")
 
-        status_placeholder.empty()
-
         # Display the final response with real streaming
         if all_tool_names:
             st.markdown('<div class="assistant-wrapper">', unsafe_allow_html=True)
