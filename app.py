@@ -1617,6 +1617,20 @@ def extract_display_text(content):
     return ""
 
 
+def wrap_generator_clear_status(gen, placeholder):
+    """Wrap a generator to clear a status placeholder on the first yielded chunk."""
+    first = True
+    for chunk in gen:
+        if first:
+            placeholder.empty()
+            first = True  # already cleared, just set flag
+            first = False
+        yield chunk
+    if first:
+        # Generator was empty, still need to clear
+        placeholder.empty()
+
+
 def format_tool_names(tool_names):
     """Format tool names."""
     if not tool_names:
@@ -2029,8 +2043,7 @@ if st.session_state.processing:
                         tool_choice="auto"
                     )
                     gen, _, final_msg_container = mistral_stream_generator(stream)
-                    status_placeholder.empty()
-                    streamed_text = st.write_stream(gen)
+                    streamed_text = st.write_stream(wrap_generator_clear_status(gen, status_placeholder))
                     response = final_msg_container[0]
                 else:
                     # Try MiniMax for streaming, fallback to Mistral if it fails
@@ -2038,8 +2051,7 @@ if st.session_state.processing:
                         gen, _, final_msg_container = call_minimax_api(
                             st.session_state.minimax_client, api_messages, TOOLS, SYSTEM_PROMPT, collect_only=False
                         )
-                        status_placeholder.empty()
-                        streamed_text = st.write_stream(gen)
+                        streamed_text = st.write_stream(wrap_generator_clear_status(gen, status_placeholder))
                         response = final_msg_container[0]
                     except Exception as stream_error:
                         # Fallback to Mistral for streaming - build Mistral conversation from scratch
@@ -2056,8 +2068,7 @@ if st.session_state.processing:
                                 tool_choice="auto"
                             )
                             gen, _, final_msg_container = mistral_stream_generator(stream)
-                            status_placeholder.empty()
-                            streamed_text = st.write_stream(gen)
+                            streamed_text = st.write_stream(wrap_generator_clear_status(gen, status_placeholder))
                             response = final_msg_container[0]
                         else:
                             raise
@@ -2075,8 +2086,7 @@ if st.session_state.processing:
                         tool_choice="auto"
                     )
                     gen, _, final_msg_container = mistral_stream_generator(stream)
-                    status_placeholder.empty()
-                    streamed_text = st.write_stream(gen)
+                    streamed_text = st.write_stream(wrap_generator_clear_status(gen, status_placeholder))
                     response = final_msg_container[0]
                 else:
                     # Try MiniMax for streaming, fallback to Mistral if it fails
@@ -2084,8 +2094,7 @@ if st.session_state.processing:
                         gen, _, final_msg_container = call_minimax_api(
                             st.session_state.minimax_client, api_messages, TOOLS, SYSTEM_PROMPT, collect_only=False
                         )
-                        status_placeholder.empty()
-                        streamed_text = st.write_stream(gen)
+                        streamed_text = st.write_stream(wrap_generator_clear_status(gen, status_placeholder))
                         response = final_msg_container[0]
                     except Exception as stream_error:
                         # Fallback to Mistral for streaming - build Mistral conversation from scratch
@@ -2102,8 +2111,7 @@ if st.session_state.processing:
                                 tool_choice="auto"
                             )
                             gen, _, final_msg_container = mistral_stream_generator(stream)
-                            status_placeholder.empty()
-                            streamed_text = st.write_stream(gen)
+                            streamed_text = st.write_stream(wrap_generator_clear_status(gen, status_placeholder))
                             response = final_msg_container[0]
                         else:
                             raise
