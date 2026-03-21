@@ -845,17 +845,15 @@ st.markdown("""
         40% { transform: scale(1); opacity: 1; }
     }
 
-    /* Spinning sparkle icon */
+    /* Spinning loader icon */
     .search-status .spinner {
         display: inline-block;
-        width: 18px;
-        height: 18px;
-        animation: spin 1.5s linear infinite;
-    }
-
-    .search-status .spinner svg {
-        width: 100%;
-        height: 100%;
+        width: 16px;
+        height: 16px;
+        border: 2px solid rgba(102, 126, 234, 0.2);
+        border-top: 2px solid var(--gradient-start);
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
     }
 
     @keyframes spin {
@@ -1200,13 +1198,6 @@ components.html("""
             }
         }
     }
-
-    // Scroll immediately on any new content (not just streaming)
-    const scrollObserver = new MutationObserver(function(mutations) {
-        autoScroll();
-        fixCodeBlockCopyButtons();
-    });
-    scrollObserver.observe(doc.body, { childList: true, subtree: true });
 
     // Keep scrolling during streaming - poll for new content
     setInterval(autoScroll, 200);
@@ -1904,7 +1895,7 @@ if st.session_state.processing:
     def show_status(text):
         status_placeholder.empty()
         extra_class = " generating" if "Generating" in text else ""
-        sparkle_svg = '<span class="spinner"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 2L13.09 8.26L18 4.5L14.74 9.41L21 10.5L14.74 11.59L18 16.5L13.09 12.74L12 19L10.91 12.74L6 16.5L9.26 11.59L3 10.5L9.26 9.41L6 4.5L10.91 8.26L12 2Z" fill="currentColor"/></svg></span>'
+        sparkle_svg = '<span class="spinner"></span>'
         with status_placeholder.container():
             st.markdown('<div class="assistant-wrapper">', unsafe_allow_html=True)
             with st.chat_message("assistant"):
