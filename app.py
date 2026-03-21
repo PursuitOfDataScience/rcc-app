@@ -728,9 +728,10 @@ st.markdown("""
         margin-top: 0 !important;
     }
 
-    /* Chat message content - keep close to avatar */
+    /* Chat message content */
     .stChatMessage > div:nth-child(2) {
-        max-width: calc(var(--bubble-max) - 10px) !important;
+        max-width: 100% !important;
+        flex: 1 !important;
     }
 
     /* Constrain code blocks to content width so copy button positions correctly */
@@ -762,7 +763,11 @@ st.markdown("""
         display: none !important;
     }
     .stChatMessage > div:first-child {
-        display: none !important;
+        width: 0 !important;
+        min-width: 0 !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        overflow: hidden !important;
     }
 
     /* ===== CHAT CONTAINER ===== */
