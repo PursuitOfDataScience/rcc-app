@@ -708,11 +708,8 @@ st.markdown("""
         background: transparent !important;
         border: none !important;
         padding: 0 !important;
-        max-width: 100% !important;
-    }
-
-    .stChatMessage > div {
         max-width: var(--bubble-max) !important;
+        width: fit-content !important;
     }
 
     /* Constrain assistant markdown content */
@@ -740,8 +737,8 @@ st.markdown("""
     .stChatMessage div[data-testid="stCodeBlock"] {
         position: relative !important;
         width: fit-content !important;
-        max-width: calc(var(--bubble-max) - 10px) !important;
-        min-width: min(calc(var(--bubble-max) - 10px), 300px) !important;
+        max-width: min(540px, 65vw) !important;
+        min-width: min(300px, 65vw) !important;
     }
 
     .stChatMessage div[data-testid="stCodeBlock"] pre {
