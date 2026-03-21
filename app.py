@@ -767,7 +767,7 @@ st.markdown("""
 
     /* ===== CHAT CONTAINER ===== */
     .chat-container {
-        padding-bottom: 20px;
+        padding-bottom: 80px;
         padding-top: 0;
     }
 
