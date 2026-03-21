@@ -740,8 +740,8 @@ st.markdown("""
     .stChatMessage div[data-testid="stCodeBlock"] {
         position: relative !important;
         width: fit-content !important;
-        max-width: 100% !important;
-        min-width: min(100%, 300px) !important;
+        max-width: calc(var(--bubble-max) - 10px) !important;
+        min-width: min(calc(var(--bubble-max) - 10px), 300px) !important;
     }
 
     .stChatMessage div[data-testid="stCodeBlock"] pre {
