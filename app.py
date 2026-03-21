@@ -845,6 +845,24 @@ st.markdown("""
         40% { transform: scale(1); opacity: 1; }
     }
 
+    /* Spinning sparkle icon */
+    .search-status .spinner {
+        display: inline-block;
+        width: 18px;
+        height: 18px;
+        animation: spin 1.5s linear infinite;
+    }
+
+    .search-status .spinner svg {
+        width: 100%;
+        height: 100%;
+    }
+
+    @keyframes spin {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+    }
+
     /* ===== ERROR HANDLING ===== */
     .error-container {
         background: linear-gradient(135deg, rgba(239, 68, 68, 0.15) 0%, rgba(220, 38, 38, 0.1) 100%);
@@ -1159,23 +1177,26 @@ components.html("""
     scheduleInit();
 
     // Auto-scroll in chat mode - scrolls to bottom of page during streaming
+    var lastScrollTime = 0;
     function autoScroll() {
-        const chatContainer = doc.querySelector('.chat-container');
-        if (chatContainer) {
-            // Scroll the main app container to the bottom
-            const appContainer = doc.querySelector('[data-testid="stAppViewContainer"]');
-            if (appContainer) {
-                appContainer.scrollTop = appContainer.scrollHeight - appContainer.clientHeight;
-            }
-            // Also try main container
-            const mainContainer = doc.querySelector('[data-testid="stMain"]');
-            if (mainContainer) {
-                mainContainer.scrollTop = mainContainer.scrollHeight - mainContainer.clientHeight;
-            }
-            // Try body and html as last resort
-            doc.body.scrollTop = doc.body.scrollHeight - doc.body.clientHeight;
-            if (doc.documentElement) {
-                doc.documentElement.scrollTop = doc.documentElement.scrollHeight - doc.documentElement.clientHeight;
+        var now = Date.now();
+        if (now - lastScrollTime < 150) return;
+        lastScrollTime = now;
+
+        var chatContainer = doc.querySelector('.chat-container');
+        if (!chatContainer) return;
+
+        var targets = [
+            doc.querySelector('[data-testid="stAppViewContainer"]'),
+            doc.querySelector('[data-testid="stMain"]'),
+            doc.documentElement,
+            doc.body
+        ];
+
+        for (var i = 0; i < targets.length; i++) {
+            var el = targets[i];
+            if (el && el.scrollHeight > el.clientHeight) {
+                el.scrollTop = el.scrollHeight;
             }
         }
     }
@@ -1188,7 +1209,7 @@ components.html("""
     scrollObserver.observe(doc.body, { childList: true, subtree: true });
 
     // Keep scrolling during streaming - poll for new content
-    setInterval(autoScroll, 300);
+    setInterval(autoScroll, 200);
 
     // Auto-focus on typing
     doc.addEventListener('keydown', function(e) {
@@ -1883,11 +1904,12 @@ if st.session_state.processing:
     def show_status(text):
         status_placeholder.empty()
         extra_class = " generating" if "Generating" in text else ""
+        sparkle_svg = '<span class="spinner"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 2L13.09 8.26L18 4.5L14.74 9.41L21 10.5L14.74 11.59L18 16.5L13.09 12.74L12 19L10.91 12.74L6 16.5L9.26 11.59L3 10.5L9.26 9.41L6 4.5L10.91 8.26L12 2Z" fill="currentColor"/></svg></span>'
         with status_placeholder.container():
             st.markdown('<div class="assistant-wrapper">', unsafe_allow_html=True)
             with st.chat_message("assistant"):
                 st.markdown(
-                    f'<div class="search-status{extra_class}"><span class="search-text">{text}</span><div class="streaming-dots"><span></span><span></span><span></span></div></div>',
+                    f'<div class="search-status{extra_class}">{sparkle_svg}<span class="search-text">{text}</span><div class="streaming-dots"><span></span><span></span><span></span></div></div>',
                     unsafe_allow_html=True
                 )
             st.markdown('</div>', unsafe_allow_html=True)
