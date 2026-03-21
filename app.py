@@ -767,8 +767,13 @@ st.markdown("""
 
     /* ===== CHAT CONTAINER ===== */
     .chat-container {
-        padding-bottom: clamp(60px, 12vh, 100px);
+        padding-bottom: 20px;
         padding-top: 0;
+    }
+
+    /* Reduce space below chat input */
+    [data-testid="stBottomBlockContainer"] {
+        padding-bottom: 0.5rem !important;
     }
 
     .chat-container > div:first-child {
@@ -2008,10 +2013,7 @@ if st.session_state.processing:
                     raise Exception(f"Primary API failed: {minimax_error_msg}. No backup API configured.")
                 else:
                     raise Exception("No API client available. Please set ANTHROPIC_API_KEY or MISTRAL_API_KEY.")
-        
-        # Clear the status message
-        status_placeholder.empty()
-        
+
         # Display the final response with real streaming
         if all_tool_names:
             st.markdown('<div class="assistant-wrapper">', unsafe_allow_html=True)
@@ -2027,6 +2029,7 @@ if st.session_state.processing:
                         tool_choice="auto"
                     )
                     gen, _, final_msg_container = mistral_stream_generator(stream)
+                    status_placeholder.empty()
                     streamed_text = st.write_stream(gen)
                     response = final_msg_container[0]
                 else:
@@ -2035,6 +2038,7 @@ if st.session_state.processing:
                         gen, _, final_msg_container = call_minimax_api(
                             st.session_state.minimax_client, api_messages, TOOLS, SYSTEM_PROMPT, collect_only=False
                         )
+                        status_placeholder.empty()
                         streamed_text = st.write_stream(gen)
                         response = final_msg_container[0]
                     except Exception as stream_error:
@@ -2052,6 +2056,7 @@ if st.session_state.processing:
                                 tool_choice="auto"
                             )
                             gen, _, final_msg_container = mistral_stream_generator(stream)
+                            status_placeholder.empty()
                             streamed_text = st.write_stream(gen)
                             response = final_msg_container[0]
                         else:
@@ -2070,6 +2075,7 @@ if st.session_state.processing:
                         tool_choice="auto"
                     )
                     gen, _, final_msg_container = mistral_stream_generator(stream)
+                    status_placeholder.empty()
                     streamed_text = st.write_stream(gen)
                     response = final_msg_container[0]
                 else:
@@ -2078,6 +2084,7 @@ if st.session_state.processing:
                         gen, _, final_msg_container = call_minimax_api(
                             st.session_state.minimax_client, api_messages, TOOLS, SYSTEM_PROMPT, collect_only=False
                         )
+                        status_placeholder.empty()
                         streamed_text = st.write_stream(gen)
                         response = final_msg_container[0]
                     except Exception as stream_error:
@@ -2095,6 +2102,7 @@ if st.session_state.processing:
                                 tool_choice="auto"
                             )
                             gen, _, final_msg_container = mistral_stream_generator(stream)
+                            status_placeholder.empty()
                             streamed_text = st.write_stream(gen)
                             response = final_msg_container[0]
                         else:
