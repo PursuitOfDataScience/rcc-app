@@ -2038,10 +2038,14 @@ if st.session_state.processing:
                 else:
                     raise Exception("No API client available. Please set ANTHROPIC_API_KEY or MISTRAL_API_KEY.")
 
+        status_placeholder.empty()
+
         # Display the final response with real streaming
         if all_tool_names:
             st.markdown('<div class="assistant-wrapper">', unsafe_allow_html=True)
             with st.chat_message("assistant"):
+                inner_status = st.empty()
+                update_status(inner_status, "✨ Generating response")
 
                 # Use appropriate API for streaming based on which one succeeded
                 if using_backup:
@@ -2053,7 +2057,7 @@ if st.session_state.processing:
                         tool_choice="auto"
                     )
                     gen, _, final_msg_container = mistral_stream_generator(stream)
-                    streamed_text = st.write_stream(wrap_generator_clear_status(gen, status_placeholder))
+                    streamed_text = st.write_stream(wrap_generator_clear_status(gen, inner_status))
                     response = final_msg_container[0]
                 else:
                     # Try MiniMax for streaming, fallback to Mistral if it fails
@@ -2061,7 +2065,7 @@ if st.session_state.processing:
                         gen, _, final_msg_container = call_minimax_api(
                             st.session_state.minimax_client, api_messages, TOOLS, SYSTEM_PROMPT, collect_only=False
                         )
-                        streamed_text = st.write_stream(wrap_generator_clear_status(gen, status_placeholder))
+                        streamed_text = st.write_stream(wrap_generator_clear_status(gen, inner_status))
                         response = final_msg_container[0]
                     except Exception as stream_error:
                         # Fallback to Mistral for streaming - build Mistral conversation from scratch
@@ -2078,7 +2082,7 @@ if st.session_state.processing:
                                 tool_choice="auto"
                             )
                             gen, _, final_msg_container = mistral_stream_generator(stream)
-                            streamed_text = st.write_stream(wrap_generator_clear_status(gen, status_placeholder))
+                            streamed_text = st.write_stream(wrap_generator_clear_status(gen, inner_status))
                             response = final_msg_container[0]
                         else:
                             raise
@@ -2086,6 +2090,9 @@ if st.session_state.processing:
         else:
             st.markdown('<div class="assistant-wrapper">', unsafe_allow_html=True)
             with st.chat_message("assistant"):
+                inner_status = st.empty()
+                update_status(inner_status, "✨ Generating response")
+
                 # Use appropriate API for streaming based on which one succeeded
                 if using_backup:
                     # For Mistral backup, make a fresh streaming call
@@ -2096,7 +2103,7 @@ if st.session_state.processing:
                         tool_choice="auto"
                     )
                     gen, _, final_msg_container = mistral_stream_generator(stream)
-                    streamed_text = st.write_stream(wrap_generator_clear_status(gen, status_placeholder))
+                    streamed_text = st.write_stream(wrap_generator_clear_status(gen, inner_status))
                     response = final_msg_container[0]
                 else:
                     # Try MiniMax for streaming, fallback to Mistral if it fails
@@ -2104,7 +2111,7 @@ if st.session_state.processing:
                         gen, _, final_msg_container = call_minimax_api(
                             st.session_state.minimax_client, api_messages, TOOLS, SYSTEM_PROMPT, collect_only=False
                         )
-                        streamed_text = st.write_stream(wrap_generator_clear_status(gen, status_placeholder))
+                        streamed_text = st.write_stream(wrap_generator_clear_status(gen, inner_status))
                         response = final_msg_container[0]
                     except Exception as stream_error:
                         # Fallback to Mistral for streaming - build Mistral conversation from scratch
@@ -2121,7 +2128,7 @@ if st.session_state.processing:
                                 tool_choice="auto"
                             )
                             gen, _, final_msg_container = mistral_stream_generator(stream)
-                            streamed_text = st.write_stream(wrap_generator_clear_status(gen, status_placeholder))
+                            streamed_text = st.write_stream(wrap_generator_clear_status(gen, inner_status))
                             response = final_msg_container[0]
                         else:
                             raise
