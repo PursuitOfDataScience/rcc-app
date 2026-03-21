@@ -392,6 +392,7 @@ GUIDELINES:
 - When users upload files, analyze them and provide helpful information
 - Be helpful, accurate, and cite specific commands when possible
 - NEVER include raw markdown syntax like {:target="_blank"} in responses
+- Use ## or ### for section headers, never # (H1). Keep responses conversational, not document-like.
 
 TOPICS: Accounts, SSH, Slurm jobs, storage, Python, R, MATLAB, GPUs, containers, and more."""
 
@@ -775,6 +776,23 @@ st.markdown("""
         padding-bottom: 0.5rem !important;
     }
 
+    /* Tone down response headers in chat */
+    .stChatMessage h1 { font-size: 1.4rem !important; }
+    .stChatMessage h2 { font-size: 1.2rem !important; }
+    .stChatMessage h3 { font-size: 1.05rem !important; }
+
+    /* Soften inline code in chat */
+    .stChatMessage code:not(pre code) {
+        background: rgba(102, 126, 234, 0.15) !important;
+        color: #a5b4fc !important;
+        padding: 2px 6px !important;
+        border-radius: 4px !important;
+        font-size: 0.88em !important;
+    }
+
+    /* Hide Streamlit dev button */
+    [data-testid="manage-app-button"] { display: none !important; }
+
     .chat-container > div:first-child {
         margin-top: 0 !important;
         padding-top: 0 !important;
@@ -968,6 +986,12 @@ st.markdown("""
 
         .stChatInput > div {
             border-color: #d1d5db !important;
+        }
+
+        /* Light mode: inline code */
+        .stChatMessage code:not(pre code) {
+            background: rgba(102, 126, 234, 0.12) !important;
+            color: #5b6ebb !important;
         }
     }
 </style>
