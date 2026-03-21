@@ -789,6 +789,7 @@ st.markdown("""
     .search-status {
         padding: 0.25rem 1rem;
         margin: 0.75rem 0 1.5rem 0;
+        margin-left: 1rem;
         display: flex;
         align-items: center;
         gap: 8px;
