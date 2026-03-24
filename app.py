@@ -10,7 +10,7 @@ import json
 import anthropic
 import streamlit as st
 from io import BytesIO
-from mistralai.client import Mistral
+from mistralai import Mistral
 import traceback
 
 import logging
