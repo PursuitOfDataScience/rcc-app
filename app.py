@@ -4,8 +4,6 @@ RCC User Guide AI Assistant - Streamlit App
 A chatbot that answers questions using RCC documentation (RAG-only, no command-line tools).
 File upload support for PDFs and text files via paperclip button.
 Includes Mistral API as backup when primary MiniMax API fails.
-
-streamlit run app.py --server.port 8501
 """
 import os
 import json
@@ -1272,6 +1270,8 @@ if "uploaded_file_data" not in st.session_state:
     st.session_state.uploaded_file_data = None
 if "uploader_key" not in st.session_state:
     st.session_state.uploader_key = 0
+if "pending_prompt" not in st.session_state:
+    st.session_state.pending_prompt = None
 
 # Debug indicator (shows API status at startup)
 logger.info(f"MiniMax client initialized: {st.session_state.minimax_client is not None}")
@@ -1697,6 +1697,7 @@ else:
         st.session_state.processing = False
         st.session_state.uploaded_file_data = None
         st.session_state.uploader_key += 1  # Reset the file uploader
+        st.session_state.pending_prompt = None
         st.rerun()
     st.markdown('</div>', unsafe_allow_html=True)
     
@@ -1763,7 +1764,6 @@ if st.session_state.uploaded_file_data and st.session_state.uploaded_file_data.g
 # Chat input - always enabled so users can type while waiting for a response
 prompt = st.chat_input("Ask any question about RCC...")
 
-# Only process new input when not already generating a response
 if prompt and not st.session_state.processing:
     file_data = st.session_state.uploaded_file_data
     message_content = build_message_content(prompt, file_data)
@@ -1786,6 +1786,9 @@ if prompt and not st.session_state.processing:
     st.session_state.uploader_key += 1  # Reset file uploader to clear attachment
     
     st.rerun()
+elif prompt and st.session_state.processing:
+    # Queue the message so it's sent after the current response finishes
+    st.session_state.pending_prompt = prompt
 
 # Process
 if st.session_state.processing:
@@ -2017,4 +2020,15 @@ if st.session_state.processing:
         # Don't pop the message - let the user see it
     finally:
         st.session_state.processing = False
+        # If user typed a message while waiting, queue it up now
+        if st.session_state.pending_prompt:
+            pending = st.session_state.pending_prompt
+            st.session_state.pending_prompt = None
+            message_content = build_message_content(pending)
+            st.session_state.messages.append({
+                "role": "user",
+                "content": message_content,
+                "display_text": pending
+            })
+            st.session_state.processing = True
         st.rerun()
