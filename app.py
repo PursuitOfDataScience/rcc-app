@@ -4,6 +4,8 @@ RCC User Guide AI Assistant - Streamlit App
 A chatbot that answers questions using RCC documentation (RAG-only, no command-line tools).
 File upload support for PDFs and text files via paperclip button.
 Includes Mistral API as backup when primary MiniMax API fails.
+
+streamlit run app.py --server.port 8501
 """
 import os
 import json
@@ -1758,10 +1760,11 @@ if st.session_state.uploaded_file_data and st.session_state.uploaded_file_data.g
         st.session_state.uploader_key += 1
         st.rerun()
 
-# Chat input
-prompt = st.chat_input("Ask any question about RCC...", disabled=st.session_state.processing)
+# Chat input - always enabled so users can type while waiting for a response
+prompt = st.chat_input("Ask any question about RCC...")
 
-if prompt:
+# Only process new input when not already generating a response
+if prompt and not st.session_state.processing:
     file_data = st.session_state.uploaded_file_data
     message_content = build_message_content(prompt, file_data)
     
