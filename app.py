@@ -1193,19 +1193,19 @@ components.html("""
         var chatInputContainer = doc.querySelector('[data-testid="stChatInput"]');
         if (!chatInputContainer) return;
 
-        // Find the send button (the button inside chat input)
-        var sendBtn = chatInputContainer.querySelector('button');
-        if (sendBtn) {
-            if (isProcessing) {
-                sendBtn.style.setProperty('background', '#374151', 'important');
-                sendBtn.style.setProperty('opacity', '0.5', 'important');
-                sendBtn.style.setProperty('pointer-events', 'none', 'important');
-                sendBtn.style.setProperty('cursor', 'not-allowed', 'important');
-            } else {
-                sendBtn.style.removeProperty('background');
-                sendBtn.style.removeProperty('opacity');
-                sendBtn.style.removeProperty('pointer-events');
-                sendBtn.style.removeProperty('cursor');
+        // Use a persistent style tag to override Streamlit's button color during processing
+        var styleId = 'processing-send-block-style';
+        var existingStyle = doc.getElementById(styleId);
+        if (isProcessing) {
+            if (!existingStyle) {
+                var style = doc.createElement('style');
+                style.id = styleId;
+                style.textContent = '[data-testid="stChatInput"] button { background: #374151 !important; opacity: 0.5 !important; pointer-events: none !important; cursor: not-allowed !important; }';
+                doc.head.appendChild(style);
+            }
+        } else {
+            if (existingStyle) {
+                existingStyle.remove();
             }
         }
 
