@@ -1005,7 +1005,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# JavaScript for paperclip button, scroll control, and animations
+# JavaScript for paperclip button, scroll control, send-blocking, and animations
 import streamlit.components.v1 as components
 components.html("""
 <script>
@@ -1187,12 +1187,53 @@ components.html("""
         });
     }
 
+    // Block send button and Enter key during processing; grey out send button
+    function blockSendDuringProcessing() {
+        var isProcessing = !!doc.getElementById('processing-signal');
+        var chatInputContainer = doc.querySelector('[data-testid="stChatInput"]');
+        if (!chatInputContainer) return;
+
+        // Find the send button (the button inside chat input)
+        var sendBtn = chatInputContainer.querySelector('button');
+        if (sendBtn) {
+            if (isProcessing) {
+                sendBtn.style.setProperty('background', '#374151', 'important');
+                sendBtn.style.setProperty('opacity', '0.5', 'important');
+                sendBtn.style.setProperty('pointer-events', 'none', 'important');
+                sendBtn.style.setProperty('cursor', 'not-allowed', 'important');
+            } else {
+                sendBtn.style.removeProperty('background');
+                sendBtn.style.removeProperty('opacity');
+                sendBtn.style.removeProperty('pointer-events');
+                sendBtn.style.removeProperty('cursor');
+            }
+        }
+
+        // Block Enter key from submitting during processing
+        var textarea = doc.querySelector('textarea[data-testid="stChatInputTextArea"]');
+        if (textarea && !textarea.dataset.sendBlocked) {
+            textarea.dataset.sendBlocked = 'true';
+            textarea.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    var processing = !!doc.getElementById('processing-signal');
+                    if (processing) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        e.stopImmediatePropagation();
+                        return false;
+                    }
+                }
+            }, true);
+        }
+    }
+
     function init() {
         updateScrollBehavior();
         addPaperclipButton();
         styleAttachmentChip();
         animateExampleButtons();
         fixCodeBlockCopyButtons();
+        blockSendDuringProcessing();
         initialized = true;
     }
 
@@ -1250,6 +1291,7 @@ components.html("""
         styleAttachmentChip();
         animateExampleButtons();
         fixCodeBlockCopyButtons();
+        blockSendDuringProcessing();
         autoScroll();
     });
     observer.observe(doc.body, { childList: true, subtree: true });
@@ -1270,8 +1312,6 @@ if "uploaded_file_data" not in st.session_state:
     st.session_state.uploaded_file_data = None
 if "uploader_key" not in st.session_state:
     st.session_state.uploader_key = 0
-if "pending_prompt" not in st.session_state:
-    st.session_state.pending_prompt = None
 
 # Debug indicator (shows API status at startup)
 logger.info(f"MiniMax client initialized: {st.session_state.minimax_client is not None}")
@@ -1697,7 +1737,6 @@ else:
         st.session_state.processing = False
         st.session_state.uploaded_file_data = None
         st.session_state.uploader_key += 1  # Reset the file uploader
-        st.session_state.pending_prompt = None
         st.rerun()
     st.markdown('</div>', unsafe_allow_html=True)
     
@@ -1762,9 +1801,10 @@ if st.session_state.uploaded_file_data and st.session_state.uploaded_file_data.g
         st.rerun()
 
 # Chat input - always enabled so users can type while waiting for a response
+# JS blocks the send button and Enter key during processing
 prompt = st.chat_input("Ask any question about RCC...")
 
-if prompt and not st.session_state.processing:
+if prompt:
     file_data = st.session_state.uploaded_file_data
     message_content = build_message_content(prompt, file_data)
     
@@ -1786,12 +1826,12 @@ if prompt and not st.session_state.processing:
     st.session_state.uploader_key += 1  # Reset file uploader to clear attachment
     
     st.rerun()
-elif prompt and st.session_state.processing:
-    # Queue the message so it's sent after the current response finishes
-    st.session_state.pending_prompt = prompt
 
 # Process
 if st.session_state.processing:
+    # Hidden signal element that JS uses to detect processing state
+    st.markdown('<div id="processing-signal" style="display:none"></div>', unsafe_allow_html=True)
+
     # Display user message first
     last_user_msg = st.session_state.messages[-1]
     display_text = last_user_msg.get("display_text", last_user_msg["content"] if isinstance(last_user_msg["content"], str) else "")
@@ -2020,15 +2060,4 @@ if st.session_state.processing:
         # Don't pop the message - let the user see it
     finally:
         st.session_state.processing = False
-        # If user typed a message while waiting, queue it up now
-        if st.session_state.pending_prompt:
-            pending = st.session_state.pending_prompt
-            st.session_state.pending_prompt = None
-            message_content = build_message_content(pending)
-            st.session_state.messages.append({
-                "role": "user",
-                "content": message_content,
-                "display_text": pending
-            })
-            st.session_state.processing = True
         st.rerun()
