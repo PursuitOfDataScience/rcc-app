@@ -41,7 +41,7 @@ elif MISTRAL_API_KEY and not MINIMAX_API_KEY:
 # Supported file types: PDF and text-based files (txt, md, py, json, csv)
 # We extract text client-side and send to the model as plain text.
 MINIMAX_MODEL = "MiniMax-M2.7"
-MISTRAL_MODEL = "mistral-large-latest"
+MISTRAL_MODEL = "mistral-small-latest"
 DOCS_BASE_PATH = "./docs"
 WEB_BASE_PATH = "./web"
 
