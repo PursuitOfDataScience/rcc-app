@@ -6,6 +6,7 @@ File upload support for PDFs and text files via paperclip button.
 Uses Mistral API for chat completion.
 """
 import os
+import re
 import json
 import streamlit as st
 from io import BytesIO
@@ -31,8 +32,11 @@ if not MISTRAL_API_KEY:
 # Supported file types: PDF and text-based files (txt, md, py, json, csv)
 # We extract text client-side and send to the model as plain text.
 MISTRAL_MODEL = "mistral-small-latest"
-DOCS_BASE_PATH = "./docs"
-WEB_BASE_PATH = "./web"
+# Docs bases default to the bundled snapshot (refreshed by refresh-docs.sh) but can point at a
+# live mount in deployment via RCC_DOCS_PATH / RCC_WEB_PATH.
+DOCS_BASE_PATH = os.getenv("RCC_DOCS_PATH", "./docs")
+WEB_BASE_PATH = os.getenv("RCC_WEB_PATH", "./web")
+DOCS_SNAPSHOT_FILE = "docs_snapshot.json"
 
 
 def get_mistral_client():
@@ -142,195 +146,218 @@ User's question: {user_text}"""
     return content
 
 
-# --- Documentation Reader (RAG) ---
-def read_document(file_path: str, base_path: str = None) -> str:
-    """Read a markdown or text document and return its contents."""
-    if base_path is None:
-        base_path = DOCS_BASE_PATH
-    full_path = os.path.join(base_path, file_path)
+# --- Documentation Index & Retrieval (RAG) ---
+# The assistant discovers docs at query time via search_docs()/read_doc() instead of a
+# hardcoded per-file tool list. Every file under docs/ and web/ is reachable, and the
+# catalog can never drift out of sync with what is actually on disk.
+ALLOWED_BASES = {
+    "docs": DOCS_BASE_PATH,
+    "web": WEB_BASE_PATH,
+}
+_DOC_EXT = {"docs": (".md",), "web": (".txt",)}
+DOC_TRUNCATE_CHARS = 15000
+SEARCH_RESULTS = 6
+
+
+def _pretty_title(rel_path: str) -> str:
+    """Human-readable title derived from a file path when a doc has no heading."""
+    name = os.path.splitext(os.path.basename(rel_path))[0]
+    name = name.replace("-", " ").replace("_", " ").strip()
+    return (name[:1].upper() + name[1:]) if name else rel_path
+
+
+def _extract_title(text: str, rel_path: str) -> str:
+    """Best available title: scraped 'Title:' header, else first markdown heading, else filename."""
+    for line in text.splitlines()[:15]:
+        stripped = line.strip()
+        # Scraped website pages start with 'URL:' / 'Title:' metadata.
+        if stripped.startswith("Title:"):
+            title = stripped[len("Title:"):].strip()
+            # Drop the trailing site suffix, e.g. "... | Research Computing Center".
+            title = title.split("|")[0].strip()
+            if title:
+                return title
+        if stripped.startswith("#"):
+            title = stripped.lstrip("#").strip()
+            if title:
+                return title
+    # Fallback: first short, non-metadata line.
+    for line in text.splitlines()[:15]:
+        stripped = line.strip()
+        if (stripped and len(stripped) < 120
+                and not stripped.startswith(("#", "-", "*", "|", ">", "=", "URL:", "http"))):
+            return stripped
+    return _pretty_title(rel_path)
+
+
+@st.cache_resource(show_spinner=False)
+def build_doc_index():
+    """Scan docs/ and web/ once and cache a lightweight in-memory search index."""
+    index = []
+    for source, base in ALLOWED_BASES.items():
+        if not os.path.isdir(base):
+            logger.warning(f"Doc base missing: {base}")
+            continue
+        for root, _dirs, files in os.walk(base):
+            for fn in files:
+                if not fn.lower().endswith(_DOC_EXT[source]):
+                    continue
+                full = os.path.join(root, fn)
+                rel = os.path.relpath(full, base).replace(os.sep, "/")
+                try:
+                    with open(full, "r", encoding="utf-8", errors="ignore") as f:
+                        text = f.read()
+                except Exception as e:
+                    logger.warning(f"Skipping unreadable doc {full}: {e}")
+                    continue
+                index.append({
+                    "id": f"{source}/{rel}",
+                    "source": source,
+                    "path": rel,
+                    "title": _extract_title(text, rel),
+                    "text_lower": text.lower(),
+                })
+    logger.info(f"Doc index built: {len(index)} files")
+    return index
+
+
+def _tokenize(query: str):
+    return [t for t in re.findall(r"[a-z0-9]+", (query or "").lower()) if len(t) > 1]
+
+
+def _snippet(text_lower: str, terms, width: int = 220) -> str:
+    """A short snippet around the first matched term (falls back to the document head)."""
+    pos = -1
+    for t in terms:
+        p = text_lower.find(t)
+        if p != -1 and (pos == -1 or p < pos):
+            pos = p
+    start = max(0, pos - 60) if pos > 0 else 0
+    snippet = re.sub(r"\s+", " ", text_lower[start:start + width]).strip()
+    return ("…" if start > 0 else "") + snippet + "…"
+
+
+def search_docs(query: str, k: int = SEARCH_RESULTS):
+    """Rank the docs/web tree against a query. Returns a list of result dicts."""
+    terms = _tokenize(query)
+    if not terms:
+        return []
+    index = build_doc_index()
+    scored = []
+    for entry in index:
+        title_l = entry["title"].lower()
+        path_l = entry["path"].lower()
+        body = entry["text_lower"]
+        score = 0
+        for t in terms:
+            if t in title_l:
+                score += 8
+            if t in path_l:
+                score += 5
+            occ = body.count(t)
+            if occ:
+                score += min(occ, 5)
+        if score:
+            scored.append((score, entry))
+    scored.sort(key=lambda x: (-x[0], x[1]["id"]))
+    return [
+        {
+            "id": entry["id"],
+            "title": entry["title"],
+            "source": entry["source"],
+            "snippet": _snippet(entry["text_lower"], terms),
+        }
+        for _score, entry in scored[:k]
+    ]
+
+
+def format_search_results(results) -> str:
+    """Format search results as text the model reads to decide what to read_doc."""
+    if not results:
+        return ("No matching RCC documentation was found. Try different keywords, or tell the "
+                "user you couldn't find it in the RCC docs rather than guessing specifics.")
+    lines = ["Top matching RCC documentation (call read_doc with the exact `path`):", ""]
+    for r in results:
+        lines.append(f"- path: {r['id']}")
+        lines.append(f"  title: {r['title']}  (source: {r['source']})")
+        lines.append(f"  snippet: {r['snippet']}")
+    return "\n".join(lines)
+
+
+def read_doc(doc_id: str) -> str:
+    """Read a doc by its search_docs id ('docs/…md' or 'web/…txt') with a traversal guard."""
+    if not doc_id or "/" not in doc_id:
+        return ("Error: invalid document id. Pass the exact `path` from search_docs, e.g. "
+                "'docs/slurm/sbatch.md' or 'web/faqs.txt'.")
+    source, rel = doc_id.split("/", 1)
+    base = ALLOWED_BASES.get(source)
+    if not base:
+        return f"Error: unknown source '{source}'. Use a `path` returned by search_docs."
+    base_real = os.path.realpath(base)
+    full_real = os.path.realpath(os.path.join(base, rel))
+    # Path-traversal guard: the resolved path must stay inside the allowed base.
+    if full_real != base_real and not full_real.startswith(base_real + os.sep):
+        return "Error: access denied."
+    if not os.path.isfile(full_real):
+        return f"Error: document '{doc_id}' not found."
     try:
-        with open(full_path, 'r', encoding='utf-8') as f:
+        with open(full_real, "r", encoding="utf-8", errors="ignore") as f:
             content = f.read()
-        if len(content) > 15000:
-            content = content[:15000] + "\n\n[... Document truncated due to length ...]"
-        return content
-    except FileNotFoundError:
-        return f"Error: Document '{file_path}' not found."
     except Exception as e:
-        return f"Error reading document: {str(e)}"
+        return f"Error reading document: {e}"
+    if len(content) > DOC_TRUNCATE_CHARS:
+        content = content[:DOC_TRUNCATE_CHARS] + "\n\n[... Document truncated due to length ...]"
+    return content
 
 
-def read_web_document(file_path: str) -> str:
-    """Read a web-scraped text document and return its contents."""
-    return read_document(file_path, WEB_BASE_PATH)
-
-
-# --- Document path mappings ---
-DOC_PATHS = {
-    "read_accounts_doc": "101/accounts.md",
-    "read_connecting_doc": "101/connecting.md",
-    "read_jobs_tutorial_doc": "101/jobs.md",
-    "read_allocations_doc": "101/allocations.md",
-    "read_software_tutorial_doc": "101/software.md",
-    "read_data_tutorial_doc": "101/data.md",
-    "read_policies_doc": "101/policies.md",
-    "read_glossary_doc": "101/glossary.md",
-    "read_mistakes_doc": "101/mistakes.md",
-    "read_helpdesk_doc": "101/helpdesk.md",
-    "read_ecosystems_doc": "101/ecosystems.md",
-    "read_clusters_doc": "clusters.md",
-    "read_partitions_doc": "partitions.md",
-    "read_beagle3_doc": "beagle3-overview.md",
-    "read_slurm_main_doc": "slurm/main.md",
-    "read_sinteractive_doc": "slurm/sinteractive.md",
-    "read_sbatch_doc": "slurm/sbatch.md",
-    "read_slurm_faq_doc": "slurm/faq.md",
-    "read_storage_main_doc": "storage/main.md",
-    "read_storage_faq_doc": "storage/faq.md",
-    "read_ssh_main_doc": "ssh/main.md",
-    "read_ssh_advanced_doc": "ssh/advance.md",
-    "read_ssh_faq_doc": "ssh/faq.md",
-    "read_thinlinc_doc": "thinlinc/main.md",
-    "read_ondemand_doc": "open_ondemand/open_ondemand.md",
-    "read_globus_transfer_doc": "globus/transfer-files.md",
-    "read_globus_share_doc": "globus/share-files.md",
-    "read_samba_doc": "samba.md",
-    "read_software_index_doc": "software/index.md",
-    "read_python_doc": "software/apps-and-envs/python.md",
-    "read_tensorflow_pytorch_doc": "software/apps-and-envs/tf-and-torch.md",
-    "read_r_doc": "software/apps-and-envs/r.md",
-    "read_matlab_doc": "software/apps-and-envs/matlab.md",
-    "read_singularity_doc": "software/apps-and-envs/singularity.md",
-    "read_compilers_doc": "software/compilers.md",
-    "read_software_faq_doc": "software/faq.md",
-    "read_alphafold_doc": "software/apps-and-envs/alphafold.md",
-    "read_gromacs_doc": "software/apps-and-envs/gromacs.md",
-    "read_lammps_doc": "software/apps-and-envs/lammps.md",
-    "read_gaussian_doc": "software/apps-and-envs/gaussian.md",
-    "read_midwayr3_overview_doc": "midwayR3/overview.md",
-    "read_skyway_doc": "skyway-overview.md",
-    "read_gis_doc": "gis/index.md",
-    "read_databases_doc": "databases/main.md",
-}
-
-WEB_DOC_PATHS = {
-    "read_web_about_rcc": "about-rcc.txt",
-    "read_web_advisory_committees": "about-rcc_advisory-committees.txt",
-    "read_web_ai_spotlight": "about-rcc_artificial-intelligence-spotlight-mind-bytes-2018.txt",
-    "read_web_director_welcome": "about-rcc_director's-welcome.txt",
-    "read_web_rcc_team": "about-rcc_our-team.txt",
-    "read_web_user_policy": "about-rcc_rcc-user-policy.txt",
-    "read_web_oversight_committee": "about-rcc_research-computing-oversight-committee.txt",
-    "read_web_vision_mission": "about-rcc_vision-mission.txt",
-    "read_web_access": "access.txt",
-    "read_web_accounts_allocations": "accounts-allocations.txt",
-    "read_web_grants_publications": "grants-publications.txt",
-    "read_web_acknowledging_rcc": "grants-publications_acknowledging-the-RCC.txt",
-    "read_web_facilities_resources": "grants-publications_facilities-and-resources-documents.txt",
-    "read_web_pi_proposals": "grants-publications_for-PI-proposals.txt",
-    "read_web_grant_support": "grants-publications_grant-support.txt",
-    "read_web_hardware_quotes": "grants-publications_hardware-quotes.txt",
-    "read_web_publications_list": "grants-publications_list-of-publications.txt",
-    "read_web_publications": "grants-publications_publications.txt",
-    "read_web_support_letters": "grants-publications_support-letters.txt",
-    "read_web_resources": "resources.txt",
-    "read_web_hpc_resources": "resources_high-performance-computing.txt",
-    "read_web_hosted_data": "resources_hosted-data.txt",
-    "read_web_networking": "resources_networking.txt",
-    "read_web_software_resources": "resources_software.txt",
-    "read_web_storage_backup": "resources_storage-and-backup.txt",
-    "read_web_support_services": "support-and-services.txt",
-    "read_web_cpp": "support-and-services_cluster-partnership-program.txt",
-    "read_web_consultant_partnership": "support-and-services_consultant-partnership-program.txt",
-    "read_web_consulting_support": "support-and-services_consulting-and-technical-support.txt",
-    "read_web_data_management": "support-and-services_data-management.txt",
-    "read_web_data_sharing": "support-and-services_data-sharing-services.txt",
-    "read_web_midway2_services": "support-and-services_midway2.txt",
-    "read_web_new_faculty": "support-and-services_new-faculty-program.txt",
-    "read_web_outreach": "support-and-services_outreach.txt",
-    "read_web_workshops_training": "support-and-services_workshops-and-training.txt",
-    "read_web_faqs": "faqs.txt",
-    "read_web_index": "index.txt",
-    "read_web_midway2": "midway2.txt",
-    "read_web_news_events": "news-and-events.txt",
-    "read_web_software": "software.txt",
-    "read_web_system_details": "system-details.txt",
-    "read_web_workshops": "workshops.txt",
-    "read_web_workshops_events": "workshops-events.txt",
-    "read_web_data_viz_committee": "data-visualization-initiative-advisory-committee.txt",
-    "read_web_team": "team.txt",
-    "read_web_bayesian_forest": "bayesian-forest-cities-full-data.txt",
-    "read_web_big_data_worms": "big-data-sleeping-worms-and-electronic-chef.txt",
-    "read_web_our_work": "our-work-color.txt",
-    "read_web_tools_resources": "tools-resources-color.txt",
-    "read_web_incidence": "incidence.txt",
-    "read_web_mpmri": "mpMRI.txt",
-    "read_web_pirads": "pirads.txt",
-    "read_web_publications_page": "publications.txt",
-    "read_web_takecourse": "takecourse.txt",
-    "read_web_user_guide_page": "user-guide.txt",
-}
+@st.cache_data(show_spinner=False)
+def get_docs_snapshot():
+    """Read the docs_snapshot.json written by refresh-docs.sh, if present."""
+    try:
+        with open(DOCS_SNAPSHOT_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return None
 
 
 # --- Tool Definitions ---
 TOOLS = [
-    {"name": "read_accounts_doc", "description": "Read documentation about RCC accounts. COVERS: Account types, applying for accounts, CNetID, sponsors, external collaborators.", "input_schema": {"type": "object", "properties": {}, "required": []}},
-    {"name": "read_connecting_doc", "description": "Read documentation about connecting to RCC clusters. COVERS: SSH, ThinLinc, Open OnDemand, SAMBA, Globus protocols.", "input_schema": {"type": "object", "properties": {}, "required": []}},
-    {"name": "read_jobs_tutorial_doc", "description": "Read beginner tutorial for running jobs. COVERS: sinteractive, sbatch basics, squeue.", "input_schema": {"type": "object", "properties": {}, "required": []}},
-    {"name": "read_allocations_doc", "description": "Read documentation about allocations and service units. COVERS: SUs, checking balance, usage tracking.", "input_schema": {"type": "object", "properties": {}, "required": []}},
-    {"name": "read_software_tutorial_doc", "description": "Read beginner tutorial for software setup. COVERS: module commands, Python environments, pip.", "input_schema": {"type": "object", "properties": {}, "required": []}},
-    {"name": "read_data_tutorial_doc", "description": "Read beginner tutorial for data management. COVERS: /project, /scratch, data download.", "input_schema": {"type": "object", "properties": {}, "required": []}},
-    {"name": "read_policies_doc", "description": "Read RCC policies and terms of use. COVERS: Usage policies, data security, restricted data.", "input_schema": {"type": "object", "properties": {}, "required": []}},
-    {"name": "read_glossary_doc", "description": "Read HPC glossary. COVERS: Definitions of HPC terms.", "input_schema": {"type": "object", "properties": {}, "required": []}},
-    {"name": "read_mistakes_doc", "description": "Read common mistakes to avoid. COVERS: Quota issues, conda mistakes, login node misuse.", "input_schema": {"type": "object", "properties": {}, "required": []}},
-    {"name": "read_helpdesk_doc", "description": "Read how to get help from RCC. COVERS: Contact info, what to include in requests.", "input_schema": {"type": "object", "properties": {}, "required": []}},
-    {"name": "read_ecosystems_doc", "description": "Read overview of RCC clusters. COVERS: Midway2, Midway3, Beagle3, DaLI, etc.", "input_schema": {"type": "object", "properties": {}, "required": []}},
-    {"name": "read_clusters_doc", "description": "Read hardware specs for clusters. COVERS: Node configs, cores, memory, GPUs.", "input_schema": {"type": "object", "properties": {}, "required": []}},
-    {"name": "read_partitions_doc", "description": "Read about Slurm partitions. COVERS: Partition configs, QoS limits.", "input_schema": {"type": "object", "properties": {}, "required": []}},
-    {"name": "read_beagle3_doc", "description": "Read about Beagle3 cluster. COVERS: Biomedical research, A100/A40 GPUs.", "input_schema": {"type": "object", "properties": {}, "required": []}},
-    {"name": "read_slurm_main_doc", "description": "Read main Slurm documentation. COVERS: Job scheduling, interactive vs batch.", "input_schema": {"type": "object", "properties": {}, "required": []}},
-    {"name": "read_sinteractive_doc", "description": "Read about interactive jobs. COVERS: sinteractive options, debug QoS.", "input_schema": {"type": "object", "properties": {}, "required": []}},
-    {"name": "read_sbatch_doc", "description": "Read about batch job submission. COVERS: sbatch scripts, job arrays, MPI, GPU jobs.", "input_schema": {"type": "object", "properties": {}, "required": []}},
-    {"name": "read_slurm_faq_doc", "description": "Read Slurm FAQ. COVERS: Common job issues and solutions.", "input_schema": {"type": "object", "properties": {}, "required": []}},
-    {"name": "read_storage_main_doc", "description": "Read storage documentation. COVERS: home, project, scratch, quotas, snapshots.", "input_schema": {"type": "object", "properties": {}, "required": []}},
-    {"name": "read_storage_faq_doc", "description": "Read storage FAQ. COVERS: Quota issues, file recovery, sharing.", "input_schema": {"type": "object", "properties": {}, "required": []}},
-    {"name": "read_ssh_main_doc", "description": "Read SSH documentation. COVERS: SSH commands, SCP, rsync, Duo 2FA.", "input_schema": {"type": "object", "properties": {}, "required": []}},
-    {"name": "read_ssh_advanced_doc", "description": "Read advanced SSH options. COVERS: X11, SSH keys, port forwarding.", "input_schema": {"type": "object", "properties": {}, "required": []}},
-    {"name": "read_ssh_faq_doc", "description": "Read SSH FAQ. COVERS: Connection troubleshooting.", "input_schema": {"type": "object", "properties": {}, "required": []}},
-    {"name": "read_thinlinc_doc", "description": "Read ThinLinc documentation. COVERS: Remote desktop, GUI access.", "input_schema": {"type": "object", "properties": {}, "required": []}},
-    {"name": "read_ondemand_doc", "description": "Read Open OnDemand documentation. COVERS: Web portal, Jupyter, RStudio.", "input_schema": {"type": "object", "properties": {}, "required": []}},
-    {"name": "read_globus_transfer_doc", "description": "Read Globus file transfer docs. COVERS: Large file transfers, endpoints.", "input_schema": {"type": "object", "properties": {}, "required": []}},
-    {"name": "read_globus_share_doc", "description": "Read Globus sharing docs. COVERS: Sharing with collaborators.", "input_schema": {"type": "object", "properties": {}, "required": []}},
-    {"name": "read_samba_doc", "description": "Read SAMBA documentation. COVERS: Mounting RCC directories locally.", "input_schema": {"type": "object", "properties": {}, "required": []}},
-    {"name": "read_software_index_doc", "description": "Read software/modules documentation. COVERS: module commands, available software.", "input_schema": {"type": "object", "properties": {}, "required": []}},
-    {"name": "read_python_doc", "description": "Read Python documentation. COVERS: Python, conda, pip, environments.", "input_schema": {"type": "object", "properties": {}, "required": []}},
-    {"name": "read_tensorflow_pytorch_doc", "description": "Read TensorFlow/PyTorch docs. COVERS: GPU computing, CUDA setup.", "input_schema": {"type": "object", "properties": {}, "required": []}},
-    {"name": "read_r_doc", "description": "Read R documentation. COVERS: R, RStudio, packages.", "input_schema": {"type": "object", "properties": {}, "required": []}},
-    {"name": "read_matlab_doc", "description": "Read MATLAB documentation. COVERS: MATLAB on Midway.", "input_schema": {"type": "object", "properties": {}, "required": []}},
-    {"name": "read_singularity_doc", "description": "Read Singularity documentation. COVERS: Containers, Docker images.", "input_schema": {"type": "object", "properties": {}, "required": []}},
-    {"name": "read_compilers_doc", "description": "Read compiler documentation. COVERS: GCC, Intel, compilation.", "input_schema": {"type": "object", "properties": {}, "required": []}},
-    {"name": "read_software_faq_doc", "description": "Read software FAQ. COVERS: Software issues, conflicts.", "input_schema": {"type": "object", "properties": {}, "required": []}},
-    {"name": "read_alphafold_doc", "description": "Read AlphaFold documentation. COVERS: Protein structure prediction.", "input_schema": {"type": "object", "properties": {}, "required": []}},
-    {"name": "read_gromacs_doc", "description": "Read GROMACS documentation. COVERS: Molecular dynamics.", "input_schema": {"type": "object", "properties": {}, "required": []}},
-    {"name": "read_lammps_doc", "description": "Read LAMMPS documentation. COVERS: Molecular dynamics.", "input_schema": {"type": "object", "properties": {}, "required": []}},
-    {"name": "read_gaussian_doc", "description": "Read Gaussian documentation. COVERS: Quantum chemistry.", "input_schema": {"type": "object", "properties": {}, "required": []}},
-    {"name": "read_midwayr3_overview_doc", "description": "Read MidwayR3 documentation. COVERS: Secure computing, HIPAA.", "input_schema": {"type": "object", "properties": {}, "required": []}},
-    {"name": "read_skyway_doc", "description": "Read Skyway documentation. COVERS: Cloud bursting, AWS/GCP.", "input_schema": {"type": "object", "properties": {}, "required": []}},
-    {"name": "read_gis_doc", "description": "Read GIS documentation. COVERS: Geospatial analysis.", "input_schema": {"type": "object", "properties": {}, "required": []}},
-    {"name": "read_databases_doc", "description": "Read database documentation. COVERS: Available databases.", "input_schema": {"type": "object", "properties": {}, "required": []}},
-    {"name": "read_web_about_rcc", "description": "Read about RCC from website. COVERS: History, mission, services.", "input_schema": {"type": "object", "properties": {}, "required": []}},
-    {"name": "read_web_rcc_team", "description": "Read about RCC staff. COVERS: Team members, expertise.", "input_schema": {"type": "object", "properties": {}, "required": []}},
-    {"name": "read_web_vision_mission", "description": "Read RCC vision/mission. COVERS: Strategic goals.", "input_schema": {"type": "object", "properties": {}, "required": []}},
-    {"name": "read_web_access", "description": "Read about RCC access. COVERS: Eligibility, requirements.", "input_schema": {"type": "object", "properties": {}, "required": []}},
-    {"name": "read_web_accounts_allocations", "description": "Read about accounts/allocations. COVERS: Account types, allocation process.", "input_schema": {"type": "object", "properties": {}, "required": []}},
-    {"name": "read_web_acknowledging_rcc", "description": "Read how to acknowledge RCC. COVERS: Citation text for publications.", "input_schema": {"type": "object", "properties": {}, "required": []}},
-    {"name": "read_web_grant_support", "description": "Read about grant support. COVERS: How RCC helps with grants.", "input_schema": {"type": "object", "properties": {}, "required": []}},
-    {"name": "read_web_hpc_resources", "description": "Read about HPC resources. COVERS: Hardware, capabilities.", "input_schema": {"type": "object", "properties": {}, "required": []}},
-    {"name": "read_web_storage_backup", "description": "Read about storage/backup. COVERS: Storage systems, recovery.", "input_schema": {"type": "object", "properties": {}, "required": []}},
-    {"name": "read_web_support_services", "description": "Read about support services. COVERS: Walk-in lab, consulting.", "input_schema": {"type": "object", "properties": {}, "required": []}},
-    {"name": "read_web_cpp", "description": "Read about Cluster Partnership Program. COVERS: Dedicated hardware purchase.", "input_schema": {"type": "object", "properties": {}, "required": []}},
-    {"name": "read_web_workshops_training", "description": "Read about workshops. COVERS: Training schedule, topics.", "input_schema": {"type": "object", "properties": {}, "required": []}},
-    {"name": "read_web_faqs", "description": "Read website FAQs. COVERS: Common questions.", "input_schema": {"type": "object", "properties": {}, "required": []}},
+    {
+        "name": "search_docs",
+        "description": (
+            "Search official RCC documentation and website content for pages relevant to the "
+            "user's question. Returns a ranked list of results, each with a `path`, title and "
+            "snippet. Call this FIRST for any RCC how-to, policy, software, storage, Slurm, "
+            "account, or connection question, then read the best result with read_doc."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Keywords or a natural-language question, e.g. 'sbatch GPU job' or 'storage quota'.",
+                }
+            },
+            "required": ["query"],
+        },
+    },
+    {
+        "name": "read_doc",
+        "description": (
+            "Read the full text of one documentation page. Pass the exact `path` value returned "
+            "by search_docs (for example 'docs/slurm/sbatch.md' or 'web/faqs.txt')."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "The exact `path` value from a search_docs result.",
+                }
+            },
+            "required": ["path"],
+        },
+    },
 ]
 
 # Mistral tools format (converted from Anthropic format)
@@ -348,33 +375,33 @@ MISTRAL_TOOLS = [
 
 
 def execute_tool(tool_name: str, tool_input: dict) -> str:
-    """Execute a documentation tool and return the result."""
-    if tool_name in DOC_PATHS:
-        doc_path = DOC_PATHS[tool_name]
-        content = read_document(doc_path)
-        return f"=== DOCUMENT: {doc_path} ===\n\n{content}"
-    elif tool_name in WEB_DOC_PATHS:
-        doc_path = WEB_DOC_PATHS[tool_name]
-        content = read_web_document(doc_path)
-        return f"=== WEB CONTENT: {doc_path} ===\n\n{content}"
+    """Execute a retrieval tool and return the result as text for the model."""
+    if tool_name == "search_docs":
+        return format_search_results(search_docs(tool_input.get("query", "")))
+    if tool_name == "read_doc":
+        doc_id = tool_input.get("path", "")
+        return f"=== DOCUMENT: {doc_id} ===\n\n{read_doc(doc_id)}"
     return f"Unknown tool: {tool_name}"
 
 
 SYSTEM_PROMPT = """You are the RCC User Guide Assistant for the University of Chicago's Research Computing Center.
 
-You have DOCUMENTATION TOOLS available that retrieve official RCC documentation:
-- read_*_doc tools that retrieve markdown documentation files
-- read_web_* tools that retrieve content from the RCC website
+You answer from official RCC documentation using two tools:
+- search_docs(query): find relevant documentation pages (returns paths, titles, and snippets)
+- read_doc(path): read the full text of a page using an exact path from a search_docs result
 
-You can also analyze files that users upload:
-- PDF documents: You will receive the extracted text content
-- Text files (.txt, .md, .py, .json, .csv): You will receive the file contents
+WORKFLOW:
+1. For any RCC question, call search_docs first with focused keywords.
+2. Read the most relevant result(s) with read_doc before answering.
+3. If the first search misses, refine the keywords and search again.
+4. Base your answer on the retrieved content and cite specific commands and paths.
+
+You can also analyze files that users upload (PDFs and text files: .txt, .md, .py, .json, .csv).
 
 GUIDELINES:
-- Use documentation tools to answer questions about RCC systems and procedures
-- When users upload files, analyze them and provide helpful information
-- Be helpful, accurate, and cite specific commands when possible
-- NEVER include raw markdown syntax like {:target="_blank"} in responses
+- Be helpful, accurate, and concrete; prefer exact commands and paths from the docs.
+- If the docs don't cover something, say so briefly rather than inventing specifics.
+- NEVER include raw markdown/kramdown syntax like {:target="_blank"} in responses.
 - Use ## or ### for section headers, never # (H1). Keep responses conversational, not document-like.
 
 TOPICS: Accounts, SSH, Slurm jobs, storage, Python, R, MATLAB, GPUs, containers, and more."""
@@ -388,9 +415,11 @@ st.markdown("""
 <style>
     /* ===== CSS VARIABLES ===== */
     :root {
-        /* Primary gradient */
-        --gradient-start: #667eea;
-        --gradient-end: #764ba2;
+        /* Primary gradient — UChicago Maroon */
+        --brand: #800000;
+        --brand-rgb: 128 0 0;
+        --gradient-start: #800000;
+        --gradient-end: #a5122a;
         --gradient: linear-gradient(135deg, var(--gradient-start), var(--gradient-end));
 
         /* Colors */
@@ -398,12 +427,12 @@ st.markdown("""
         --text-secondary: #9ca3af;
         --text-dark: #374151;
         --border-default: #e5e7eb;
-        --border-focus: #667eea;
+        --border-focus: #800000;
 
         /* Shadows */
-        --shadow-sm: 0 2px 8px rgba(102, 126, 234, 0.3);
+        --shadow-sm: 0 2px 8px rgba(128, 0, 0, 0.3);
         --shadow-md: 0 4px 15px rgba(0, 0, 0, 0.1);
-        --shadow-lg: 0 8px 25px rgba(102, 126, 234, 0.2);
+        --shadow-lg: 0 8px 25px rgba(128, 0, 0, 0.2);
 
         /* Spacing */
         --space-xs: 0.25rem;
@@ -450,14 +479,14 @@ st.markdown("""
     }
 
     /* ===== TRASH BUTTON ===== */
-    .trash-btn-wrapper {
+    .st-key-trash-wrapper {
         position: fixed;
         top: 10px;
         right: 20px;
         z-index: 1000;
     }
 
-    .trash-btn-wrapper .stButton > button {
+    .st-key-trash-wrapper .stButton > button {
         background: rgba(31, 41, 55, 0.8) !important;
         border: 1px solid #374151 !important;
         border-radius: var(--radius-sm) !important;
@@ -468,7 +497,7 @@ st.markdown("""
         transition: var(--transition) !important;
     }
 
-    .trash-btn-wrapper .stButton > button:hover {
+    .st-key-trash-wrapper .stButton > button:hover {
         background: rgba(239, 68, 68, 0.2) !important;
         border-color: #ef4444 !important;
     }
@@ -505,14 +534,33 @@ st.markdown("""
     }
 
     .welcome-title {
-        font-size: clamp(1.5rem, 4vw, 2.2rem);
-        font-weight: 600;
+        font-size: clamp(1.8rem, 5vw, 2.6rem);
+        font-weight: 700;
+        letter-spacing: -0.01em;
+        color: var(--brand); /* solid fallback if background-clip is unsupported */
         background: var(--gradient);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         background-clip: text;
-        margin-bottom: var(--space-lg);
+        margin-bottom: var(--space-sm);
         animation: fadeInUp 0.6s ease-out 0.3s both;
+    }
+
+    .welcome-subtitle {
+        font-size: clamp(0.9rem, 2vw, 1.05rem);
+        color: var(--text-secondary);
+        max-width: 34rem;
+        margin: 0 auto var(--space-md);
+        line-height: 1.55;
+        animation: fadeInUp 0.6s ease-out 0.4s both;
+    }
+
+    .docs-stamp {
+        text-align: center;
+        color: var(--text-secondary);
+        font-size: 0.72rem;
+        opacity: 0.75;
+        margin: var(--space-md) auto 0;
     }
 
     @keyframes fadeInUp {
@@ -521,18 +569,18 @@ st.markdown("""
     }
 
     /* ===== EXAMPLES GRID ===== */
-    .examples-grid-wrapper {
+    .st-key-examples-grid {
         max-width: min(560px, 85vw);
         margin: 0 auto;
         padding: 0 var(--space-md);
     }
 
-    .examples-grid-wrapper [data-testid="stHorizontalBlock"] {
+    .st-key-examples-grid [data-testid="stHorizontalBlock"] {
         gap: 0.6rem !important;
         margin-bottom: 0.6rem !important;
     }
 
-    .examples-grid-wrapper .stButton button {
+    .st-key-examples-grid .stButton button {
         background: linear-gradient(145deg, rgba(255,255,255,0.08) 0%, rgba(255,255,255,0.02) 100%);
         border: 1px solid rgba(255,255,255,0.1) !important;
         border-radius: 12px !important;
@@ -545,26 +593,29 @@ st.markdown("""
         transition: var(--transition) !important;
         backdrop-filter: blur(10px);
         box-shadow: var(--shadow-md) !important;
-        opacity: 0;
-        transform: translateY(25px);
-        animation: exampleFadeIn 0.5s ease-out forwards;
+        /* Resting state is visible; the animation only fades it in, so buttons never
+           stay invisible if the animation is disabled or interrupted. */
+        opacity: 1;
+        transform: translateY(0);
+        animation: exampleFadeIn 0.5s ease-out both;
     }
 
-    .examples-grid-wrapper .stButton button:nth-child(1) { animation-delay: 0.3s; }
-    .examples-grid-wrapper .stButton button:nth-child(2) { animation-delay: 0.45s; }
+    .st-key-examples-grid .stButton button:nth-child(1) { animation-delay: 0.3s; }
+    .st-key-examples-grid .stButton button:nth-child(2) { animation-delay: 0.45s; }
 
     @keyframes exampleFadeIn {
+        from { opacity: 0; transform: translateY(25px); }
         to { opacity: 1; transform: translateY(0); }
     }
 
-    .examples-grid-wrapper .stButton button:hover {
-        background: linear-gradient(145deg, rgba(102, 126, 234, 0.25) 0%, rgba(118, 75, 162, 0.25) 100%);
-        border-color: rgba(102, 126, 234, 0.5) !important;
+    .st-key-examples-grid .stButton button:hover {
+        background: linear-gradient(145deg, rgba(128, 0, 0, 0.25) 0%, rgba(165, 18, 42, 0.25) 100%);
+        border-color: rgba(128, 0, 0, 0.5) !important;
         transform: translateY(-3px) !important;
         box-shadow: var(--shadow-lg) !important;
     }
 
-    .examples-grid-wrapper .stButton button:active {
+    .st-key-examples-grid .stButton button:active {
         transform: translateY(-1px) !important;
     }
 
@@ -602,7 +653,7 @@ st.markdown("""
 
     .stChatInput > div:focus-within {
         border-color: var(--border-focus) !important;
-        box-shadow: 0 4px 20px rgba(102, 126, 234, 0.25) !important;
+        box-shadow: 0 4px 20px rgba(128, 0, 0, 0.25) !important;
     }
 
     .stChatInput textarea {
@@ -722,7 +773,7 @@ st.markdown("""
         position: relative !important;
         width: fit-content !important;
         max-width: min(700px, 80vw) !important;
-        min-width: min(300px, 70vw) !important;
+        min-width: min(140px, 45vw) !important;
     }
 
     .stChatMessage div[data-testid="stCodeBlock"] pre {
@@ -771,8 +822,8 @@ st.markdown("""
 
     /* Soften inline code in chat */
     .stChatMessage code:not(pre code) {
-        background: rgba(102, 126, 234, 0.15) !important;
-        color: #a5b4fc !important;
+        background: rgba(128, 0, 0, 0.15) !important;
+        color: #f0a8ac !important;
         padding: 2px 6px !important;
         border-radius: 4px !important;
         font-size: 0.88em !important;
@@ -802,6 +853,7 @@ st.markdown("""
     }
 
     .search-text {
+        color: var(--brand); /* solid fallback if background-clip is unsupported */
         background: linear-gradient(
             90deg,
             var(--gradient-start) 0%,
@@ -814,7 +866,7 @@ st.markdown("""
         background-clip: text;
         animation: shimmer 1.5s ease-in-out infinite;
         font-weight: 600;
-        font-size: clamp(0.8rem, 2vw, 0.9rem);
+        font-size: clamp(0.85rem, 2vw, 0.95rem);
     }
 
     @keyframes shimmer {
@@ -907,12 +959,12 @@ st.markdown("""
 
     /* ===== RESPONSIVE: MOBILE ===== */
     @media (max-width: 640px) {
-        .examples-grid-wrapper [data-testid="stHorizontalBlock"] {
+        .st-key-examples-grid [data-testid="stHorizontalBlock"] {
             flex-direction: column !important;
             gap: 0.5rem !important;
         }
 
-        .examples-grid-wrapper .stButton button {
+        .st-key-examples-grid .stButton button {
             width: 100% !important;
         }
 
@@ -924,7 +976,7 @@ st.markdown("""
             max-width: 85%;
         }
 
-        .trash-btn-wrapper {
+        .st-key-trash-wrapper {
             top: 5px;
             right: 10px;
         }
@@ -932,8 +984,33 @@ st.markdown("""
 
     /* ===== RESPONSIVE: TABLET ===== */
     @media (min-width: 641px) and (max-width: 1024px) {
-        .examples-grid-wrapper {
+        .st-key-examples-grid {
             max-width: min(560px, 85vw);
+        }
+    }
+
+    /* ===== KEYBOARD FOCUS (incl. JS-injected buttons) ===== */
+    #paperclip-btn:focus-visible,
+    .rcc-copy-btn:focus-visible,
+    .stChatInput button:focus-visible,
+    .stButton button:focus-visible {
+        outline: 2px solid var(--border-focus) !important;
+        outline-offset: 2px !important;
+    }
+
+    /* ===== REDUCED MOTION ===== */
+    @media (prefers-reduced-motion: reduce) {
+        *, *::before, *::after {
+            animation-duration: 0.001ms !important;
+            animation-iteration-count: 1 !important;
+            transition-duration: 0.001ms !important;
+            scroll-behavior: auto !important;
+        }
+        /* Ensure animation-gated elements are shown in their final state. */
+        .welcome-container, .welcome-icon, .welcome-title, .welcome-subtitle,
+        .st-key-examples-grid .stButton button {
+            opacity: 1 !important;
+            transform: none !important;
         }
     }
 
@@ -946,16 +1023,16 @@ st.markdown("""
             --border-default: #d1d5db;
         }
 
-        .examples-grid-wrapper .stButton button {
+        .st-key-examples-grid .stButton button {
             background: linear-gradient(145deg, #ffffff 0%, #f8fafc 100%);
             border: 1px solid #e2e8f0 !important;
             color: var(--text-dark) !important;
             box-shadow: 0 4px 15px rgba(0, 0, 0, 0.06) !important;
         }
 
-        .examples-grid-wrapper .stButton button:hover {
+        .st-key-examples-grid .stButton button:hover {
             background: linear-gradient(145deg, #eef2ff 0%, #e0e7ff 100%);
-            border-color: #a5b4fc !important;
+            border-color: #f0a8ac !important;
         }
 
         .error-container {
@@ -973,8 +1050,8 @@ st.markdown("""
 
         /* Light mode: inline code */
         .stChatMessage code:not(pre code) {
-            background: rgba(102, 126, 234, 0.12) !important;
-            color: #5b6ebb !important;
+            background: rgba(128, 0, 0, 0.12) !important;
+            color: #8a1020 !important;
         }
     }
 </style>
@@ -1006,12 +1083,13 @@ components.html("""
         const btn = doc.createElement('button');
         btn.id = 'paperclip-btn';
         btn.type = 'button';
-        btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>';
+        btn.innerHTML = '<svg aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>';
         btn.title = 'Attach file (PDF, TXT, MD, PY, JSON, CSV)';
-        btn.style.cssText = 'position:absolute;left:12px;top:50%;transform:translateY(-50%);z-index:1000;background:transparent;border:none;cursor:pointer;padding:8px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#9ca3af;transition:all 0.2s;';
+        btn.setAttribute('aria-label', 'Attach a file (PDF, TXT, MD, PY, JSON, CSV)');
+        btn.style.cssText = 'position:absolute;left:12px;top:50%;transform:translateY(-50%);z-index:1000;background:transparent;border:none;cursor:pointer;padding:8px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#6b7280;transition:all 0.2s;';
 
-        btn.onmouseenter = function() { this.style.background='rgba(102,126,234,0.1)'; this.style.color='#667eea'; };
-        btn.onmouseleave = function() { this.style.background='transparent'; this.style.color='#9ca3af'; };
+        btn.onmouseenter = function() { this.style.background='rgba(128,0,0,0.1)'; this.style.color='#800000'; };
+        btn.onmouseleave = function() { this.style.background='transparent'; this.style.color='#6b7280'; };
 
         btn.onclick = function(e) {
             e.preventDefault();
@@ -1103,10 +1181,10 @@ components.html("""
             btn.style.animationDelay = (delays[idx] || 0) + 's';
 
             btn.addEventListener('mouseenter', function() {
-                this.style.background = 'linear-gradient(145deg, rgba(102, 126, 234, 0.25) 0%, rgba(118, 75, 162, 0.25) 100%)';
-                this.style.borderColor = 'rgba(102, 126, 234, 0.5)';
+                this.style.background = 'linear-gradient(145deg, rgba(128, 0, 0, 0.25) 0%, rgba(165, 18, 42, 0.25) 100%)';
+                this.style.borderColor = 'rgba(128, 0, 0, 0.5)';
                 this.style.transform = 'translateY(-3px)';
-                this.style.boxShadow = '0 8px 25px rgba(102, 126, 234, 0.25)';
+                this.style.boxShadow = '0 8px 25px rgba(128, 0, 0, 0.25)';
             });
 
             btn.addEventListener('mouseleave', function() {
@@ -1128,10 +1206,15 @@ components.html("""
             if (!pre || !code) return;
 
             // Create our own copy button
+            var COPY_SVG = '<svg aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>';
+            var CHECK_SVG = '<svg aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>';
             var copyBtn = doc.createElement('button');
-            copyBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>';
+            copyBtn.type = 'button';
+            copyBtn.className = 'rcc-copy-btn';
+            copyBtn.innerHTML = COPY_SVG;
             copyBtn.title = 'Copy to clipboard';
-            copyBtn.style.cssText = 'position:absolute;top:8px;right:8px;z-index:10;background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);border-radius:6px;padding:4px 6px;cursor:pointer;color:#9ca3af;display:flex;align-items:center;justify-content:center;transition:all 0.2s;';
+            copyBtn.setAttribute('aria-label', 'Copy code to clipboard');
+            copyBtn.style.cssText = 'position:absolute;top:8px;right:8px;z-index:10;background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);border-radius:6px;padding:4px 6px;cursor:pointer;color:#6b7280;display:flex;align-items:center;justify-content:center;transition:all 0.2s;';
 
             copyBtn.onmouseenter = function() {
                 this.style.background = 'rgba(255,255,255,0.2)';
@@ -1139,19 +1222,38 @@ components.html("""
             };
             copyBtn.onmouseleave = function() {
                 this.style.background = 'rgba(255,255,255,0.1)';
-                this.style.color = '#9ca3af';
+                this.style.color = '#6b7280';
             };
+
+            function copyText(text) {
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    return navigator.clipboard.writeText(text);
+                }
+                // Fallback for insecure (http) contexts without the async clipboard API.
+                return new Promise(function(resolve, reject) {
+                    try {
+                        var ta = doc.createElement('textarea');
+                        ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+                        doc.body.appendChild(ta); ta.focus(); ta.select();
+                        var ok = doc.execCommand('copy');
+                        doc.body.removeChild(ta);
+                        ok ? resolve() : reject();
+                    } catch (err) { reject(err); }
+                });
+            }
 
             copyBtn.onclick = function(e) {
                 e.preventDefault();
                 e.stopPropagation();
                 var text = code.innerText || code.textContent || '';
-                navigator.clipboard.writeText(text).then(function() {
-                    copyBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>';
+                copyText(text).then(function() {
+                    copyBtn.innerHTML = CHECK_SVG;
+                    copyBtn.setAttribute('aria-label', 'Copied to clipboard');
                     setTimeout(function() {
-                        copyBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>';
+                        copyBtn.innerHTML = COPY_SVG;
+                        copyBtn.setAttribute('aria-label', 'Copy code to clipboard');
                     }, 2000);
-                });
+                }).catch(function() {});
             };
 
             // pre is the dark box - make it the positioning context
@@ -1171,6 +1273,7 @@ components.html("""
         // Use a persistent style tag to override Streamlit's button color during processing
         var styleId = 'processing-send-block-style';
         var existingStyle = doc.getElementById(styleId);
+        var sendBtn = chatInputContainer.querySelector('button');
         if (isProcessing) {
             if (!existingStyle) {
                 var style = doc.createElement('style');
@@ -1178,10 +1281,13 @@ components.html("""
                 style.textContent = '[data-testid="stChatInput"] button { background: #374151 !important; opacity: 0.5 !important; pointer-events: none !important; cursor: not-allowed !important; }';
                 doc.head.appendChild(style);
             }
+            // Expose the disabled state to assistive tech, not just visually.
+            if (sendBtn) sendBtn.setAttribute('aria-disabled', 'true');
         } else {
             if (existingStyle) {
                 existingStyle.remove();
             }
+            if (sendBtn) sendBtn.removeAttribute('aria-disabled');
         }
 
         // Block Enter key from submitting during processing
@@ -1221,15 +1327,17 @@ components.html("""
     }
     scheduleInit();
 
-    // Auto-scroll in chat mode - scrolls to bottom of page during streaming
+    // Auto-scroll ONLY while a response is generating, and only if the user is already
+    // near the bottom — so they can freely scroll up to read earlier messages.
     var lastScrollTime = 0;
+    var NEAR_BOTTOM_PX = 140;
     function autoScroll() {
         var now = Date.now();
         if (now - lastScrollTime < 150) return;
         lastScrollTime = now;
 
-        var chatContainer = doc.querySelector('.chat-container');
-        if (!chatContainer) return;
+        // Don't pin the page once generation has finished.
+        if (!doc.getElementById('processing-signal')) return;
 
         var targets = [
             doc.querySelector('[data-testid="stAppViewContainer"]'),
@@ -1241,7 +1349,10 @@ components.html("""
         for (var i = 0; i < targets.length; i++) {
             var el = targets[i];
             if (el && el.scrollHeight > el.clientHeight) {
-                el.scrollTop = el.scrollHeight;
+                var distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+                if (distanceFromBottom <= NEAR_BOTTOM_PX) {
+                    el.scrollTop = el.scrollHeight;
+                }
             }
         }
     }
@@ -1249,11 +1360,18 @@ components.html("""
     // Keep scrolling during streaming - poll for new content
     setInterval(autoScroll, 200);
 
-    // Auto-focus on typing
+    // Auto-focus the chat box when the user starts typing — but never steal keys that
+    // belong to another control (buttons/links activate on Enter/Space, screen readers
+    // and keyboard users navigate with arrows/Tab/etc.).
     doc.addEventListener('keydown', function(e) {
-        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+        const t = e.target;
+        const tag = (t && t.tagName) || '';
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (t && t.isContentEditable)) return;
+        if (t && t.closest && t.closest('button, a, [role="button"], [tabindex], [role="menu"], [role="listbox"]')) return;
         if (e.ctrlKey || e.altKey || e.metaKey) return;
-        const ignore = ['Escape','Tab','CapsLock','Shift','Control','Alt','Meta','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','F1','F2','F3','F4','F5','F6','F7','F8','F9','F10','F11','F12'];
+        const ignore = ['Escape','Tab','CapsLock','Shift','Control','Alt','Meta','Enter',' ','Spacebar',
+                        'ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Home','End','PageUp','PageDown',
+                        'F1','F2','F3','F4','F5','F6','F7','F8','F9','F10','F11','F12'];
         if (ignore.includes(e.key)) return;
         const input = doc.querySelector('textarea[data-testid="stChatInputTextArea"]');
         if (input) input.focus();
@@ -1460,33 +1578,32 @@ def wrap_generator_clear_status(gen, placeholder):
 RCC_DOCS_BASE_URL = "https://rcc-uchicago.github.io/user-guide/"
 
 def fix_markdown_links(text):
-    """Convert broken internal links to real RCC documentation URLs."""
-    import re
-    
+    """Convert internal doc links to real RCC documentation URLs; drop unresolvable ones."""
     def replace_link(match):
         link_text = match.group(1)
         link_target = match.group(2)
-        
-        if link_target.startswith(('http://', 'https://')):
+
+        if link_target.startswith(('http://', 'https://', 'mailto:')):
             return match.group(0)
-        
-        if link_target in DOC_PATHS:
-            doc_path = DOC_PATHS[link_target].replace('.md', '')
-            return f'[{link_text}]({RCC_DOCS_BASE_URL}{doc_path}/)'
-        
-        for tool_name, doc_path in DOC_PATHS.items():
-            if link_target == doc_path or link_target == doc_path.replace('.md', ''):
-                clean_path = doc_path.replace('.md', '')
-                return f'[{link_text}]({RCC_DOCS_BASE_URL}{clean_path}/)'
-        
-        if link_target.endswith('.md'):
-            clean_path = link_target.replace('.md', '')
+
+        # search_docs ids look like 'docs/slurm/sbatch.md' or 'web/faqs.txt'.
+        target = link_target
+        if target.startswith('docs/'):
+            target = target[len('docs/'):]
+        elif target.startswith('web/'):
+            # Website pages have no stable per-page docs URL; link to the guide root.
+            return f'[{link_text}]({RCC_DOCS_BASE_URL})'
+
+        if target.endswith('.md'):
+            clean_path = target[:-3].lstrip('/')
             return f'[{link_text}]({RCC_DOCS_BASE_URL}{clean_path}/)'
-        
-        return link_text
-    
-    text = re.sub(r'\[([^\]]+)\]\(([^)]+)\)', replace_link, text)
-    return text
+
+        if target.startswith('#') or target == '':
+            return link_text
+
+        return f'[{link_text}]({RCC_DOCS_BASE_URL})'
+
+    return re.sub(r'\[([^\]]+)\]\(([^)]+)\)', replace_link, text)
 
 
 def get_file_icon(filename: str) -> str:
@@ -1535,65 +1652,49 @@ if not has_messages:
     # Welcome screen
     st.markdown('''
     <div class="welcome-container">
-        <div class="welcome-icon">📚 ✨ 🎯</div>
-        <h1 class="welcome-title">What can I help you with?</h1>
+        <div class="welcome-icon" aria-hidden="true">🌱</div>
+        <h1 class="welcome-title">Sage</h1>
+        <p class="welcome-subtitle">Your guide to the UChicago Research Computing Center. Ask about accounts, SSH, Slurm jobs, storage, and software — answers come from the official RCC User Guide.</p>
     </div>
     ''', unsafe_allow_html=True)
-    
-    # Example questions grid using Streamlit columns with custom styling
-    st.markdown('<div class="examples-grid-wrapper">', unsafe_allow_html=True)
-    
-    # Row 1
-    col1, col2 = st.columns(2, gap="medium")
-    with col1:
-        if st.button(f"{EXAMPLE_QUESTIONS[0][0]} {EXAMPLE_QUESTIONS[0][1]}", key="ex_0", use_container_width=True):
-            st.session_state.messages.append({"role": "user", "content": EXAMPLE_QUESTIONS[0][1]})
-            st.session_state.processing = True
-            st.rerun()
-    with col2:
-        if st.button(f"{EXAMPLE_QUESTIONS[1][0]} {EXAMPLE_QUESTIONS[1][1]}", key="ex_1", use_container_width=True):
-            st.session_state.messages.append({"role": "user", "content": EXAMPLE_QUESTIONS[1][1]})
-            st.session_state.processing = True
-            st.rerun()
-    
-    # Row 2
-    col3, col4 = st.columns(2, gap="medium")
-    with col3:
-        if st.button(f"{EXAMPLE_QUESTIONS[2][0]} {EXAMPLE_QUESTIONS[2][1]}", key="ex_2", use_container_width=True):
-            st.session_state.messages.append({"role": "user", "content": EXAMPLE_QUESTIONS[2][1]})
-            st.session_state.processing = True
-            st.rerun()
-    with col4:
-        if st.button(f"{EXAMPLE_QUESTIONS[3][0]} {EXAMPLE_QUESTIONS[3][1]}", key="ex_3", use_container_width=True):
-            st.session_state.messages.append({"role": "user", "content": EXAMPLE_QUESTIONS[3][1]})
-            st.session_state.processing = True
-            st.rerun()
-    
-    # Row 3
-    col5, col6 = st.columns(2, gap="medium")
-    with col5:
-        if st.button(f"{EXAMPLE_QUESTIONS[4][0]} {EXAMPLE_QUESTIONS[4][1]}", key="ex_4", use_container_width=True):
-            st.session_state.messages.append({"role": "user", "content": EXAMPLE_QUESTIONS[4][1]})
-            st.session_state.processing = True
-            st.rerun()
-    with col6:
-        if st.button(f"{EXAMPLE_QUESTIONS[5][0]} {EXAMPLE_QUESTIONS[5][1]}", key="ex_5", use_container_width=True):
-            st.session_state.messages.append({"role": "user", "content": EXAMPLE_QUESTIONS[5][1]})
-            st.session_state.processing = True
-            st.rerun()
-    
-    st.markdown('</div>', unsafe_allow_html=True)
+
+    # Example questions grid — the keyed container gives it a stable .st-key-examples-grid
+    # class so the CSS actually scopes to these buttons.
+    with st.container(key="examples-grid"):
+        for row_start in range(0, len(EXAMPLE_QUESTIONS), 2):
+            cols = st.columns(2, gap="medium")
+            for offset, col in enumerate(cols):
+                idx = row_start + offset
+                if idx >= len(EXAMPLE_QUESTIONS):
+                    continue
+                icon, question = EXAMPLE_QUESTIONS[idx]
+                with col:
+                    if st.button(f"{icon} {question}", key=f"ex_{idx}", use_container_width=True):
+                        st.session_state.messages.append({"role": "user", "content": question})
+                        st.session_state.processing = True
+                        # Don't let a stray attachment leak into an example question.
+                        st.session_state.uploaded_file_data = None
+                        st.session_state.uploader_key += 1
+                        st.rerun()
+
+    # Show when the docs snapshot was last refreshed, so freshness is visible.
+    _snap = get_docs_snapshot()
+    if _snap and _snap.get("refreshed_at"):
+        st.markdown(
+            f'<div class="docs-stamp">📄 RCC User Guide synced {_snap["refreshed_at"]}'
+            f' · commit {_snap.get("user_guide_commit", "?")}</div>',
+            unsafe_allow_html=True,
+        )
 
 else:
-    # Chat mode - trash button fixed at top right
-    st.markdown('<div class="trash-btn-wrapper">', unsafe_allow_html=True)
-    if st.button("🗑️", key="clear", help="Clear chat"):
-        st.session_state.messages = []
-        st.session_state.processing = False
-        st.session_state.uploaded_file_data = None
-        st.session_state.uploader_key += 1  # Reset the file uploader
-        st.rerun()
-    st.markdown('</div>', unsafe_allow_html=True)
+    # Chat mode — clear-chat button pinned top-right (keyed container so CSS applies)
+    with st.container(key="trash-wrapper"):
+        if st.button("🗑️", key="clear", help="Clear chat"):
+            st.session_state.messages = []
+            st.session_state.processing = False
+            st.session_state.uploaded_file_data = None
+            st.session_state.uploader_key += 1  # Reset the file uploader
+            st.rerun()
     
     st.markdown('<div class="chat-container">', unsafe_allow_html=True)
     
@@ -1613,21 +1714,21 @@ else:
             if text:
                 render_assistant_message(text)
     
-    # Display any stored error message with custom styling
+    # Display a friendly error message (the raw exception is logged server-side, not shown).
     if "last_error" in st.session_state:
-        st.markdown(f'''
-        <div class="error-container">
-            <div class="error-icon">⚠️</div>
-            <div class="error-message">Error: {st.session_state.last_error}</div>
+        st.markdown('''
+        <div class="error-container" role="alert">
+            <div class="error-icon" aria-hidden="true">⚠️</div>
+            <div class="error-message">Something went wrong reaching the assistant. Please try again.</div>
         </div>
         ''', unsafe_allow_html=True)
         col1, col2, col3 = st.columns([1, 1, 1])
         with col2:
             if st.button("🔄 Try Again", key="dismiss_error", use_container_width=True):
-                # Remove the last user message that caused the error
-                if st.session_state.messages and st.session_state.messages[-1]["role"] == "user":
-                    st.session_state.messages.pop()
                 del st.session_state.last_error
+                # Actually retry: re-run the failed question if it's still the last message.
+                if st.session_state.messages and st.session_state.messages[-1]["role"] == "user":
+                    st.session_state.processing = True
                 st.rerun()
     
     st.markdown('</div>', unsafe_allow_html=True)
@@ -1643,6 +1744,12 @@ uploaded_file = st.file_uploader(
 if uploaded_file is not None and st.session_state.uploaded_file_data is None:
     file_data = process_uploaded_file(uploaded_file)
     st.session_state.uploaded_file_data = file_data
+
+# Surface a failed upload and clear it so it can't silently contaminate the next message.
+if st.session_state.uploaded_file_data and st.session_state.uploaded_file_data.get("type") == "error":
+    st.error(f"⚠️ {st.session_state.uploaded_file_data.get('message', 'Could not read that file.')}")
+    st.session_state.uploaded_file_data = None
+    st.session_state.uploader_key += 1
 
 # Show attachment status as a compact chip above the chat input
 if st.session_state.uploaded_file_data and st.session_state.uploaded_file_data.get("type") != "error":
@@ -1698,12 +1805,12 @@ if st.session_state.processing:
 
     def show_status(text):
         status_placeholder.empty()
-        sparkle_svg = '<span class="spinner"></span>'
+        sparkle_svg = '<span class="spinner" aria-hidden="true"></span>'
         with status_placeholder.container():
             st.markdown('<div class="assistant-wrapper">', unsafe_allow_html=True)
             with st.chat_message("assistant"):
                 st.markdown(
-                    f'<div class="search-status">{sparkle_svg}<span class="search-text">{text}</span><div class="streaming-dots"><span></span><span></span><span></span></div></div>',
+                    f'<div class="search-status" role="status" aria-live="polite">{sparkle_svg}<span class="search-text">{text}</span><div class="streaming-dots" aria-hidden="true"><span></span><span></span><span></span></div></div>',
                     unsafe_allow_html=True
                 )
             st.markdown('</div>', unsafe_allow_html=True)
@@ -1714,7 +1821,8 @@ if st.session_state.processing:
     logger.debug(f"Mistral client available: {st.session_state.mistral_client is not None}")
     
     try:
-        # Build messages in Mistral-native format
+        # Build the Mistral conversation with FULL history (user AND assistant turns) so
+        # the model remembers its own prior answers on follow-up questions.
         mistral_conversation = [{"role": "system", "content": SYSTEM_PROMPT}]
         for m in st.session_state.messages:
             if m["role"] == "user":
@@ -1722,88 +1830,104 @@ if st.session_state.processing:
                 if isinstance(content, str):
                     mistral_conversation.append({"role": "user", "content": content})
                 elif isinstance(content, list):
-                    # Extract text from content list
-                    text_parts = []
-                    for block in content:
-                        if isinstance(block, dict) and block.get("type") == "text":
-                            text_parts.append(block.get("text", ""))
+                    text_parts = [b.get("text", "") for b in content
+                                  if isinstance(b, dict) and b.get("type") == "text"]
                     if text_parts:
                         mistral_conversation.append({"role": "user", "content": " ".join(text_parts)})
+            elif m["role"] == "assistant" and m.get("is_final"):
+                atext = extract_display_text(m["content"])
+                if atext:
+                    mistral_conversation.append({"role": "assistant", "content": atext})
 
-        logger.debug("Attempting Mistral API call...")
         logger.debug(f"Mistral conversation has {len(mistral_conversation)} messages")
-        
-        # First API call - collect to check for tool calls
-        stream = st.session_state.mistral_client.chat.stream(
-            model=MISTRAL_MODEL,
-            messages=mistral_conversation,
-            tools=MISTRAL_TOOLS,
-            tool_choice="auto"
-        )
-        response_text, tool_use_blocks, response = mistral_collect_response(stream)
-        logger.debug(f"Mistral API call succeeded. Response length: {len(response_text)}, Tool calls: {len(tool_use_blocks)}")
+
+        MAX_TOOL_ROUNDS = 6
+
+        def _new_stream():
+            return st.session_state.mistral_client.chat.stream(
+                model=MISTRAL_MODEL,
+                messages=mistral_conversation,
+                tools=MISTRAL_TOOLS,
+                tool_choice="auto",
+            )
+
+        def _render_answer(text):
+            """Render (or re-render) the final answer with links fixed."""
+            answer_area.empty()
+            with answer_area.container():
+                st.markdown('<div class="assistant-wrapper">', unsafe_allow_html=True)
+                with st.chat_message("assistant"):
+                    st.markdown(fix_markdown_links(text))
+                st.markdown('</div>', unsafe_allow_html=True)
+
+        # Stream the FIRST turn live. If the model asks for tools, this turn's text is
+        # empty/preliminary and we resolve tools before answering; if not, the streamed text
+        # IS the answer, so a plain question costs a single completion instead of two.
+        answer_area = st.empty()
+        with answer_area.container():
+            st.markdown('<div class="assistant-wrapper">', unsafe_allow_html=True)
+            with st.chat_message("assistant"):
+                gen, tool_use_blocks, _final = mistral_stream_generator(_new_stream())
+                streamed_text = st.write_stream(wrap_generator_clear_status(gen, status_placeholder))
+            st.markdown('</div>', unsafe_allow_html=True)
+
+        final_text = streamed_text or ""
+        pre_text = streamed_text or ""
 
         if not tool_use_blocks:
-            show_status("Generating response")
+            # No tools needed — re-render once with links fixed to avoid a broken-link flash.
+            if final_text:
+                _render_answer(final_text)
+        else:
+            rounds = 0
+            while tool_use_blocks:
+                if rounds >= MAX_TOOL_ROUNDS:
+                    logger.warning("Max tool rounds reached; stopping tool loop.")
+                    if not final_text:
+                        final_text = ("I wasn't able to finish looking that up. "
+                                      "Please try rephrasing your question.")
+                    break
+                rounds += 1
+                answer_area.empty()
+                show_status("Searching documentation")
 
-        # Handle tool calls in a loop (using Mistral-native format)
-        while tool_use_blocks:
-            # Add assistant message with tool_calls in Mistral format
-            assistant_msg = {
-                "role": "assistant",
-                "content": response_text if response_text else "",
-                "tool_calls": [
-                    {
-                        "id": tb["id"],
-                        "type": "function",
-                        "function": {
-                            "name": tb["name"],
-                            "arguments": json.dumps(tb["input"])
-                        }
-                    }
-                    for tb in tool_use_blocks
-                ]
-            }
-            mistral_conversation.append(assistant_msg)
-            
-            # Add tool results in Mistral format
-            for tb in tool_use_blocks:
-                tool_result = execute_tool(tb["name"], tb["input"])
                 mistral_conversation.append({
-                    "role": "tool",
-                    "tool_call_id": tb["id"],
-                    "name": tb["name"],
-                    "content": tool_result
+                    "role": "assistant",
+                    "content": pre_text,
+                    "tool_calls": [
+                        {
+                            "id": tb["id"],
+                            "type": "function",
+                            "function": {"name": tb["name"], "arguments": json.dumps(tb["input"])},
+                        }
+                        for tb in tool_use_blocks
+                    ],
                 })
-            
-            # Get next response
-            stream = st.session_state.mistral_client.chat.stream(
-                model=MISTRAL_MODEL,
-                messages=mistral_conversation,
-                tools=MISTRAL_TOOLS,
-                tool_choice="auto"
-            )
-            response_text, tool_use_blocks, response = mistral_collect_response(stream)
+                for tb in tool_use_blocks:
+                    tool_result = execute_tool(tb["name"], tb["input"])
+                    mistral_conversation.append({
+                        "role": "tool",
+                        "tool_call_id": tb["id"],
+                        "name": tb["name"],
+                        "content": tool_result,
+                    })
 
-        show_status("Generating response")
+                # Next turn: another tool round, or the final answer.
+                response_text, tool_use_blocks, _resp = mistral_collect_response(_new_stream())
+                pre_text = response_text or ""
+                if response_text:
+                    final_text = response_text
 
-        # Display the final response with real streaming
-        st.markdown('<div class="assistant-wrapper">', unsafe_allow_html=True)
-        with st.chat_message("assistant"):
-            stream = st.session_state.mistral_client.chat.stream(
-                model=MISTRAL_MODEL,
-                messages=mistral_conversation,
-                tools=MISTRAL_TOOLS,
-                tool_choice="auto"
-            )
-            gen, _, final_msg_container = mistral_stream_generator(stream)
-            streamed_text = st.write_stream(wrap_generator_clear_status(gen, status_placeholder))
-            response = final_msg_container[0]
-        st.markdown('</div>', unsafe_allow_html=True)
+            status_placeholder.empty()
+            _render_answer(final_text)
 
-        # Store the final response in session state
-        if response and response.content:
-            st.session_state.messages.append({"role": "assistant", "content": response.content, "is_final": True})
+        # Persist the final assistant text (JSON-serializable content).
+        if final_text:
+            st.session_state.messages.append({
+                "role": "assistant",
+                "content": [{"type": "text", "text": final_text}],
+                "is_final": True,
+            })
         # Clear any previous error
         if "last_error" in st.session_state:
             del st.session_state.last_error
