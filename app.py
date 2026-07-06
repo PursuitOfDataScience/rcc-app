@@ -36,7 +36,6 @@ MISTRAL_MODEL = "mistral-small-latest"
 # live mount in deployment via RCC_DOCS_PATH / RCC_WEB_PATH.
 DOCS_BASE_PATH = os.getenv("RCC_DOCS_PATH", "./docs")
 WEB_BASE_PATH = os.getenv("RCC_WEB_PATH", "./web")
-DOCS_SNAPSHOT_FILE = "docs_snapshot.json"
 
 
 def get_mistral_client():
@@ -310,16 +309,6 @@ def read_doc(doc_id: str) -> str:
     return content
 
 
-@st.cache_data(show_spinner=False)
-def get_docs_snapshot():
-    """Read the docs_snapshot.json written by refresh-docs.sh, if present."""
-    try:
-        with open(DOCS_SNAPSHOT_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        return None
-
-
 # --- Tool Definitions ---
 TOOLS = [
     {
@@ -553,14 +542,6 @@ st.markdown("""
         margin: 0 auto var(--space-md);
         line-height: 1.55;
         animation: fadeInUp 0.6s ease-out 0.4s both;
-    }
-
-    .docs-stamp {
-        text-align: center;
-        color: var(--text-secondary);
-        font-size: 0.72rem;
-        opacity: 0.75;
-        margin: var(--space-md) auto 0;
     }
 
     @keyframes fadeInUp {
@@ -998,22 +979,6 @@ st.markdown("""
         outline-offset: 2px !important;
     }
 
-    /* ===== REDUCED MOTION ===== */
-    @media (prefers-reduced-motion: reduce) {
-        *, *::before, *::after {
-            animation-duration: 0.001ms !important;
-            animation-iteration-count: 1 !important;
-            transition-duration: 0.001ms !important;
-            scroll-behavior: auto !important;
-        }
-        /* Ensure animation-gated elements are shown in their final state. */
-        .welcome-container, .welcome-icon, .welcome-title, .welcome-subtitle,
-        .st-key-examples-grid .stButton button {
-            opacity: 1 !important;
-            transform: none !important;
-        }
-    }
-
     /* ===== LIGHT MODE ===== */
     @media (prefers-color-scheme: light) {
         :root {
@@ -1360,18 +1325,11 @@ components.html("""
     // Keep scrolling during streaming - poll for new content
     setInterval(autoScroll, 200);
 
-    // Auto-focus the chat box when the user starts typing — but never steal keys that
-    // belong to another control (buttons/links activate on Enter/Space, screen readers
-    // and keyboard users navigate with arrows/Tab/etc.).
+    // Auto-focus on typing — press any character key and start typing in the chat box.
     doc.addEventListener('keydown', function(e) {
-        const t = e.target;
-        const tag = (t && t.tagName) || '';
-        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (t && t.isContentEditable)) return;
-        if (t && t.closest && t.closest('button, a, [role="button"], [tabindex], [role="menu"], [role="listbox"]')) return;
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
         if (e.ctrlKey || e.altKey || e.metaKey) return;
-        const ignore = ['Escape','Tab','CapsLock','Shift','Control','Alt','Meta','Enter',' ','Spacebar',
-                        'ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Home','End','PageUp','PageDown',
-                        'F1','F2','F3','F4','F5','F6','F7','F8','F9','F10','F11','F12'];
+        const ignore = ['Escape','Tab','CapsLock','Shift','Control','Alt','Meta','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','F1','F2','F3','F4','F5','F6','F7','F8','F9','F10','F11','F12'];
         if (ignore.includes(e.key)) return;
         const input = doc.querySelector('textarea[data-testid="stChatInputTextArea"]');
         if (input) input.focus();
@@ -1676,15 +1634,6 @@ if not has_messages:
                         st.session_state.uploaded_file_data = None
                         st.session_state.uploader_key += 1
                         st.rerun()
-
-    # Show when the docs snapshot was last refreshed, so freshness is visible.
-    _snap = get_docs_snapshot()
-    if _snap and _snap.get("refreshed_at"):
-        st.markdown(
-            f'<div class="docs-stamp">📄 RCC User Guide synced {_snap["refreshed_at"]}'
-            f' · commit {_snap.get("user_guide_commit", "?")}</div>',
-            unsafe_allow_html=True,
-        )
 
 else:
     # Chat mode — clear-chat button pinned top-right (keyed container so CSS applies)
