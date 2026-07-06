@@ -493,74 +493,26 @@ st.markdown("""
 
     /* ===== WELCOME SCREEN ===== */
     .welcome-container {
-        position: relative;
         display: flex;
         flex-direction: column;
         align-items: center;
         justify-content: center;
         text-align: center;
         padding: clamp(1rem, 3vw, 1.5rem) var(--space-md);
-        margin-top: clamp(3vh, 6vw, 7vh);
+        margin-top: clamp(7vh, 12vw, 14vh);
         margin-bottom: 0.5rem;
         animation: fadeInDown 0.6s ease-out;
     }
-
-    /* Soft brand glow behind the hero for depth. */
-    .welcome-container::before {
-        content: "";
-        position: absolute;
-        top: -8%;
-        left: 50%;
-        width: min(560px, 96%);
-        height: 300px;
-        transform: translateX(-50%);
-        background: radial-gradient(closest-side, rgba(128, 0, 0, 0.30), rgba(128, 0, 0, 0));
-        filter: blur(20px);
-        z-index: 0;
-        pointer-events: none;
-    }
-
-    .welcome-container > * { position: relative; z-index: 1; }
 
     @keyframes fadeInDown {
         from { opacity: 0; transform: translateY(-20px); }
         to { opacity: 1; transform: translateY(0); }
     }
 
-    .hero-badge {
-        width: clamp(60px, 12vw, 78px);
-        height: clamp(60px, 12vw, 78px);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        margin: 0 auto var(--space-md);
-        border-radius: 22px;
-        color: #fff;
-        background: var(--gradient);
-        box-shadow: 0 12px 34px rgba(128, 0, 0, 0.45),
-                    inset 0 1px 0 rgba(255, 255, 255, 0.30);
-        animation: bounceIn 0.8s ease-out 0.2s both,
-                   badgeGlow 3.6s ease-in-out 1.2s infinite;
-    }
-
-    .hero-badge svg { width: 50%; height: 50%; }
-
-    @keyframes bounceIn {
-        0% { opacity: 0; transform: scale(0.3); }
-        50% { transform: scale(1.1); }
-        70% { transform: scale(0.9); }
-        100% { opacity: 1; transform: scale(1); }
-    }
-
-    @keyframes badgeGlow {
-        0%, 100% { box-shadow: 0 12px 34px rgba(128, 0, 0, 0.40), inset 0 1px 0 rgba(255,255,255,0.30); }
-        50%      { box-shadow: 0 16px 48px rgba(165, 18, 42, 0.62), inset 0 1px 0 rgba(255,255,255,0.30); }
-    }
-
     .welcome-title {
-        font-size: clamp(2rem, 5.5vw, 2.9rem);
-        font-weight: 800;
-        letter-spacing: -0.02em;
+        font-size: clamp(1.6rem, 4.5vw, 2.4rem);
+        font-weight: 700;
+        letter-spacing: -0.01em;
         color: var(--brand); /* solid fallback if background-clip is unsupported */
         background: var(--gradient);
         -webkit-background-clip: text;
@@ -1654,14 +1606,8 @@ if not has_messages:
     # Welcome screen
     st.markdown('''
     <div class="welcome-container">
-        <div class="hero-badge" aria-hidden="true">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
-                <path d="m12 3-1.9 5.8a2 2 0 0 1-1.287 1.288L3 12l5.8 1.9a2 2 0 0 1 1.288 1.287L12 21l1.9-5.8a2 2 0 0 1 1.287-1.288L21 12l-5.8-1.9a2 2 0 0 1-1.288-1.287Z"/>
-                <path d="M5 3v4"/><path d="M19 17v4"/><path d="M3 5h4"/><path d="M17 19h4"/>
-            </svg>
-        </div>
-        <h1 class="welcome-title">Sage</h1>
-        <p class="welcome-subtitle">Your AI guide to the UChicago Research Computing Center — ask about accounts, SSH, Slurm jobs, storage, and software, answered from the official RCC User Guide.</p>
+        <h1 class="welcome-title">What can I help you with?</h1>
+        <p class="welcome-subtitle">Ask about accounts, SSH, Slurm jobs, storage, and software at the UChicago Research Computing Center — answered from the official docs.</p>
     </div>
     ''', unsafe_allow_html=True)
 
