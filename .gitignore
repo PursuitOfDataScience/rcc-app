@@ -1,0 +1,7 @@
+# Backups produced by refresh-docs.sh
+.doc-backups/
+refresh-docs.log
+
+# Python
+__pycache__/
+*.pyc

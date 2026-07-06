@@ -5,7 +5,7 @@ After loading the module into your environment, you can find several environment
 ```
 module show [module-name]
 ```
-These added paths can be used in your Makefile or in the build configuration with [cmake](cmake.md){:target='_blank'}.
+These added paths can be used in your Makefile or in the build configuration with cmake.
 
 ## GSL
 

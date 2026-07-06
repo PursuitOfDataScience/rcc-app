@@ -5,7 +5,7 @@
 ## Getting access
 
 <p align='center'>
-<img src='../../img/software/gaussian-access.png'
+<img src='../../../img/software/gaussian-access.png'
 width='650'
 alt='A flowchart of steps for accessing Gaussian through the RCC. These steps are detailed below.'
 longdesc='TXT'/>
@@ -118,7 +118,7 @@ module load gaussian/09RevB.01
 
 However, GaussianView is not currently available for any of the versions of Gaussian on Midway3.
 
-To use GaussianView, you will need to run and X server on your computer and enable X forwarding when you log into the cluster. See our [X11 forwarding documentation](../../ssh/advance.md#X11-forwarding) for details. Otherwise, users need to open a ThinLinc session to open the GaussianView GUI.
+To use GaussianView, you will need to run and X server on your computer and enable [X11 forwarding](../../connection/ssh/main.md) when you log into the cluster. Otherwise, users need to open a ThinLinc session to open the GaussianView GUI.
 
 Other options to prepare the molecular structure used in the input files include software packages such as <a href='https://avogadro.cc/' target='_blank'>Avogadro</a>, a molecule editor and visualizer. Avogadro is also available on Midway2.
 

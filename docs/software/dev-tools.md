@@ -65,7 +65,7 @@ ncu-ui
 You can also use the command-line interface `nsys` and `ncu`. Please refer to the [NVIDIA Nsight documentation](https://docs.nvidia.com/nsight-systems/index.html) for further details.
 
 [Intel VTune](https://www.intel.com/content/www/us/en/developer/tools/oneapi/vtune-profiler.html) is part of the oneAPI(C) software suite for optimizing application performance, system performance, and system configuration for HPC.
-To use the profilers, `vtune` and the GUI `vtune-gui`, in a [ThinLinc](../thinlinc/main.md) session, you load the `oneapi` module
+To use the profilers, `vtune` and the GUI `vtune-gui`, in a [ThinLinc](../connection/thinlinc/main.md) session, you load the `oneapi` module
 ```
 module load oneapi/2024.2
 vtune-gui

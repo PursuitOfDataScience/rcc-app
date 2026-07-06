@@ -149,3 +149,58 @@ make -j4
 ```
 
 Note the GPU architecture (more specifically, compute capability) is defined for the KOKKOS package `Kokkos_ARCH_AMPERE80=ON`. The GPU package is by default compiled into to support a wide range of GPU architectures including `sm_80`.
+
+### LAMMPS jobs example
+
+Next, let us run the same calculations in the batch mode. First, create a text file with `nano` or `vi` on the login node, namely, `batch_job_python.txt`
+
+```
+#!/bin/bash
+#SBATCH --job-name=job-info
+#SBATCH --account=[pi-account]
+#SBATCH --partition=caslake
+#SBATCH --time=00:30:00
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=1
+cd /project/[pi-folder]/[your-cnetid]/
+source my-venv/bin/activate
+python simple.py
+```
+
+Next, submit the job to Slurm
+```
+sbatch batch_job_python.txt
+```
+
+Check your submitted job in the queue with
+
+```
+squeue -u $USER
+```
+
+Next, to test a run with LAMMPS in the batch mode, create another text file with `nano` or `vi` on the login node, namely, `batch_job_lammps.txt`
+
+```
+#!/bin/bash
+#SBATCH --job-name=job-info
+#SBATCH --account=[pi-account]
+#SBATCH --partition=caslake
+#SBATCH --time=00:30:00
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=8
+cd /project/[pi-folder]/[your-cnetid]/lammps/examples
+module load mpich/3.4.3+gcc-10.2.0 mkl/2023.1
+ulimit -l unlimited
+n=$(( SLURM_NNODES * SLURM_NTASKS_PER_NODE ))
+mpirun -np $n /project/[pi-folder]/[your-cnetid]/lammps/build/lmp -in melt/in.melt
+```
+
+After saving the file (Ctrl+X with `nano`, `:x` with `vi`), you will submit the script to Slurm:
+
+```
+sbatch batch_job_lammps.txt
+```
+
+As you can see, you can submit more than one jobs at a time. The more resource you request (number of nodes, number of tasks per node, memory per node, walltime and so on), the longer the jobs are pending.  Your usage history also affects how soon your jobs get running.  See [Running Jobs on Midway](../../slurm/main.md) for detailed documentation on how to monitor the submitted jobs.
+
+You can check the generated output `output.pdf` and `log.lammps` in the corresponding directories.
