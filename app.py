@@ -792,6 +792,18 @@ st.markdown("""
         padding-bottom: 0.5rem !important;
     }
 
+    /* Fine-print AI disclaimer, pinned just below the chat input */
+    [data-testid="stBottomBlockContainer"]::after {
+        content: "AI can make mistakes. Please double-check important responses.";
+        display: block;
+        text-align: center;
+        font-size: 0.7rem;
+        line-height: 1.3;
+        color: var(--text-secondary);
+        opacity: 0.75;
+        padding: 6px 1rem 0;
+    }
+
     /* Tone down response headers in chat */
     .stChatMessage h1 { font-size: 1.4rem !important; }
     .stChatMessage h2 { font-size: 1.2rem !important; }
