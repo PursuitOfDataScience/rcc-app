@@ -787,9 +787,9 @@ st.markdown("""
         padding-top: 0;
     }
 
-    /* Reduce space below chat input */
+    /* Give the input + disclaimer some breathing room from the bottom edge */
     [data-testid="stBottomBlockContainer"] {
-        padding-bottom: 0.5rem !important;
+        padding-bottom: 1.75rem !important;
     }
 
     /* Fine-print AI disclaimer, pinned just below the chat input */
@@ -801,7 +801,7 @@ st.markdown("""
         line-height: 1.3;
         color: var(--text-secondary);
         opacity: 0.75;
-        padding: 6px 1rem 0;
+        padding: 10px 1rem 0;
     }
 
     /* Tone down response headers in chat */
