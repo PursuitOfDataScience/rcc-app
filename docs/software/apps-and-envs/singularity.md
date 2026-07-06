@@ -1,20 +1,13 @@
-# Singularity
+# Modules
 
-[Singularity](https://sylabs.io/) is a widely-adopted container runtime that implements a unique security model to mitigate privilege escalation risks and provides a platform to capture a complete application environment into a single file (SIF).
+[Apptainer](https://apptainer.org/) and [Singularity](https://sylabs.io/) are widely-adopted container runtimes that implement a unique security model to mitigate privilege escalation risks and provides a platform to capture a complete application environment into a single file (SIF).
 
-## Available Modules
-
-Singularity is available on and Midway3 that you can check via `module avail singularity`. It is recommended to load the latest
-version of `singularity` to have bugfixes and new features.
-
-```
-module load singularity/3.9.2
-```
-
-Since March 2022, Singularity has become a Linux Foundation project and renamed to [Apptainer](https://apptainer.org/).
-You can load a version of Apptainer on Midway3:
 ```
 module load apptainer
+```
+or
+```
+module load singularity
 ```
 Apptainer and Singularity commands are highly compatible with each other. Apptainer also provides a `singularity `command to ensure that no changes needed in workflows that invoke the command.
 

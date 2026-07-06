@@ -17,3 +17,34 @@
 img[src*="#shadow"] {
   box-shadow: 0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19);
 }
+
+/* Responsive image styles */
+
+img.responsive-img {
+  display: block;
+  margin: 1rem 0;
+  width: 100%;
+  height: auto;
+  max-width: 800px;
+}
+
+@media (max-width: 768px) {
+  img.responsive-img {
+    max-width: 100%;
+    padding: 0 10px;
+  }
+}
+
+@media (max-width: 480px) {
+  img.responsive-img {
+    max-width: 100%;
+    padding: 0 5px;
+  }
+}
+
+/* rounded image */
+
+img.rounded {
+  border-radius: 8px;
+  box-shadow: 0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19);
+}

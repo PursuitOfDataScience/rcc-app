@@ -1,6 +1,6 @@
 # OpenMM
 
-[OpenMM](https://openmm.org/) is a open-source high-performance toolkit for molecular simulation. You can use it as an application, a library, or a flexible programming environment.
+[OpenMM](https://openmm.org/) is an open-source high-performance toolkit for molecular simulation. You can use it as an application, a library, or a flexible programming environment.
 
 Keywords: `biology`, `physics`, `chemistry`, `molecular dynamics`
 
@@ -11,7 +11,7 @@ There are several OpenMM modules on Midway3 that you can check via `module avail
 ===+ "Midway3"
     ```
     ---------------------------- /software/modulefiles -----------------------------
-    openmm/7.5.1(default)  openmm/8.1.0
+    openmm/7.5.1  openmm/8.1.0(default)
 
     ```
 
@@ -21,7 +21,7 @@ There are several OpenMM modules on Midway3 that you can check via `module avail
 ???+ note
     You can also install OpenMM into your conda environment. See http://docs.openmm.org/7.0.0/userguide/application.html for more information
     ```
-    module load python/anaconda-2022.05
+    module load python/miniforge-25.3.0
     conda create -n your-env python=3.8
     source activate your-env
     conda install -c conda-forge openmm cudatoolkit=11.5
@@ -34,7 +34,7 @@ https://openmm.org/documentation
 
 ## Example job script
 
-An example batch script to run OpenMM for Midway3 is given as below
+The following is an example batch script for running OpenMM on Midway3.
 ```
 !/bin/bash
 #SBATCH --job-name=openmm-bench
@@ -49,12 +49,6 @@ An example batch script to run OpenMM for Midway3 is given as below
 module load openmm
 
 cd $SLURM_SUBMIT_DIR
-
-ntasks_per_node=$SLURM_NTASKS_PER_NODE
-numnodes=$SLURM_JOB_NUM_NODES
-n=$(( ntasks_per_node * numnodes ))
-
-t=1000
 
 python run_openmm.py
 ```
@@ -72,31 +66,28 @@ pdb = PDBFile('input.pdb')
 forcefield = ForceField('amber14-all.xml', 'amber14/tip3pfb.xml')
 system = forcefield.createSystem(pdb.topology, nonbondedMethod=PME, nonbondedCutoff=1*nanometer, constraints=HBonds)
 integrator = LangevinMiddleIntegrator(300*kelvin, 1/picosecond, 0.004*picoseconds)
-simulation = Simulation(pdb.topology, system, integrator)
+
+# Select a platform for GPU acceleration: 
+# CUDA backend might fail due to an incompatible version of the GPU driver on the compute nodes than the OpenMM compiled PTX
+platform_name = ''
+try:
+    platform_name = 'CUDA'
+    simulation = Simulation(pdb.topology, system, integrator,
+                            openmm.Platform.getPlatformByName(platform_name))
+except OpenMMException as e:
+    platform_name = 'OpenCL'
+    simulation = Simulation(pdb.topology, system, integrator,
+                            openmm.Platform.getPlatformByName(platform_name))
+except Exception:
+    platform_name = 'CPU'
+    simulation = Simulation(pdb.topology, system, integrator)
+
+print(f'Running simulation on the {platform_name} backend')
+
 simulation.context.setPositions(pdb.positions)
 simulation.minimizeEnergy()
 simulation.reporters.append(PDBReporter('output.pdb', 1000))
 simulation.reporters.append(StateDataReporter(stdout, 1000, step=True, potentialEnergy=True, temperature=True))
 simulation.step(10000)
 ```
-
-<!---
-There are two different primary configurations:
-
-* **gromacs-X.Y.Z** is single precision (float)
-
-* **gromacs-plumed-X.Y.Z+<compiler module>** is double precision, compiled with the stated compiler and MPI code, with PLUMED and Reconnaissance Metadynamics
-
-`gromacs.sbatch` demonstrates how to run a short Gromacs job (the d.dppc test
-case) in parallel.  Submit to the queue by:
-
-```bash
-cd $HOME/rcchelp/software/gromacs.rcc-docs
-sbatch gromacs.sbatch
-# and / or
-sbatch gromacs-plumed.sbatch
-```
-
-The submission scripts can be modified to suit your needs
---->
 

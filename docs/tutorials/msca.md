@@ -2,7 +2,7 @@
 
 As a student in the Master of Science in Analytics (MScA) Program, you will be able to make use of The University of Chicago’s Research Computing Center (RCC) resources in completing your capstone project.  Some courses in the program will also make use of RCC resources.
 
-RCC provides high-end research computing resources to researchers at the University of Chicago. These resources include centrally managed high-performance computing, storage, and visualization hardware, software, scientific and technical user support, as well as education and training opportunities to help researchers effectively make use of modern HPC technology.  To learn more about RCC, see [https://rcc.uchicago.edu](https://rcc.uchicago.edu){:target='_blank'}.
+RCC provides high-end research computing resources to researchers at the University of Chicago. These resources include centrally managed high-performance computing, storage, and visualization hardware, software, scientific and technical user support, as well as education and training opportunities to help researchers effectively make use of modern HPC technology.
 
 Below are the basics you will need to know in order to get up and running at RCC.  For complete RCC technical documentation, see the main sections of this user guide. 
 
@@ -18,7 +18,7 @@ RCC support staff is available to assist with technical issues (help logging in,
 
 ## Logging into Midway
 
-For the most complete documentation regarding connecting to RCC resources see: [Connecting to Midway](../101/connecting.md).
+For the most complete documentation regarding connecting to RCC resources see: [Connecting to Midway](../connection/main.md).
 
 ## Using Midway
 

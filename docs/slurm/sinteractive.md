@@ -3,20 +3,18 @@ Interactive jobs are the most intuitive way to use RCC clusters, as they allow y
 
 To request an interactive job with default parameters, run the following command while connected to a login node:  
 
-=== "Midway2"
-    ```
-    sinteractive
-    ```
-===+ "Midway3"
-    ```
-    sinteractive --account=pi-<PI CNETID>
-    ```
+```
+sinteractive -A [pi-account] -p [partition] -N [# of nodes] --ntasks-per-node=[# of tasks] --time=[time]
+```
 
 !!! note
-    On Midway3, you **always** need to specify the account to be charged for the job explicitly. Slurm will use the default [partition](../partitions.md) (Midway2: `broadwl`, Midway3: `caslake`) if you do not specify it.
+    On Midway3, you **always** need to specify the account to be charged for the job explicitly. Slurm will use the default partition (Midway2: `broadwl`, Midway3: `caslake`) if you do not specify it.
 
 !!! note
     On Midway3, to use the partitions with AMD CPUs, it is recommended that you log in to the `midway3-amd.rcc.uchicago.edu` login node and submit jobs from this login node. 
+
+!!! note 
+	By default, an interactive session times out after ***2 hours***. If you would like more than 2 hours, include a `--time=HH:MM:SS` flag to specify the necessary amount of time. 
 
 As soon as the requested resources become available, `sinteractive` will do the following: 
  
@@ -24,20 +22,6 @@ As soon as the requested resources become available, `sinteractive` will do the 
 2. Change into the directory you were working in.  
 3. Set up X11 forwarding for displaying graphics.  
 4. Transfer your shell environment, including any previously loaded modules.  
-
-!!! note 
-	By default, an interactive session times out after ***2 hours***. If you would like more than 2 hours, include a `--time=HH:MM:SS` flag to specify the necessary amount of time. 
-	
-For example, to request an interactive session for 6 hours, run the following command:
-
-=== "Midway2"
-    ```
-    sinteractive --time=06:00:00
-    ```
-===+ "Midway3"
-    ```
-    sinteractive --account=pi-<PI's CNETID> --time=06:00:00
-    ```
 
 There are many additional options for the sinteractive command, including options to select the number of nodes, the number of cores per node, the amount of memory, and so on. For example, to request exclusive use of two compute nodes on the default CPU partition for 8 hours, enter the following:
 
@@ -79,3 +63,79 @@ These same options can also be used to set up a sinteractive session. For exampl
 ```bash
 sinteractive --partition=bigmem --ntasks=1 --cpus-per-task=8 --mem=128G --account=pi-<PI CNETID>
 ```
+
+
+Once you are connected to the compute node where the interactive session is runnnig, you can load python:
+```
+module load python
+```
+
+and run `python`
+
+```
+[your-cnetid@midway3-0xyz ] python
+Python 3.9.19 | packaged by conda-forge | (main, Mar 20 2024, 12:50:21) 
+[GCC 12.3.0] on linux
+Type "help", "copyright", "credits" or "license" for more information.
+>>>
+```
+
+After quitting `python`, you can activate the environment you created, and list the installed packages
+
+```
+source /project/[pi-folder]/[your-cnetid]/my-venv/bin/activate
+pip list
+```
+You should see `numpy`, `matplotlib` and `pandas` installed in this environment.
+
+Let us prepare a simple Python script, namely, `simple.py` with a text editor like `nano`, in the current folder, with the following content:
+
+```
+import numpy as np
+from matplotlib import pyplot as plt 
+x = np.arange(1,11) 
+y = 2 * x + 5 
+plt.title("Matplotlib demo") 
+plt.xlabel("x axis caption") 
+plt.ylabel("y axis caption") 
+plt.plot(x,y)
+plt.savefig("output.pdf", format="pdf")
+```
+And run it with 
+
+```
+python simple.py
+```
+
+which should produce a file `output.pdf`.
+
+Change to the input data folder
+```
+cd /project/[pi-folder]/[your-cnetid]/lammps/examples
+```
+
+Load the same modules you used to build LAMMPS (except `cmake`)
+
+```
+module load mpich/3.4.3+gcc-10.2.0 mkl/2023.1
+```
+
+Relax the locked memory limit
+```
+ulimit -l unlimited
+```
+
+Run the LAMMPS binary you built above
+```
+mpirun -np 8 /project/[pi-folder]/[your-cnetid]/lammps/build/lmp -in melt/in.melt
+```
+
+The run will produce the LAMMPS screen output and a file named `log.lammps` in the current folder.
+
+To terminate the interactive session, run
+
+```
+exit
+```
+
+You will get back to the login node.

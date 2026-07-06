@@ -69,6 +69,27 @@ The list of libraries and software suites that provide MPI libraries is given as
 !!! note
     Experienced users can build the MPI libraries of their preferences in their own space using the provided compilers above.
 
+### MPI Example
+If you need to compile your software packages from source, you can download the software source code from GitHub to your space, load the compiler modules and build the codes. In this tutorial, let us build [LAMMPS](https://github.com/lammps/lammps) from source code:
+
+```
+cd /project/[pi-folder]/[your-cnetid]
+git clone https://github.com/lammps/lammps.git
+cd lammps
+mkdir build && cd build
+```
+
+Load the modules for the preferred compiler, MPI libraries and MKL. Then run cmake to configure the build and finally build the code:
+```
+module load mpich/3.4.3+gcc-10.2.0 mkl/2023.1 cmake/3.26
+cmake ../cmake -C ../cmake/presets/basic.cmake -DFFT=MKL -DFFTW3_INCLUDE_DIR=$MKLROOT/include/fftw
+make -j4
+```
+
+If the build succeeds, you will see a LAMMPS binary, namely `lmp`, generated under the folder `/project/[pi-folder]/lammps/[your-cnetid]/build`.
+
+You can use other compilers (Intel oneAPI, GNU GCC) and MPI libraries (OpenMPI, MPICH). For GPU codes, you can use NVIDIA HPC SDK and Intel oneAPI. More information on the available development tools is given in [Compilers](../software/compilers.md). 
+
 ## GPU codes
 
 To compile GPU codes, you can use NVIDIA CUDA Toolkit and HPC SDK (with OpenACC), Intel OneAPI (with SYCL), and GNU GCC 4.0+ (with GPU offloading). 

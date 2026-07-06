@@ -1,6 +1,6 @@
-# System Layout
+# Storage System Layout
 
-Midway2,  Midway3, and Beagle3 have a high-performance GPFS shared file system that houses private **home** directories, shared **project**, **project2**, and **beagle3** spaces, and high-throughput **scratch** space. The shared and scratch directories of Midway2, Midway3, and Beagle3 are 'cross-mounted', meaning that they are accessible from system-specific login and compute nodes. However, `/home`, `/software`, and `/snapshots` are specific to each cluster and their respective login nodes.
+Midway2,  Midway3, and Beagle3 have a high-performance GPFS shared file system that houses private **home** directories, shared **project**, **project2**, and **beagle3** spaces, and high-performance **scratch** space. The shared and scratch directories of Midway2, Midway3, and Beagle3 are 'cross-mounted', meaning that they are accessible from system-specific login and compute nodes. However, `/home`, `/software`, and `/snapshots` are specific to each cluster and their respective login nodes.
 
 <p align='center'>
 <img src='../../img/data_management/midway23_storage.jpeg'
@@ -123,7 +123,7 @@ Every user has Midway2 and Midway3 home directories `/home/$USER`. **Midway2 hom
 
 ### Research Space
 
-Every user who belongs to one or many `pi-<PI_CNetID>` groups has access to the shared **Midway2 project directories** located at `/project2/<PI_CNetID>`. Additionally some groups may have purchased a dedicated **Midway3 project space** `/project/<PI_CNetID>` or be authorized to access **Beagle3 project space** at `/beagle3/<PI_CNetID>`. All these directories are accessible by all members of the PI's group and are generally used for storing, processing, and analyzing research data that needs to be shared by members of the group. The default group ownership is set to the PI group with read-write permissions for files and directories created in the research space using a sticky bit (mode `2770`). Users may request access to multiple research spaces by submitting a [request](https://rcc.uchicago.edu/accounts-allocations/join-different-pi-account){:target="_blank"} to be approved by the PI.
+New PIs are eligible to receive Midway3 startup storage for the duration of their appointment at UChicago. Every user who belongs to one or many `pi-<PI_CNetID>` groups may have access to the shared **Midway3 project directories** located at `/project/<PI_CNetID>` and/or (for old PI accounts) to the workspace **Midway2 project space** `/project2/<PI_CNetID>`. Members of a beagle3 group are additionally authorized to access **Beagle3 project space** at `/beagle3/<PI_CNetID>`. All these directories are accessible by all members of the PI's group and are generally used for storing, processing, and analyzing research data that needs to be shared by members of the group. The default group ownership is set to the PI group with read-write permissions for existing and newly created files and directories using a sticky bit (mode `2770`). Users may request access to multiple research spaces by submitting a [request](https://rcc.uchicago.edu/accounts-allocations/join-different-pi-account){:target="_blank"} to be approved by the PI.
 
 ### Scratch Space
 
@@ -147,6 +147,51 @@ df -h $TMPDIR
 In addition to a high-performance GPFS file system, RCC also offers **Cost-effective Data Storage (CDS)** through the [Cluster Partnership Program](https://rcc.uchicago.edu/support-and-services/cluster-partnership-program){:target='_blank'} for long-term data storage. CDS is only available from login nodes and is meant to be used as a storage for less frequently accessed data. Before performing any computation on the data stored on CDS, it first needs to be copied to a high-performance file system.
 
 CDS includes multiple tiers (`/cds`, `/cds2`, `/cds3`) with the new data to be stored in `/cds3` cost-effective storage. Additionally, data can be moved from old tiers to the most recent tier using Globus. A user would need to provide the path on each endpoint, such as /cds or /cds2 on Midway2 and /cds3 on Midway3.  
+
+## SHARED
+The University of Chicago has received funding from the National Science Foundation (NSF) under Award No 2346746, to develop SHARED, the Secure Hub for Access, Reliability, and Exchange of Data. This new storage platform will advance research through robust capabilities for data storage, accessibility, sharing and integration with national and global data federations. It will provide critical storage capacity for research and supporting data science curricula development and education. For more information please see [this reference](https://dl.acm.org/doi/10.1145/3708035.3736042).
+
+Designed as a cornerstone of UChicago's data lifecycle strategy, from collection and analysis to publication and archiving, SHARED will integrate with the University’s institutional repository, Knowledge@UChicago, and connect to national research networks like the Open Science Grid (OSG). The SHARED project and platform is led by the University of Chicago Library and Research Computing Center (RCC), with contributions from University IT Services, Data Science Institute, and Physical Sciences Division. The SHARED platform will be essential for enabling partner faculty to meet federal requirements for data management and sharing.
+
+### Allocations
+
+The majority of the storage available in SHARED is reserved and for the projects and research groups that are part of the grant. Each project has a directory under `/shared` and the group ownership of these directories are initially assigned to the main PIs of each project. Requests for changes of ownership, creation of new groups, or questions about permissions can be submitted to [shared@rcc.uchicago.edu](mailto:shared@rcc.uchicago.edu). 
+
+There are reservations of 50 TB will be reserved for educational, broader impact, and outreach activities, including open pedagogical data sets. In addition, an initial 50 TB will be reserved for open access data repositories for published research findings and the data that can be used to verify the published findings in accordance with FAIR principles. Allocation policies will be reviewed periodically by the SHARED executive committee.
+
+### Access
+
+There are different services and gateways for the members of the grant PIs to access the SHARED storage system, as listed below:
+
+* Mount point in the Midway3 login nodes `/shared`
+* Mount point in the Midway2 and DaLI login nodes `/shared`
+* [Globus](../data_transfer/globus/transfer-files.md) collection `UChicago RCC SHARED`
+* [SAMBA](../data_transfer/persistent_mapping/samba.md) share: connecting to the following server using the username `ADLOCAL\[cnetid]`
+     * Windows: `\\shared-smb.rcc.uchicago.edu\shared` 
+     * MacOS: `smb://shared-smb.rcc.uchicago.edu/shared`
+
+Project members can submit requests for additional gateway services and storage endpoints to the email [shared@rcc.uchicago.edu](mailto:shared@rcc.uchicago.edu). A member of the SHARED team will analyze the feasibility and contact the requestor for additional details.
+
+Please note:
+
+* The `/shared` mount points in the Midway systems is available only in the login nodes and cannot be mounted in the compute nodes as the SHARED filesystem is built for resiliency, data durability and stability, and not optimized for highly parallel I/O workloads.
+* For security reasons the SAMBA share can only be accessed from the UChicago networks, i.e., campus network or cVPN.
+
+Data can be transferred between `/shared` and other Midway filesystems using command line interface tools such as `cp`, `scp`, `rsync` and `rclone`.
+
+### Backup
+
+There are daily and weekly snapshots of `/shared` taken automatically daily and weekly under the
+directory `/shared/.snap`. Each snapshot is timestamped and named such as:
+
+```
+scheduled-2026-04-20-20_00_00_UTC
+```
+S
+Users can find their data under the corresponding PI folders within each snapshot.
+The retention policy is to keep the last 7 daily snapshots, and the last 4 weekly snapshots.
+For further assistance, please send an email to [shared@rcc.uchicago.edu](mailto:shared@rcc.uchicago.edu) and [contact our Help Desk](https://rcc.uchicago.edu/support-and-services/consulting-and-technical-support){:target="_blank"}
+
 
 ## Data Recovery and Backups
 
@@ -175,7 +220,7 @@ Automated snapshots for the GPFS directories (`home`, `project2`, `project`, `be
       |---------------------|----------------------|--------------------------------------------------|
       | `/cds/<workspace>/<folder>`     | 4 hourly, 7 daily, 4 weekly | `/cds/<workspace>/.zfs/snapshot/<SNAPSHOT>/<folder>`            |
       | `/cds2/<workspace>/<folder>`     | 4 hourly, 7 daily, 4 weekly | `/cds2/<workspace>/.zfs/snapshot/<SNAPSHOT>/<folder>`            |
-      | `/cds3/<workspace>/<folder>`     | 12 hourly, 7 daily, 4 weekly, 2 monthly | `/cds3/<workspace>/.snap/<SNAPSHOT>/<folder>`            |
+      | `/cds3/<workspace>/<folder>`     | 7 daily, 4 weekly, 2 monthly | `/cds3/<workspace>/.snap/<SNAPSHOT>/<folder>`            |
       
 The `<SNAPSHOT>` refers to the backup time, e.g., `daily-YYYY-MM-DD.0Xh30` or `weekly-YYYY-MM-DD.0Xh30`. To restore a file from a snapshot, simply copy it to where you want it with either `cp` or `rsync` or any other preferred method. 
 
