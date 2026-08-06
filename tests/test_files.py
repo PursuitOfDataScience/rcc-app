@@ -1,4 +1,7 @@
 import json
+import sys
+import types
+from types import SimpleNamespace
 
 import pytest
 
@@ -66,6 +69,76 @@ def test_corrupt_pdf_is_reported_not_raised():
     attachment, error = files.process("broken.pdf", b"%PDF-1.4 then garbage")
     assert attachment is None
     assert error
+
+
+class TestPdfExtraction:
+    """Injects a fake pypdf so these paths are covered whether or not it is installed.
+
+    Without this the assertions above pass via the "PDF support is unavailable"
+    ImportError branch, leaving the real extraction paths untested.
+    """
+
+    @staticmethod
+    def _install(monkeypatch, reader):
+        module = types.ModuleType("pypdf")
+        module.PdfReader = reader
+        monkeypatch.setitem(sys.modules, "pypdf", module)
+        # Force the pypdf fallback rather than PyMuPDF.
+        monkeypatch.setitem(sys.modules, "pymupdf", None)
+
+    def test_a_readable_pdf_is_extracted(self, monkeypatch):
+        class Reader:
+            pages = [SimpleNamespace(extract_text=lambda: "Slurm job guide")]
+
+            def __init__(self, stream):
+                pass
+
+        self._install(monkeypatch, Reader)
+        attachment, error = files.process("guide.pdf", b"%PDF-1.4")
+        assert error is None
+        assert attachment.kind == "pdf"
+        assert attachment.pages == 1
+        assert attachment.text == "Slurm job guide"
+        assert "1 page" in attachment.summary
+
+    def test_a_scanned_pdf_asks_for_ocr(self, monkeypatch):
+        class Reader:
+            pages = [SimpleNamespace(extract_text=lambda: "")]
+
+            def __init__(self, stream):
+                pass
+
+        self._install(monkeypatch, Reader)
+        attachment, error = files.process("scan.pdf", b"%PDF-1.4")
+        assert attachment is None
+        assert "OCR" in error
+
+    def test_a_corrupt_pdf_reports_rather_than_raising(self, monkeypatch):
+        class Reader:
+            def __init__(self, stream):
+                raise ValueError("EOF marker not found")
+
+        self._install(monkeypatch, Reader)
+        attachment, error = files.process("broken.pdf", b"%PDF-1.4 garbage")
+        assert attachment is None
+        assert "corrupt or encrypted" in error
+
+    def test_pages_are_joined_in_order(self, monkeypatch):
+        class Reader:
+            pages = [
+                SimpleNamespace(extract_text=lambda: "first"),
+                SimpleNamespace(extract_text=lambda: None),  # pypdf can return None
+                SimpleNamespace(extract_text=lambda: "third"),
+            ]
+
+            def __init__(self, stream):
+                pass
+
+        self._install(monkeypatch, Reader)
+        attachment, error = files.process("multi.pdf", b"%PDF-1.4")
+        assert error is None
+        assert attachment.text == "first\n\nthird"
+        assert attachment.pages == 3
 
 
 def test_attachment_context_frames_content_as_data():
