@@ -134,6 +134,8 @@ for key, default in (
     ("error", None),
     ("error_detail", ""),
     ("model", ""),
+    ("notice", ""),
+    ("failed_over", False),
 ):
     st.session_state.setdefault(key, default)
 
@@ -161,6 +163,13 @@ def current_model() -> providers.Model:
 
 MODEL = current_model()
 st.session_state.model = MODEL.key
+
+
+def fallback_model() -> providers.Model | None:
+    """First model from a *different* provider — the way round a spent quota."""
+    return next(
+        (option for option in MODELS if option.provider != MODEL.provider), None
+    )
 
 
 # --- rendering helpers -----------------------------------------------------
@@ -414,6 +423,8 @@ with st.container(key="topbar"):
                 st.session_state.processing = False
                 st.session_state.attachment = None
                 st.session_state.error = None
+                st.session_state.notice = ""
+                st.session_state.failed_over = False
                 st.session_state.uploader_key += 1
                 st.rerun()
 
@@ -471,6 +482,12 @@ else:
             render_user(message)
         elif message.get("text"):
             render_assistant(position, message)
+
+    if st.session_state.notice:
+        st.markdown(
+            f'<div class="notice">{html.escape(st.session_state.notice)}</div>',
+            unsafe_allow_html=True,
+        )
 
     if st.session_state.error and not st.session_state.processing:
         st.markdown(
@@ -636,22 +653,40 @@ if st.session_state.processing:
                 "model": MODEL.key,
             }
         )
+        st.session_state.failed_over = False
         if runner.queries and not sources:
             feedback.record_miss(runner.queries, st.session_state.messages[-2]["text"])
 
     except llm.AssistantError as exc:
         status.empty()
         answer.empty()
-        # An "unknown" kind means classify() had nothing to go on, so log the full
-        # traceback — otherwise the only signal is a generic message on screen.
-        logger.error(
-            "Turn failed (%s): %r",
-            exc.kind,
-            exc.original,
-            exc_info=exc.original if exc.kind == "unknown" else None,
-        )
-        st.session_state.error = exc.user_message
-        st.session_state.error_detail = _detail(exc.original or exc)
+        alternative = fallback_model()
+        if (
+            exc.kind in ("quota", "auth")
+            and alternative is not None
+            and not st.session_state.failed_over
+        ):
+            # Out of credit on one provider is exactly what the second one is for.
+            # Once per turn, so a bad key cannot ping-pong between providers.
+            logger.info("%s unusable (%s); failing over to %s",
+                        MODEL.key, exc.kind, alternative.key)
+            st.session_state.failed_over = True
+            st.session_state.failover_to = alternative.key
+            st.session_state.notice = (
+                f"{MODEL.label} was unavailable ({exc.kind}), so this answer came "
+                f"from {alternative.label}. Change it with the selector at the top."
+            )
+        else:
+            # An "unknown" kind means classify() had nothing to go on, so log the
+            # full traceback — otherwise the only signal is a generic message.
+            logger.error(
+                "Turn failed (%s): %r",
+                exc.kind,
+                exc.original,
+                exc_info=exc.original if exc.kind == "unknown" else None,
+            )
+            st.session_state.error = exc.user_message
+            st.session_state.error_detail = _detail(exc.original or exc)
     except Exception as exc:  # last-resort guard so the UI never dies
         status.empty()
         answer.empty()
@@ -659,5 +694,11 @@ if st.session_state.processing:
         st.session_state.error = llm.classify(exc).user_message
         st.session_state.error_detail = _detail(exc)
     finally:
-        st.session_state.processing = False
+        switch = st.session_state.pop("failover_to", None)
+        if switch:
+            st.session_state.model = switch
+            st.session_state.error = None
+            st.session_state.error_detail = ""
+        else:
+            st.session_state.processing = False
         st.rerun()

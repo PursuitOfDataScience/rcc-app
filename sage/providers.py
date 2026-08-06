@@ -39,8 +39,12 @@ class Model:
 
     @property
     def label(self) -> str:
-        pretty = self.id.replace("-", " ").replace("_", " ")
-        return f"{'Mistral' if self.provider == MISTRAL else 'OpenCode Zen'} · {pretty}"
+        """Short enough to fit the picker without being ellipsed."""
+        short = self.id
+        if self.provider == MISTRAL and short.startswith("mistral-"):
+            short = short[len("mistral-") :]  # "Mistral · mistral-small" reads badly
+        prefix = "Mistral" if self.provider == MISTRAL else "Zen"
+        return f"{prefix} · {short}"
 
     @property
     def supports_tools(self) -> bool:

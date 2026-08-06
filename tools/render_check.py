@@ -131,8 +131,12 @@ body {{ margin: 0; background: {BACKGROUNDS[scheme]}; color: {FOREGROUNDS[scheme
 .stChatInput textarea {{ width: 100%; background: transparent; border: 0;
                         color: inherit; font: inherit; resize: none; }}
 .stChatMessage {{ display: flex; }}
-[data-testid="stSelectbox"] {{ font-size: 0.9rem; }}
-[data-baseweb="select"] > div {{ padding: 0.3rem 0.6rem; border-radius: 6px;
+/* Streamlit's selectbox is a block filling its column; it has no intrinsic
+   width, which is exactly what made a percentage width collapse to zero. */
+[data-testid="stSelectbox"] {{ font-size: 0.9rem; width: 100%; }}
+[data-baseweb="select"] {{ width: 100%; }}
+[data-baseweb="select"] > div {{ padding: 0.3rem 0.6rem; border-radius: 6px; width: 100%;
+   overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
    background: {'#262730' if scheme == 'dark' else '#f0f2f6'};
    border: 1px solid {'#3a3b46' if scheme == 'dark' else '#d5d6d8'}; }}
 #host-bar {{ position: fixed; top: 0; right: 0; width: {HOST_BAR_W}px;
@@ -155,7 +159,7 @@ def _cards_html() -> str:
 TOPBAR = """<div class="st-key-topbar element-container">
   <div data-testid="stHorizontalBlock">
     <div data-testid="stColumn"><div data-testid="stSelectbox">
-      <div data-baseweb="select"><div>OpenCode Zen · deepseek v4 flash free</div></div>
+      <div data-baseweb="select"><div><span>Zen · deepseek-v4-flash-free</span></div></div>
     </div></div>
     <div data-testid="stColumn"><div class="stButton"><button><p>ℹ️</p></button></div></div>
     <div data-testid="stColumn"><div class="stButton"><button><p>🗑️</p></button></div></div>
@@ -379,7 +383,8 @@ def audit(data, scenario, scheme, width, scrolled: bool, generating=False) -> li
                 f"{where}: {sel} collides with the host toolbar "
                 f"({data['hostBar'] - b['top']}px under it)"
             )
-        if b["overflowX"] > 1 and "pre" not in sel:
+        # A <select> ellipsing a long model id is intended, and <pre> scrolls.
+        if b["overflowX"] > 1 and "pre" not in sel and "select" not in sel:
             problems.append(f"{where}: {sel} overflows horizontally by {b['overflowX']}px")
         limit = LINE_LIMITS.get(sel)
         if limit and b["lines"] > limit and width >= 641:
@@ -391,6 +396,13 @@ def audit(data, scenario, scheme, width, scrolled: bool, generating=False) -> li
                 problems.append(
                     f"{where}: {sel} contrast {b['contrast']}:1 (needs {need}:1)"
                 )
+
+    picker = els.get('.st-key-topbar [data-baseweb="select"] > div')
+    if picker and picker["right"] - picker["left"] < 80:
+        problems.append(
+            f"{where}: the model picker is only "
+            f"{picker['right'] - picker['left']}px wide (collapsed)"
+        )
 
     if generating:
         # The question must stay on screen while its answer streams in. Pinning to

@@ -13,11 +13,13 @@ class TestModel:
         assert model.key == "opencode:deepseek-v4-flash-free"
         assert providers.parse_key(model.key) == model
 
-    def test_labels_name_the_provider(self):
-        assert providers.Model("mistral", "mistral-small-latest").label.startswith(
-            "Mistral"
-        )
-        assert providers.Model("opencode", "big-pickle").label.startswith("OpenCode Zen")
+    def test_labels_name_the_provider_and_stay_short(self):
+        mistral = providers.Model("mistral", "mistral-small-latest").label
+        zen = providers.Model("opencode", "deepseek-v4-flash-free").label
+        assert mistral == "Mistral · small-latest", "the doubled prefix reads badly"
+        assert zen == "Zen · deepseek-v4-flash-free"
+        # Long labels get ellipsed in a 240px picker, so keep them under ~30 chars.
+        assert max(len(mistral), len(zen)) <= 30
 
     @pytest.mark.parametrize("bad", ["", "nope", "mistral:", ":model", "other:m"])
     def test_malformed_keys_are_rejected(self, bad):
