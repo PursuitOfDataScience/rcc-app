@@ -186,8 +186,12 @@ python train.py --epochs 100 --batch-size 64 --output /scratch/midway3/$USER/run
 </div>"""
 
 
+# app.py injects this on the welcome screen only (see the comment there).
+LANDING_OVERRIDE = ("<style>[data-testid='stMainBlockContainer'], "
+                    ".main .block-container{padding-bottom: 10rem !important;}</style>")
+
 SCENARIOS = {
-    "landing": TOPBAR + f"""
+    "landing": LANDING_OVERRIDE + TOPBAR + f"""
 <div class="element-container"><div class="stMarkdown">
   <div class="welcome">
     <h1 class="welcome-title">What can I help you with?</h1>

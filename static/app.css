@@ -674,6 +674,21 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
     outline-offset: 2px !important;
 }
 
+/* ===== SHORT VIEWPORTS =====
+ * Claw back vertical space so the welcome screen fits without scrolling on a
+ * laptop window that is not full height. Scrolling there is what pushes the
+ * title up under the browser and host chrome. */
+@media (max-height: 720px) {
+    .welcome { margin-top: 0 !important; padding-top: 0.25rem; }
+    .welcome-title { font-size: clamp(1.35rem, 3.4vw, 1.8rem) !important; }
+    .welcome-subtitle { margin-bottom: 0.35rem; }
+    [class*="st-key-example-card-"] button { height: 48px !important; min-height: 48px !important; }
+    .st-key-examples [data-testid="stHorizontalBlock"] { margin-bottom: 0.45rem !important; }
+    /* Still has to clear the host toolbar (~46px); the space is clawed back from
+     * the card heights and the welcome margins above, not from this. */
+    .main .block-container, [data-testid="stMainBlockContainer"] { padding-top: 3.5rem !important; }
+}
+
 /* ===== MOBILE ===== */
 @media (max-width: 640px) {
     .st-key-examples [data-testid="stHorizontalBlock"] {
