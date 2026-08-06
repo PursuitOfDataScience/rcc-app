@@ -152,8 +152,17 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
 .st-key-topbar [data-testid="stHorizontalBlock"] { gap: 0.4rem !important; width: auto !important; }
 .st-key-topbar [data-testid="stColumn"] { width: auto !important; flex: 0 0 auto !important; min-width: 0 !important; }
 
-/* Model picker. Compact so the fixed top bar never crowds the conversation. */
-.st-key-topbar [data-testid="stSelectbox"] { width: 100% !important; max-width: 230px; }
+/* Model picker. Compact so the fixed top bar never crowds the conversation.
+ *
+ * The width must be explicit, not a percentage: the column above is
+ * `flex: 0 0 auto` (sized for the emoji buttons), so `width: 100%` resolves
+ * against a zero-width parent and the picker renders invisible. The :has()
+ * rule is belt-and-braces for browsers that support it. */
+.st-key-topbar [data-testid="stSelectbox"] { width: 240px !important; min-width: 240px; }
+.st-key-topbar [data-testid="stColumn"]:has([data-testid="stSelectbox"]) {
+    flex: 0 0 240px !important;
+    width: 240px !important;
+}
 
 .st-key-topbar [data-baseweb="select"] > div {
     background: var(--control-bg) !important;
@@ -199,7 +208,7 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
 }
 
 .welcome-title {
-    font-size: clamp(1.5rem, 4.2vw, 2.2rem) !important;
+    font-size: clamp(1.7rem, 4.4vw, 2.4rem) !important;
     font-weight: 700;
     letter-spacing: -0.01em;
     /* `background-clip: text` clips to the text box, so a tight line-height cuts
@@ -218,7 +227,7 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
 }
 
 .welcome-subtitle {
-    font-size: clamp(0.9rem, 2vw, 1.05rem);
+    font-size: clamp(0.95rem, 2.1vw, 1.12rem);
     color: var(--text-secondary);
     /* Wide enough to keep the one-line subtitle on one line; it still wraps
      * gracefully on narrow screens. */
@@ -267,7 +276,7 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
     background: var(--card-bg) !important;
     border: 1px solid var(--card-border) !important;
     border-radius: var(--radius-md) !important;
-    font-size: clamp(0.78rem, 1.8vw, 0.88rem) !important;
+    font-size: clamp(0.84rem, 1.9vw, 0.95rem) !important;
     font-weight: 500 !important;
     line-height: 1.3 !important;
     color: var(--text-primary) !important;
@@ -655,6 +664,18 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
     40% { transform: scale(1); opacity: 1; }
 }
 
+/* ===== NOTICE (e.g. provider failover) ===== */
+.notice {
+    background: var(--chip-bg);
+    border: 1px solid var(--chip-border);
+    border-left: 3px solid var(--brand-line);
+    border-radius: var(--radius-sm);
+    padding: 0.5rem 0.85rem;
+    margin: 0 0 var(--space-md);
+    font-size: 0.82rem;
+    color: var(--text-secondary);
+}
+
 /* ===== ERRORS ===== */
 .error-card {
     background: var(--danger-bg);
@@ -696,7 +717,7 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
  * title up under the browser and host chrome. */
 @media (max-height: 720px) {
     .welcome { margin-top: 0 !important; padding-top: 0.25rem; }
-    .welcome-title { font-size: clamp(1.35rem, 3.4vw, 1.8rem) !important; }
+    .welcome-title { font-size: clamp(1.6rem, 3.9vw, 2.1rem) !important; }
     .welcome-subtitle { margin-bottom: 0.35rem; }
     [class*="st-key-example-card-"] button { height: 48px !important; min-height: 48px !important; }
     .st-key-examples [data-testid="stHorizontalBlock"] { margin-bottom: 0.45rem !important; }
@@ -720,7 +741,11 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
      * cannot sit beside it — drop them below it instead, and give the content
      * enough top padding to clear both. */
     .st-key-topbar { top: 52px; left: 8px; right: 8px; }
-    .st-key-topbar [data-testid="stSelectbox"] { max-width: none; }
+    .st-key-topbar [data-testid="stSelectbox"] { width: auto !important; min-width: 0; flex: 1; }
+    .st-key-topbar [data-testid="stColumn"]:has([data-testid="stSelectbox"]) {
+        flex: 1 1 auto !important;
+        width: auto !important;
+    }
     .main .block-container, [data-testid="stMainBlockContainer"] { padding-top: 6rem !important; }
     .welcome { margin-top: 4vh; }
 }

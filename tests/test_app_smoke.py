@@ -302,6 +302,64 @@ class TestToollessModels:
         assert stub.session_state["error"] is None
 
 
+class TestQuotaFailover:
+    """A spent quota on one provider should not dead-end the app."""
+
+    def session(self):
+        return {
+            "messages": [{"role": "user", "text": "what can you do?",
+                          "attachment": None}],
+            "processing": True,
+            "model": "mistral:m1",
+        }
+
+    @staticmethod
+    def _payment_required():
+        error = RuntimeError('API error occurred: Status 402. '
+                             'Body: {"detail":"Check your subscription"}')
+        error.status_code = 402
+        return error
+
+    def test_402_is_reported_as_an_actionable_quota_error(self):
+        assert llm.classify(self._payment_required()).kind == "quota"
+        assert "selector" in llm.classify(self._payment_required()).user_message
+
+    def test_quota_is_not_retried_against_the_same_provider(self):
+        assert not llm.classify(self._payment_required()).retryable
+
+    def test_a_spent_quota_switches_to_the_other_provider(self, monkeypatch):
+        mistral = ScriptedProvider([], name="mistral", models=("m1",),
+                                   error=self._payment_required())
+        zen = ScriptedProvider([], name="opencode", models=("deepseek-v4-flash-free",))
+        stub, _m = run_app(monkeypatch, client=mistral, extra={"opencode": zen},
+                           session=self.session(), opencode=True)
+        assert stub.session_state["model"] == "opencode:deepseek-v4-flash-free"
+        assert stub.session_state["processing"] is True, "the turn should be retried"
+        assert stub.session_state["error"] is None
+        assert "unavailable" in stub.session_state["notice"]
+
+    def test_it_only_fails_over_once_so_it_cannot_ping_pong(self, monkeypatch):
+        mistral = ScriptedProvider([], name="mistral", models=("m1",),
+                                   error=self._payment_required())
+        zen = ScriptedProvider([], name="opencode", models=("z1",),
+                               error=self._payment_required())
+        session = self.session()
+        session["failed_over"] = True
+        session["model"] = "opencode:z1"
+        stub, _m = run_app(monkeypatch, client=mistral, extra={"opencode": zen},
+                           session=session, opencode=True)
+        assert stub.session_state["processing"] is False
+        assert stub.session_state["error"], "the second failure must surface"
+
+    def test_with_one_provider_the_error_surfaces_instead(self, monkeypatch):
+        mistral = ScriptedProvider([], name="mistral", models=("m1",),
+                                   error=self._payment_required())
+        stub, _m = run_app(monkeypatch, client=mistral, session=self.session())
+        assert stub.session_state["processing"] is False
+        assert "out of credit" in stub.session_state["error"]
+        assert "402" in stub.session_state["error_detail"]
+
+
 class TestConversationRendering:
     def test_prior_answers_render_with_resolved_links(self, monkeypatch):
         session = {

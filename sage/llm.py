@@ -27,6 +27,8 @@ _MESSAGES = {
     "auth": "The assistant is not configured correctly (API key rejected). "
             "Please tell RCC staff.",
     "rate_limit": "The assistant is busy right now. Please wait a moment and retry.",
+    "quota": "This model is out of credit or its quota is used up. "
+             "Pick a different model from the selector at the top of the page.",
     "context": "This conversation got too long for the model. "
                "Clear the chat and ask again.",
     "network": "Could not reach the assistant. Check the connection and retry.",
@@ -62,8 +64,15 @@ def classify(exc: BaseException) -> AssistantError:
 
     if status in (401, 403) or "unauthorized" in text or "invalid api key" in text:
         kind = "auth"
-    elif (status == 429 or "rate limit" in text or "too many requests" in text
-          or "quota" in text or "insufficient" in text or "credit" in text):
+    elif status == 402 or any(
+        needle in text
+        for needle in ("quota", "insufficient", "credit", "billing",
+                       "check your subscription", "payment")
+    ):
+        # Out of credit does not recover by waiting, so it is deliberately not
+        # retryable — switching provider is the only useful action.
+        kind = "quota"
+    elif status == 429 or "rate limit" in text or "too many requests" in text:
         kind = "rate_limit"
     elif (
         ("context" in text and ("length" in text or "token" in text))
