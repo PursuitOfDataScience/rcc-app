@@ -28,7 +28,7 @@ _MESSAGES = {
             "Please tell RCC staff.",
     "rate_limit": "The assistant is busy right now. Please wait a moment and retry.",
     "quota": "This model is out of credit or its quota is used up. "
-             "Pick a different model from the selector at the top of the page.",
+             "Switch to another model and try again.",
     "context": "This conversation got too long for the model. "
                "Clear the chat and ask again.",
     "network": "Could not reach the assistant. Check the connection and retry.",

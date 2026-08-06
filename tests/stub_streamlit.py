@@ -58,6 +58,10 @@ class StubStreamlit(ModuleType):
         super().__init__("streamlit")
         self.session_state = SessionState()
         self.events: list[tuple[str, object]] = []
+        self.button_labels: dict[str, str] = {}
+        # `help=` renders as a hover tooltip. Recorded so tests can hold the line
+        # on not putting one on a control that already carries its own label.
+        self.tooltips: dict[str, str] = {}
         self.markdown_html: list[str] = []
         self.stream_chunks: list[int] = []
         self.errors: list[str] = []
@@ -112,6 +116,9 @@ class StubStreamlit(ModuleType):
     def caption(self, body, **_kwargs):
         self.events.append(("caption", body))
 
+    def code(self, body, **_kwargs):
+        self.events.append(("code", body))
+
     def write_stream(self, stream):
         # Record the chunk count so tests can prove a turn actually streamed
         # rather than arriving as one block.
@@ -120,8 +127,11 @@ class StubStreamlit(ModuleType):
         return "".join(parts)
 
     # --- widgets ----------------------------------------------------------
-    def button(self, label, key=None, **_kwargs):
+    def button(self, label, key=None, help=None, **_kwargs):  # noqa: A002
         self.events.append(("button", key or label))
+        self.button_labels[key or label] = label
+        if help:
+            self.tooltips[key or label] = help
         return bool(self._buttons.get(key, False))
 
     def file_uploader(self, label, key=None, **_kwargs):

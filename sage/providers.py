@@ -166,10 +166,22 @@ class MistralProvider:
 class OpenAICompatProvider:
     """Any OpenAI-compatible `/chat/completions` endpoint."""
 
-    def __init__(self, api_key: str, base_url: str, name: str = OPENCODE) -> None:
+    def __init__(
+        self,
+        api_key: str,
+        base_url: str,
+        name: str = OPENCODE,
+        preferred: tuple[str, ...] | None = None,
+    ) -> None:
         self.name = name
         self._key = api_key
         self._base = base_url.rstrip("/")
+        # Discovery returns the catalogue in arbitrary order. This is the order
+        # we would choose, and it decides both the picker's default and what an
+        # automatic failover lands on — so it must not be alphabetical.
+        self._preferred = (
+            config.OPENCODE_MODELS if preferred is None else tuple(preferred)
+        )
 
     def _headers(self) -> dict:
         return {
@@ -193,12 +205,17 @@ class OpenAICompatProvider:
                 if isinstance(entry, dict) and entry.get("id")
             ]
             if found:
-                return [Model(self.name, model_id) for model_id in sorted(found)]
+                return [Model(self.name, model_id) for model_id in self._order(found)]
             logger.warning("%s returned no models; using the configured list", self.name)
         except Exception as exc:
             logger.warning("Could not list %s models (%s); using configured list",
                            self.name, exc)
-        return [Model(self.name, model_id) for model_id in config.OPENCODE_MODELS]
+        return [Model(self.name, model_id) for model_id in self._preferred]
+
+    def _order(self, found: list[str]) -> list[str]:
+        """Preferred models first, in preferred order; then the rest, alphabetically."""
+        known = [model_id for model_id in self._preferred if model_id in found]
+        return known + sorted(set(found) - set(known))
 
     def stream(self, model, messages, tools) -> Iterator[Chunk]:
         import httpx  # noqa: PLC0415
