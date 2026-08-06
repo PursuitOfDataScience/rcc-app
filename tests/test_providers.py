@@ -179,6 +179,24 @@ class TestOpenAICompat:
         assert [model.id for model in found] == list(config.OPENCODE_MODELS)
         assert all(model.provider == providers.OPENCODE for model in found)
 
+    def test_discovery_keeps_the_preferred_order_and_appends_the_rest(self):
+        """Order is not cosmetic: it picks the session default *and* what an
+        automatic failover lands on. Sorting alphabetically made a spent Mistral
+        quota fail over to `big-pickle` rather than the free deepseek model."""
+        provider = providers.OpenAICompatProvider(
+            "k", "https://x.test/v1", preferred=("deepseek-v4-flash-free", "mimo-v2.5")
+        )
+        ordered = provider._order(["zzz-model", "mimo-v2.5", "big-pickle",
+                                   "deepseek-v4-flash-free"])
+        assert ordered == ["deepseek-v4-flash-free", "mimo-v2.5",
+                           "big-pickle", "zzz-model"]
+
+    def test_a_preferred_model_the_endpoint_no_longer_serves_is_dropped(self):
+        provider = providers.OpenAICompatProvider(
+            "k", "https://x.test/v1", preferred=("retired", "kept")
+        )
+        assert provider._order(["kept", "new"]) == ["kept", "new"]
+
 
 def test_build_rejects_an_unknown_provider():
     with pytest.raises(ValueError, match="Unknown provider"):

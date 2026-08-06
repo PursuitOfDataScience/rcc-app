@@ -93,6 +93,13 @@ class TestWelcome:
         assert "Sage reads the docs" not in html
         assert "Run commands or read files on the cluster" in html
 
+    def test_no_hover_tooltip_on_a_control_that_already_has_a_label(self, monkeypatch):
+        """A tooltip repeating a card's own text is a black box chasing the
+        cursor. Only the icon-only controls, which have nothing else to go on,
+        keep theirs."""
+        stub, _module = run_app(monkeypatch)
+        assert not [key for key in stub.tooltips if str(key).startswith("example-")]
+
     def test_example_cards_get_stable_keyed_containers(self, monkeypatch):
         """CSS staggers on these keys; :nth-child never worked for Streamlit buttons."""
         stub, _module = run_app(monkeypatch)
@@ -204,10 +211,15 @@ class TestModelPicker:
     def session(self):
         return {"messages": [], "processing": False}
 
+    @staticmethod
+    def _offered(stub):
+        return {key: label for key, label in stub.button_labels.items()
+                if str(key).startswith("pick-")}
+
     def test_no_picker_when_only_one_model_is_available(self, monkeypatch):
         provider = ScriptedProvider([], models=("only-one",))
         stub, _m = run_app(monkeypatch, client=provider, session=self.session())
-        assert not [e for e in stub.events if e[0] == "selectbox"]
+        assert not self._offered(stub)
 
     def test_picker_lists_every_model_from_every_configured_provider(self, monkeypatch):
         mistral = ScriptedProvider([], name="mistral", models=("mistral-small-latest",))
@@ -215,12 +227,40 @@ class TestModelPicker:
                                models=("deepseek-v4-flash-free", "big-pickle"))
         stub, _m = run_app(monkeypatch, client=mistral, extra={"opencode": zen},
                            session=self.session(), opencode=True)
-        picks = [e for e in stub.events if e[0] == "selectbox"]
-        assert picks, "expected a model picker"
-        offered = picks[0][1][1]
-        assert "mistral:mistral-small-latest" in offered
-        assert "opencode:deepseek-v4-flash-free" in offered
-        assert "opencode:big-pickle" in offered
+        offered = " | ".join(self._offered(stub).values())
+        assert offered, "expected a model picker"
+        assert "Mistral · small-latest" in offered
+        assert "Zen · deepseek-v4-flash-free" in offered
+        assert "Zen · big-pickle" in offered
+
+    def test_the_trigger_names_the_model_in_use(self, monkeypatch):
+        """Otherwise the only way to see which model answers is to open the menu."""
+        mistral = ScriptedProvider([], name="mistral", models=("mistral-small-latest",))
+        zen = ScriptedProvider([], name="opencode", models=("deepseek-v4-flash-free",))
+        stub, _m = run_app(monkeypatch, client=mistral, extra={"opencode": zen},
+                           session=self.session(), opencode=True)
+        assert ("popover", "Mistral · small-latest") in stub.events
+
+    def test_it_is_not_a_selectbox(self, monkeypatch):
+        """A selectbox kept its own value and clobbered an automatic failover on
+        the very next rerun; it also had no intrinsic width, so it rendered
+        invisible in the flex top bar. Buttons have neither problem."""
+        mistral = ScriptedProvider([], name="mistral", models=("m1",))
+        zen = ScriptedProvider([], name="opencode", models=("z1",))
+        stub, _m = run_app(monkeypatch, client=mistral, extra={"opencode": zen},
+                           session=self.session(), opencode=True)
+        assert not [e for e in stub.events if e[0] == "selectbox"]
+
+    def test_choosing_a_model_switches_to_it(self, monkeypatch):
+        mistral = ScriptedProvider([], name="mistral", models=("m1",))
+        zen = ScriptedProvider([], name="opencode", models=("z1",))
+        session = self.session() | {"failed_over": True, "notice": "stale"}
+        stub, _m = run_app(monkeypatch, client=mistral, extra={"opencode": zen},
+                           session=session, opencode=True, buttons={"pick-1": True})
+        assert stub.session_state["model"] == "opencode:z1"
+        # A deliberate choice re-arms the automatic one and drops its message.
+        assert stub.session_state["failed_over"] is False
+        assert stub.session_state["notice"] == ""
 
     def test_the_selected_model_is_the_one_used(self, monkeypatch):
         mistral = ScriptedProvider([], name="mistral", models=("mistral-small-latest",))
@@ -322,7 +362,11 @@ class TestQuotaFailover:
 
     def test_402_is_reported_as_an_actionable_quota_error(self):
         assert llm.classify(self._payment_required()).kind == "quota"
-        assert "selector" in llm.classify(self._payment_required()).user_message
+        # It must say what to do, without pointing at a control by position —
+        # the error card now carries a one-click switch of its own.
+        assert "Switch to another model" in llm.classify(
+            self._payment_required()
+        ).user_message
 
     def test_quota_is_not_retried_against_the_same_provider(self):
         assert not llm.classify(self._payment_required()).retryable
@@ -337,6 +381,107 @@ class TestQuotaFailover:
         assert stub.session_state["processing"] is True, "the turn should be retried"
         assert stub.session_state["error"] is None
         assert "unavailable" in stub.session_state["notice"]
+
+    def test_the_notice_does_not_claim_an_answer_that_has_not_happened(
+        self, monkeypatch
+    ):
+        """It used to say the answer "came from" a model that had not run yet."""
+        mistral = ScriptedProvider([], name="mistral", models=("m1",),
+                                   error=self._payment_required())
+        zen = ScriptedProvider([], name="opencode", models=("z1",))
+        stub, _m = run_app(monkeypatch, client=mistral, extra={"opencode": zen},
+                           session=self.session(), opencode=True)
+        assert "Retrying with Zen · z1" in stub.session_state["notice"]
+        assert "came from" not in stub.session_state["notice"]
+        assert stub.session_state["switched_from"] == ("Mistral · m1", "quota")
+
+    def test_the_notice_turns_past_tense_once_the_answer_lands(self, monkeypatch):
+        """The state a failover rerun arrives in: switched, and about to answer."""
+        zen = ScriptedProvider([[event("Zen answered.")]], name="opencode",
+                               models=("z1",))
+        mistral = ScriptedProvider([], name="mistral", models=("m1",))
+        session = self.session() | {
+            "model": "opencode:z1",
+            "failed_over": True,
+            "switched_from": ("Mistral · m1", "quota"),
+            "notice": "Mistral · m1 is unavailable (out of credit). Retrying…",
+        }
+        stub, _m = run_app(monkeypatch, client=mistral, extra={"opencode": zen},
+                           session=session, opencode=True)
+        notice = stub.session_state["notice"]
+        assert "was unavailable (out of credit)" in notice
+        assert "Zen · z1 answered instead" in notice
+        assert stub.session_state["switched_from"] is None
+        assert stub.session_state["error"] is None
+
+    def test_a_failed_failover_leaves_no_notice_contradicting_the_error(
+        self, monkeypatch
+    ):
+        """A "retrying with Zen…" banner above "could not complete that request"
+        is the UI arguing with itself. One of them has to go, and it is not the
+        error."""
+        zen = ScriptedProvider([], name="opencode", models=("z1",),
+                               error=self._payment_required())
+        mistral = ScriptedProvider([], name="mistral", models=("m1",))
+        session = self.session() | {
+            "model": "opencode:z1",
+            "failed_over": True,
+            "switched_from": ("Mistral · m1", "quota"),
+            "notice": "Mistral · m1 is unavailable (out of credit). Retrying…",
+        }
+        stub, _m = run_app(monkeypatch, client=mistral, extra={"opencode": zen},
+                           session=session, opencode=True)
+        assert stub.session_state["error"], "the second failure must surface"
+        assert stub.session_state["notice"] == ""
+        assert stub.session_state["switched_from"] is None
+        assert "opencode:z1" in stub.session_state["error_detail"], (
+            "the details must name the model that actually failed"
+        )
+
+    def test_the_error_card_offers_the_switch_it_tells_you_to_make(self, monkeypatch):
+        """Advice to "switch to another model" is useless if the control is at the
+        other end of the page — and worse than useless if that control is the one
+        that failed to render."""
+        mistral = ScriptedProvider([], name="mistral", models=("m1",))
+        zen = ScriptedProvider([], name="opencode", models=("z1",))
+        session = self.session() | {
+            "processing": False,
+            "error": "This model is out of credit or its quota is used up.",
+            "error_detail": "HTTP 402",
+        }
+        stub, _m = run_app(monkeypatch, client=mistral, extra={"opencode": zen},
+                           session=session, opencode=True)
+        assert stub.button_labels.get("switch-model") == "→ Use Zen · z1"
+
+    def test_taking_that_switch_reruns_the_question_on_the_new_model(self, monkeypatch):
+        mistral = ScriptedProvider([], name="mistral", models=("m1",))
+        zen = ScriptedProvider([], name="opencode", models=("z1",))
+        session = self.session() | {
+            "processing": False, "error": "out of credit", "error_detail": "HTTP 402",
+            "failed_over": True,
+        }
+        stub, _m = run_app(monkeypatch, client=mistral, extra={"opencode": zen},
+                           session=session, opencode=True,
+                           buttons={"switch-model": True})
+        assert stub.session_state["model"] == "opencode:z1"
+        assert stub.session_state["processing"] is True
+        assert stub.session_state["error"] is None
+        assert stub.session_state["failed_over"] is False
+
+    def test_no_switch_button_when_there_is_nowhere_to_switch_to(self, monkeypatch):
+        provider = ScriptedProvider([], models=("m1",))
+        session = self.session() | {
+            "processing": False, "error": "boom", "error_detail": "x",
+        }
+        stub, _m = run_app(monkeypatch, client=provider, session=session)
+        assert "switch-model" not in stub.button_labels
+        assert "retry" in stub.button_labels
+
+    def test_a_clean_answer_clears_a_notice_from_an_earlier_turn(self, monkeypatch):
+        provider = ScriptedProvider([[event("Fresh answer.")]], models=("m1",))
+        session = self.session() | {"notice": "left over from two turns ago"}
+        stub, _m = run_app(monkeypatch, client=provider, session=session)
+        assert stub.session_state["notice"] == ""
 
     def test_it_only_fails_over_once_so_it_cannot_ping_pong(self, monkeypatch):
         mistral = ScriptedProvider([], name="mistral", models=("m1",),

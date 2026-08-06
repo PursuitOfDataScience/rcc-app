@@ -136,6 +136,10 @@ for key, default in (
     ("model", ""),
     ("notice", ""),
     ("failed_over", False),
+    # (label, kind) of a model an automatic failover moved off. Held until the
+    # replacement has actually answered, so the notice can never claim a switch
+    # worked while an error card below it says it did not.
+    ("switched_from", None),
 ):
     st.session_state.setdefault(key, default)
 
@@ -166,10 +170,18 @@ st.session_state.model = MODEL.key
 
 
 def fallback_model() -> providers.Model | None:
-    """First model from a *different* provider — the way round a spent quota."""
+    """First model from a *different* provider — the way round a spent quota.
+
+    `MODELS` is in preference order, so this is the best alternative, not an
+    alphabetical accident.
+    """
     return next(
         (option for option in MODELS if option.provider != MODEL.provider), None
     )
+
+
+# Why a model refused, in words a user can act on.
+REASONS = {"quota": "out of credit", "auth": "its key was rejected"}
 
 
 # --- rendering helpers -----------------------------------------------------
@@ -390,28 +402,42 @@ def render_about() -> None:
 has_messages = bool(st.session_state.messages)
 
 def render_model_picker() -> None:
-    """Switch provider/model mid-session — the way round a spent API quota."""
+    """Switch provider/model mid-session — the way round a spent API quota.
+
+    A popover of buttons rather than a selectbox, for two reasons that both bit:
+
+    * A selectbox stores its own value under its widget key. After an automatic
+      failover set `session_state.model` and reran, the selectbox handed back its
+      *previous* value on that run and switched straight back to the provider
+      that had just refused. Buttons hold no state, so a programmatic switch
+      survives.
+    * A selectbox is a block with no intrinsic width. In this `flex: 0 0 auto`
+      top bar that resolved to zero and the control was invisible. A button is
+      sized by its label, exactly like the ℹ️ and 🗑️ controls beside it.
+    """
     if len(MODELS) < 2:
         return
-    keys = [option.key for option in MODELS]
-    labels = {option.key: option.label for option in MODELS}
-    chosen = st.selectbox(
-        "Model",
-        options=keys,
-        index=keys.index(MODEL.key) if MODEL.key in keys else 0,
-        format_func=lambda key: labels[key],
-        label_visibility="collapsed",
-        key="model-select",
-        help="Which model answers. OpenCode Zen hosts free models.",
-    )
-    if chosen and chosen != st.session_state.model:
-        st.session_state.model = chosen
-        st.rerun()
+    with st.popover(MODEL.label):
+        st.caption("Answering model · Zen models are free")
+        with st.container(key="model-list"):
+            for index, option in enumerate(MODELS):
+                mark = "●" if option.key == MODEL.key else "○"
+                if st.button(
+                    f"{mark}  {option.label}",
+                    key=f"pick-{index}",
+                    use_container_width=True,
+                ):
+                    st.session_state.model = option.key
+                    # A deliberate choice clears the record of the automatic one,
+                    # so the next quota error can fail over again.
+                    st.session_state.failed_over = False
+                    st.session_state.switched_from = None
+                    st.session_state.notice = ""
+                    st.rerun()
 
 
 with st.container(key="topbar"):
-    widths = [7, 1, 1] if has_messages else [7, 1]
-    slots = st.columns(widths, gap="small")
+    slots = st.columns([1, 1, 1] if has_messages else [1, 1], gap="small")
     with slots[0]:
         render_model_picker()
     with slots[1], st.popover("ℹ️", help="About Sage"):
@@ -425,6 +451,7 @@ with st.container(key="topbar"):
                 st.session_state.error = None
                 st.session_state.notice = ""
                 st.session_state.failed_over = False
+                st.session_state.switched_from = None
                 st.session_state.uploader_key += 1
                 st.rerun()
 
@@ -462,10 +489,11 @@ if not has_messages:
                     continue
                 icon, label, question = EXAMPLES[position]
                 with column, st.container(key=f"example-card-{position}"):
+                    # No `help=`: a tooltip on a card that already says what it
+                    # does is just a black box following the cursor around.
                     if st.button(
                         f"{icon} {label}",
                         key=f"example-{position}",
-                        help=question,
                         use_container_width=True,
                     ):
                         start_new_turn(question)
@@ -502,14 +530,34 @@ else:
             # report. Collapsed so it stays out of the way for normal users.
             with st.expander("Technical details"):
                 st.code(st.session_state.error_detail, language="text")
-        columns = st.columns([1, 1, 1])
-        with columns[1]:
-            if st.button("↻ Try again", key="retry", use_container_width=True):
-                st.session_state.error = None
-                st.session_state.error_detail = ""
-                if st.session_state.messages[-1]["role"] == "user":
-                    st.session_state.processing = True
-                st.rerun()
+        # "Switch to another model" is only useful if switching is one click away
+        # from where the advice appears. Sending the user hunting for a control at
+        # the other end of the page is how a spent quota became a dead end.
+        alternative = fallback_model()
+        with st.container(key="error-actions"):
+            # Half-width each, flush with the error card above: narrower columns
+            # wrapped the model name onto a second line, which looks broken.
+            slots = st.columns(2) if alternative else st.columns([1, 2, 1])
+            with slots[0] if alternative else slots[1]:  # centred when alone
+                retry = st.button("↻ Try again", key="retry", use_container_width=True)
+            switch = False
+            if alternative:
+                with slots[1]:
+                    switch = st.button(
+                        f"→ Use {alternative.label}",
+                        key="switch-model",
+                        use_container_width=True,
+                    )
+        if retry or switch:
+            if switch:
+                st.session_state.model = alternative.key
+                st.session_state.failed_over = False
+                st.session_state.switched_from = None
+            st.session_state.error = None
+            st.session_state.error_detail = ""
+            if st.session_state.messages[-1]["role"] == "user":
+                st.session_state.processing = True
+            st.rerun()
 
 
 # --- input -----------------------------------------------------------------
@@ -535,7 +583,6 @@ if st.session_state.attachment is not None:
         if st.button(
             f"{current.icon} {current.filename} · {current.summary}  ✕",
             key="drop-attachment",
-            help="Remove this attachment",
         ):
             st.session_state.attachment = None
             st.session_state.uploader_key += 1
@@ -564,6 +611,17 @@ if st.session_state.processing:
     runner = ToolRunner(INDEX)
     final_text = ""
     question = st.session_state.messages[-1].get("text", "")
+
+    def fail(message: str, detail: str) -> None:
+        """Surface a failure — and drop any notice, which can only contradict it.
+
+        A leftover "retrying with X…" sitting above "could not complete that
+        request" is how the UI ended up arguing with itself.
+        """
+        st.session_state.error = message
+        st.session_state.error_detail = detail
+        st.session_state.notice = ""
+        st.session_state.switched_from = None
 
     def grounded(messages: list[dict]) -> list[dict]:
         """Retrieve up front, for models that cannot call tools."""
@@ -654,6 +712,17 @@ if st.session_state.processing:
             }
         )
         st.session_state.failed_over = False
+        # Only now is a failover a fact worth reporting: the replacement model
+        # has produced this answer. Any older notice belongs to an older turn.
+        switched = st.session_state.switched_from
+        st.session_state.switched_from = None
+        st.session_state.notice = (
+            f"{switched[0]} was unavailable ({REASONS.get(switched[1], switched[1])}), "
+            f"so {MODEL.label} answered instead. Pick a different one from the "
+            f"button at the top left."
+            if switched
+            else ""
+        )
         if runner.queries and not sources:
             feedback.record_miss(runner.queries, st.session_state.messages[-2]["text"])
 
@@ -672,9 +741,12 @@ if st.session_state.processing:
                         MODEL.key, exc.kind, alternative.key)
             st.session_state.failed_over = True
             st.session_state.failover_to = alternative.key
+            st.session_state.switched_from = (MODEL.label, exc.kind)
+            # Present tense: the retry has not happened yet. The past-tense
+            # version is written only once an answer actually arrives.
             st.session_state.notice = (
-                f"{MODEL.label} was unavailable ({exc.kind}), so this answer came "
-                f"from {alternative.label}. Change it with the selector at the top."
+                f"{MODEL.label} is unavailable ({REASONS.get(exc.kind, exc.kind)}). "
+                f"Retrying with {alternative.label}…"
             )
         else:
             # An "unknown" kind means classify() had nothing to go on, so log the
@@ -685,18 +757,18 @@ if st.session_state.processing:
                 exc.original,
                 exc_info=exc.original if exc.kind == "unknown" else None,
             )
-            st.session_state.error = exc.user_message
-            st.session_state.error_detail = _detail(exc.original or exc)
+            fail(exc.user_message, _detail(exc.original or exc))
     except Exception as exc:  # last-resort guard so the UI never dies
         status.empty()
         answer.empty()
         logger.exception("Unexpected failure")
-        st.session_state.error = llm.classify(exc).user_message
-        st.session_state.error_detail = _detail(exc)
+        fail(llm.classify(exc).user_message, _detail(exc))
     finally:
-        switch = st.session_state.pop("failover_to", None)
-        if switch:
-            st.session_state.model = switch
+        switch_to = st.session_state.pop("failover_to", None)
+        if switch_to:
+            # `processing` stays True: the same question runs again, on the new
+            # model, as soon as the rerun re-enters this block.
+            st.session_state.model = switch_to
             st.session_state.error = None
             st.session_state.error_detail = ""
         else:

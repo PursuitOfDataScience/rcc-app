@@ -6,7 +6,7 @@ Built with [Streamlit](https://streamlit.io/). Answers come from [Mistral](https
 
 ## Features
 
-- 🔀 **Model picker** — switch between Mistral and OpenCode Zen's free models mid-conversation, so a spent quota does not stop the app.
+- 🔀 **Model picker** — the button at the top left names the model in use; open it to switch between Mistral and OpenCode Zen's free models mid-conversation. A spent quota also fails over on its own, and the error card offers the switch in one click.
 - 🔎 **Grounded answers** — retrieves real RCC documentation; no invented commands, partitions or quotas.
 - 🔗 **Real citations** — a Sources strip under each answer deep-links to the section it came from, plus Related sections from the same page.
 - 💬 **Streaming replies** with conversation memory for follow-ups.

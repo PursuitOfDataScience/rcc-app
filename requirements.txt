@@ -1,12 +1,14 @@
 # Lower bounds are the part that matters. `mistralai` 1.x changed both the import
 # path (`from mistralai import Mistral`) and the streaming shape
-# (`chunk.data.choices[0].delta`), and `st.container(key=...)` plus `st.popover`
-# need a recent Streamlit. Generate a lockfile (`pip freeze > requirements.lock`
-# or `uv lock`) for reproducible deploys.
+# (`chunk.data.choices[0].delta`). Generate a lockfile (`pip freeze >
+# requirements.lock` or `uv lock`) for reproducible deploys.
 #
 # `anthropic` used to be listed here and was never imported. `pymupdf` was the
 # reverse: imported as `fitz` but never declared, so the fast PDF path never ran.
-streamlit>=1.40,<2
+# >=1.42 because `st.container(key=…)` — and with it the `.st-key-*` classes the
+# whole stylesheet hooks onto — is not in 1.40/1.41. On those the app raises
+# TypeError on import rather than merely rendering unstyled.
+streamlit>=1.42,<2
 mistralai>=1.0,<2
 # OpenCode Zen and any other OpenAI-compatible endpoint are called over plain
 # HTTP. mistralai pulls httpx in anyway; declared because sage/providers.py

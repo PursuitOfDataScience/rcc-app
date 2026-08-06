@@ -152,30 +152,17 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
 .st-key-topbar [data-testid="stHorizontalBlock"] { gap: 0.4rem !important; width: auto !important; }
 .st-key-topbar [data-testid="stColumn"] { width: auto !important; flex: 0 0 auto !important; min-width: 0 !important; }
 
-/* Model picker. Compact so the fixed top bar never crowds the conversation.
- *
- * The width must be explicit, not a percentage: the column above is
- * `flex: 0 0 auto` (sized for the emoji buttons), so `width: 100%` resolves
- * against a zero-width parent and the picker renders invisible. The :has()
- * rule is belt-and-braces for browsers that support it. */
-.st-key-topbar [data-testid="stSelectbox"] { width: 240px !important; min-width: 240px; }
-.st-key-topbar [data-testid="stColumn"]:has([data-testid="stSelectbox"]) {
-    flex: 0 0 240px !important;
-    width: 240px !important;
+/* Model picker. A popover trigger, i.e. a button, so it is sized by its own
+ * label. The selectbox this replaced was a block with no intrinsic width, and
+ * in this `flex: 0 0 auto` bar that resolved to zero: the control was in the
+ * DOM and invisible on screen. */
+.st-key-topbar [data-testid="stPopover"] button {
+    width: auto !important;
+    max-width: 15rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
-
-.st-key-topbar [data-baseweb="select"] > div {
-    background: var(--control-bg) !important;
-    border: 1px solid var(--control-border) !important;
-    border-radius: var(--radius-sm) !important;
-    min-height: 34px !important;
-    font-size: 0.78rem !important;
-    color: var(--text-secondary) !important;
-    backdrop-filter: blur(8px);
-}
-
-.st-key-topbar [data-baseweb="select"] > div:hover { border-color: var(--brand-line) !important; }
-.st-key-topbar [data-testid="stWidgetLabel"] { display: none !important; }
 
 .st-key-topbar button {
     background: var(--control-bg) !important;
@@ -192,6 +179,29 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
     background: var(--control-bg-hover) !important;
     border-color: var(--brand-line) !important;
     color: var(--brand-text) !important;
+}
+
+.st-key-topbar button p { font-size: 0.78rem !important; margin: 0 !important; }
+
+/* The model list lives inside a popover, and Streamlit renders popover panels in
+ * a portal at the end of <body> — outside .st-key-topbar, so none of the rules
+ * above reach it. Hence its own container key. */
+.st-key-model-list { max-height: 45vh; overflow-y: auto; }
+
+.st-key-model-list button {
+    justify-content: flex-start !important;
+    text-align: left !important;
+    background: transparent !important;
+    border: 1px solid transparent !important;
+    padding: 4px 8px !important;
+    min-height: 30px !important;
+}
+
+.st-key-model-list button p { font-size: 0.82rem !important; margin: 0 !important; }
+
+.st-key-model-list button:hover {
+    background: var(--control-bg-hover) !important;
+    border-color: var(--brand-line) !important;
 }
 
 /* ===== WELCOME ===== */
@@ -689,6 +699,16 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
 
 .error-card .error-title { font-weight: 600; color: var(--danger); margin-bottom: 4px; }
 .error-card .error-body { font-size: 0.9rem; color: var(--text-secondary); }
+
+/* "Try again" and "Use <other model>" sit side by side, and one of them carries
+ * a whole model name. Stretching them to a common height stops the pair looking
+ * ragged when only the longer label wraps. */
+.st-key-error-actions { margin-top: var(--space-sm); }
+.st-key-error-actions [data-testid="stHorizontalBlock"] { align-items: stretch; }
+.st-key-error-actions [data-testid="stColumn"] > div,
+.st-key-error-actions .element-container,
+.st-key-error-actions .stButton { height: 100%; }
+.st-key-error-actions button { height: 100%; min-height: 40px; }
 
 /* ===== ABOUT PANEL ===== */
 .about-panel { font-size: 0.86rem; color: var(--text-secondary); line-height: 1.6; }

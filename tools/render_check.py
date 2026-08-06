@@ -131,14 +131,15 @@ body {{ margin: 0; background: {BACKGROUNDS[scheme]}; color: {FOREGROUNDS[scheme
 .stChatInput textarea {{ width: 100%; background: transparent; border: 0;
                         color: inherit; font: inherit; resize: none; }}
 .stChatMessage {{ display: flex; }}
-/* Streamlit's selectbox is a block filling its column; it has no intrinsic
-   width, which is exactly what made a percentage width collapse to zero. */
-[data-testid="stSelectbox"] {{ font-size: 0.9rem; width: 100%; }}
-[data-baseweb="select"] {{ width: 100%; }}
-[data-baseweb="select"] > div {{ padding: 0.3rem 0.6rem; border-radius: 6px; width: 100%;
-   overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
-   background: {'#262730' if scheme == 'dark' else '#f0f2f6'};
-   border: 1px solid {'#3a3b46' if scheme == 'dark' else '#d5d6d8'}; }}
+/* A popover trigger is a button, and Streamlit gives it the same base styling as
+   st.button. Modelled explicitly because the markup is not `.stButton`, so the
+   rule above does not reach it — and an unstyled button would measure smaller
+   than the real one and hide an overflow. */
+[data-testid="stPopover"] button {{ padding: .4rem .75rem; border-radius: 8px;
+   background: {'#262730' if scheme == 'dark' else '#fff'};
+   color: inherit; border: 1px solid {'#3a3b46' if scheme == 'dark' else '#d5d6d8'};
+   font: inherit; cursor: pointer; }}
+[data-testid="stPopover"] button p {{ margin: 0; }}
 #host-bar {{ position: fixed; top: 0; right: 0; width: {HOST_BAR_W}px;
             height: {HOST_BAR}px; background: {BACKGROUNDS[scheme]}; z-index: 9999; }}
 """
@@ -158,9 +159,9 @@ def _cards_html() -> str:
 
 TOPBAR = """<div class="st-key-topbar element-container">
   <div data-testid="stHorizontalBlock">
-    <div data-testid="stColumn"><div data-testid="stSelectbox">
-      <div data-baseweb="select"><div><span>Zen · deepseek-v4-flash-free</span></div></div>
-    </div></div>
+    <div data-testid="stColumn"><div data-testid="stPopover"><div class="stPopover">
+      <button><p>Zen · deepseek-v4-flash-free</p></button>
+    </div></div></div>
     <div data-testid="stColumn"><div class="stButton"><button><p>ℹ️</p></button></div></div>
     <div data-testid="stColumn"><div class="stButton"><button><p>🗑️</p></button></div></div>
   </div></div>"""
@@ -223,12 +224,26 @@ SCENARIOS = {
 <div class="element-container"><div class="stMarkdown">
   <div class="error-card" role="alert">
     <div class="error-title">Could not complete that request</div>
-    <div class="error-body">Something went wrong reaching the assistant. Please try again.</div>
-  </div></div></div>""",
+    <div class="error-body">This model is out of credit or its quota is used up.
+      Switch to another model and try again.</div>
+  </div></div></div>
+<div class="st-key-error-actions element-container">
+ <div data-testid="stHorizontalBlock">
+  <div data-testid="stColumn"><div class="st-key-retry element-container">
+    <div class="stButton"><button><p>↻ Try again</p></button></div></div></div>
+  <div data-testid="stColumn"><div class="st-key-switch-model element-container">
+    <div class="stButton"><button><p>→ Use Zen · deepseek-v4-flash-free</p></button></div></div></div>
+ </div></div>""",
 }
 
 # Elements every scenario should keep clear of the chrome, and their line budgets.
-LINE_LIMITS = {".welcome-subtitle": 1, **{f".st-key-example-card-{i} button p": 1 for i in range(6)}}
+LINE_LIMITS = {
+    ".welcome-subtitle": 1,
+    # Two lines is fine for an error action; three means the label no longer fits
+    # its column and should be shortened rather than allowed to sprawl.
+    ".st-key-retry button p": 1, ".st-key-switch-model button p": 2,
+    **{f".st-key-example-card-{i} button p": 1 for i in range(6)},
+}
 
 MEASURE = """
 <script>
@@ -311,6 +326,9 @@ setTimeout(snapshot, 700);
 </script>
 """
 
+# The model picker's trigger. Named because two checks below treat it specially.
+PICKER = '.st-key-topbar [data-testid="stPopover"] button'
+
 SELECTORS = [
     ".welcome-title", ".welcome-subtitle", ".user-bubble", "last:.user-bubble",
     ".error-card",
@@ -318,7 +336,13 @@ SELECTORS = [
     ".source-chip", ".st-key-answer-5", ".st-key-answer-0", ".stChatMessage pre",
     ".stChatMessage code", '[data-testid="stBottomBlockContainer"]',
     ".st-key-topbar button",
-    '.st-key-topbar [data-baseweb="select"] > div',
+    # The rightmost control in the bar. With a model name in it the bar is far
+    # wider than it was, so it can now reach the host toolbar on narrow screens.
+    "last:.st-key-topbar button",
+    PICKER,
+    # The error card's actions. The switch one carries a whole model name, so it
+    # is the widest button in the app and the first thing to overflow at 360px.
+    ".st-key-retry button p", ".st-key-switch-model button p",
 ] + [f".st-key-example-card-{i} button p" for i in range(6)]
 
 
@@ -383,8 +407,8 @@ def audit(data, scenario, scheme, width, scrolled: bool, generating=False) -> li
                 f"{where}: {sel} collides with the host toolbar "
                 f"({data['hostBar'] - b['top']}px under it)"
             )
-        # A <select> ellipsing a long model id is intended, and <pre> scrolls.
-        if b["overflowX"] > 1 and "pre" not in sel and "select" not in sel:
+        # The picker ellipsing a long model id is intended, and <pre> scrolls.
+        if b["overflowX"] > 1 and "pre" not in sel and sel != PICKER:
             problems.append(f"{where}: {sel} overflows horizontally by {b['overflowX']}px")
         limit = LINE_LIMITS.get(sel)
         if limit and b["lines"] > limit and width >= 641:
@@ -397,7 +421,10 @@ def audit(data, scenario, scheme, width, scrolled: bool, generating=False) -> li
                     f"{where}: {sel} contrast {b['contrast']}:1 (needs {need}:1)"
                 )
 
-    picker = els.get('.st-key-topbar [data-baseweb="select"] > div')
+    # A zero-width picker is the exact bug that shipped twice: present in the DOM,
+    # invisible on screen. 80px is narrower than any real label, so anything below
+    # it means the control collapsed rather than merely being tight.
+    picker = els.get(PICKER)
     if picker and picker["right"] - picker["left"] < 80:
         problems.append(
             f"{where}: the model picker is only "
