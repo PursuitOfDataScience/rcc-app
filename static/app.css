@@ -115,9 +115,14 @@
 [data-testid="stSidebar"], [data-testid="stSidebarCollapsedControl"] { display: none !important; }
 [data-testid="manage-app-button"] { display: none !important; }
 
-.main .block-container {
-    padding-top: 0 !important;
-    padding-bottom: 0;
+/* Top padding must clear the fixed top bar AND any host chrome (Streamlit
+ * Community Cloud overlays its own toolbar). The previous stylesheet got this
+ * spacing by accident, from padding on an empty .chat-container marker div;
+ * setting it to 0 here sliced the first message in half at the viewport top. */
+.main .block-container,
+[data-testid="stMainBlockContainer"] {
+    padding-top: 2.75rem !important;
+    padding-bottom: 1.5rem !important;
     max-width: var(--content-max);
 }
 
@@ -125,7 +130,6 @@
 [data-testid="stVerticalBlock"] { gap: 0 !important; }
 .stMarkdown { margin: 0 !important; padding: 0 !important; }
 .element-container { margin: 0 !important; padding: 0 !important; }
-[data-testid="stMainBlockContainer"] { padding-top: 0 !important; }
 
 html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
     overflow-x: hidden !important;
@@ -135,7 +139,9 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
 .st-key-topbar {
     position: fixed;
     top: 8px;
-    right: 16px;
+    /* Left, not right: hosts (Streamlit Community Cloud) overlay their own
+     * toolbar at the top right and it sits on top of these controls. */
+    left: 16px;
     z-index: 1000;
     width: auto !important;
 }
@@ -165,16 +171,24 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
     display: flex; flex-direction: column;
     align-items: center; justify-content: center;
     text-align: center;
-    padding: clamp(1rem, 3vw, 1.5rem) var(--space-md);
-    margin-top: clamp(5vh, 10vw, 11vh);
+    padding: clamp(0.5rem, 2vw, 1rem) var(--space-md);
+    /* The container's padding-top now supplies the clearance. Keeping the old
+     * 11vh here as well overflowed short viewports. */
+    margin-top: clamp(0.25rem, 2vh, 1.25rem);
     margin-bottom: var(--space-sm);
     animation: fadeInDown 0.6s ease-out;
 }
 
 .welcome-title {
-    font-size: clamp(1.6rem, 4.5vw, 2.4rem);
+    font-size: clamp(1.5rem, 4.2vw, 2.2rem) !important;
     font-weight: 700;
     letter-spacing: -0.01em;
+    /* `background-clip: text` clips to the text box, so a tight line-height cuts
+     * the descenders in "help"/"you". Streamlit's `.stMarkdown h1` rule is more
+     * specific than this class, hence !important. */
+    line-height: 1.35 !important;
+    padding: 0 0 0.12em !important;
+    overflow: visible !important;
     color: var(--brand-text);
     background: linear-gradient(135deg, var(--gradient-text-start), var(--gradient-text-end));
     -webkit-background-clip: text;
@@ -191,14 +205,6 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
     margin: 0 auto 0.6rem;
     line-height: 1.55;
     animation: fadeInUp 0.6s ease-out 0.25s both;
-}
-
-.welcome-limits {
-    font-size: 0.8rem;
-    color: var(--text-muted);
-    max-width: 34rem;
-    margin: 0 auto var(--space-md);
-    animation: fadeInUp 0.6s ease-out 0.35s both;
 }
 
 @keyframes fadeInDown {
@@ -454,7 +460,7 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
     overflow: hidden !important;
 }
 
-.stChatMessage h1 { font-size: 1.35rem !important; }
+.stChatMessage h1 { font-size: 1.35rem !important; line-height: 1.35 !important; }
 .stChatMessage h2 { font-size: 1.18rem !important; }
 .stChatMessage h3 { font-size: 1.04rem !important; }
 
@@ -672,7 +678,7 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
 
     .user-message { padding-right: 0 !important; }
     .user-bubble { max-width: 88%; }
-    .st-key-topbar { top: 4px; right: 8px; }
+    .st-key-topbar { top: 4px; left: 8px; }
     .welcome { margin-top: 4vh; }
 }
 

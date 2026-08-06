@@ -76,7 +76,10 @@ class TestWelcome:
         assert module is not None
         html = "\n".join(stub.markdown_html)
         assert "What can I help you with?" in html
-        assert "cannot run commands" in html
+        # The limits line was removed from the hero: it duplicated the disclaimer
+        # under the input. The About panel still states them.
+        assert "Sage reads the docs" not in html
+        assert "Run commands or read files on the cluster" in html
 
     def test_example_cards_get_stable_keyed_containers(self, monkeypatch):
         """CSS staggers on these keys; :nth-child never worked for Streamlit buttons."""

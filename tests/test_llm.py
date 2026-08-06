@@ -118,6 +118,66 @@ class TestTurn:
         assert '"path"' in message["tool_calls"][0]["function"]["arguments"]
 
 
+class TestStreamShapes:
+    """mistralai 1.x hands back a context manager; some builds a bare iterator."""
+
+    class ContextStream:
+        def __init__(self, events):
+            self.events = events
+            self.entered = False
+            self.exited = False
+
+        def __enter__(self):
+            self.entered = True
+            return iter(self.events)
+
+        def __exit__(self, *_exc):
+            self.exited = True
+            return False
+
+    def test_a_context_manager_stream_is_entered_and_closed(self):
+        stream = self.ContextStream([event("hello "), event("world")])
+        turn = llm.Turn(stream=stream).consume()
+        assert stream.entered
+        assert stream.exited
+        assert turn.text == "hello world"
+
+    def test_a_context_manager_that_returns_none_still_iterates(self):
+        class SelfIterating:
+            def __init__(self, events):
+                self._it = iter(events)
+                self.exited = False
+
+            def __enter__(self):
+                return None  # some SDKs return None and expect self-iteration
+
+            def __exit__(self, *_exc):
+                self.exited = True
+                return False
+
+            def __iter__(self):
+                return self._it
+
+        stream = SelfIterating([event("ok")])
+        assert llm.Turn(stream=stream).consume().text == "ok"
+        assert stream.exited
+
+    def test_a_plain_iterator_still_works(self):
+        assert llm.Turn(stream=iter([event("plain")])).consume().text == "plain"
+
+    def test_the_stream_is_closed_even_when_it_raises(self):
+        stream = self.ContextStream([])
+
+        def explode():
+            yield "x"
+            raise TimeoutError("connection dropped")
+
+        stream.__enter__ = lambda: explode()
+        with pytest.raises(llm.AssistantError):
+            llm.Turn(stream=stream).consume()
+        assert stream.exited
+
+
 class TestStart:
     def test_generation_parameters_are_always_bounded(self):
         """max_tokens and temperature were previously unset entirely."""
