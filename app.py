@@ -282,6 +282,10 @@ def render_about() -> None:
     stamp = config.snapshot()
     synced = stamp.get("refreshed_at", "unknown")
     commit = stamp.get("user_guide_commit", "unknown")
+    # Escaped even though these are operator-set, not user-set: an env var landing
+    # unescaped inside an href is the kind of thing that stops being harmless later.
+    help_url = html.escape(config.HELP_DESK_URL, quote=True)
+    help_email = html.escape(config.HELP_DESK_EMAIL, quote=True)
     st.markdown(
         f"""
         <div class="about-panel">
@@ -297,13 +301,13 @@ def render_about() -> None:
           <li>Change anything — it only reads documentation</li>
         </ul>
         <h4>Still stuck?</h4>
-        Contact the <a href="{config.HELP_DESK_URL}" target="_blank"
+        Contact the <a href="{help_url}" target="_blank"
         rel="noopener">RCC Help Desk</a> or email
-        <a href="mailto:{config.HELP_DESK_EMAIL}">{config.HELP_DESK_EMAIL}</a>.
+        <a href="mailto:{help_email}">{help_email}</a>.
         The walk-in lab is in Regenstein 216 during business hours.
         <p class="about-meta">Documentation synced {html.escape(str(synced))} ·
         user-guide <code>{html.escape(str(commit))}</code> ·
-        {corpus_mod.summarize(CORPUS)}</p>
+        {html.escape(corpus_mod.summarize(CORPUS))}</p>
         </div>
         """,
         unsafe_allow_html=True,
