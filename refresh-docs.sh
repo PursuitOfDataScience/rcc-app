@@ -20,10 +20,14 @@
 set -uo pipefail
 
 APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-UG_REPO="${RCC_USER_GUIDE_REPO:-/project/rcc/youzhi/user-guide}"   # canonical git checkout
-UG_REMOTE="https://github.com/rcc-uchicago/user-guide.git"
-CANON_WEB="$UG_REPO/web"                                            # scraper output mirror
-SCRAPER="${RCC_WEB_SCRAPER:-/home/youzhi/LLM-API/rcc-web-scrape.py}"
+# Defaults are repo-relative so anyone can run this. Both were previously hardcoded
+# to one person's home and /project paths, which made the script unusable by others.
+UG_REPO="${RCC_USER_GUIDE_REPO:-$APP_DIR/.user-guide}"              # canonical git checkout
+UG_REMOTE="${RCC_USER_GUIDE_REMOTE:-https://github.com/rcc-uchicago/user-guide.git}"
+CANON_WEB="${RCC_WEB_MIRROR:-$UG_REPO/web}"                         # scraper output mirror
+# NOTE: the website scraper is not vendored in this repo. Point RCC_WEB_SCRAPER at it
+# to use --scrape; without it, web/ is left as-is (which is the safe default).
+SCRAPER="${RCC_WEB_SCRAPER:-$APP_DIR/tools/rcc-web-scrape.py}"
 BACKUP_DIR="$APP_DIR/.doc-backups"
 STAMP="$APP_DIR/docs_snapshot.json"
 KEEP_BACKUPS=5
@@ -35,13 +39,22 @@ warn() { printf 'WARN: %s\n' "$*" >&2; }
 fail=0
 
 # mirror SRC/ -> DST/ exactly (removes files deleted upstream). rsync if available, else rm+cp.
+# The rm+cp fallback deletes a directory built from environment variables, so the
+# destination is verified to sit inside APP_DIR before anything is removed.
 mirror() {
     local src="$1" dst="$2"
     if command -v rsync >/dev/null 2>&1; then
         rsync -a --delete --exclude '.git' "$src/" "$dst/"
-    else
-        rm -rf "$dst" && cp -a "$src" "$dst"
+        return
     fi
+    case "$dst" in
+        "$APP_DIR"/*/|"$APP_DIR"/*) : ;;
+        *) warn "refusing to replace '$dst': outside $APP_DIR"; return 1 ;;
+    esac
+    if [ ! -d "$src" ]; then
+        warn "refusing to replace '$dst': source '$src' is not a directory"; return 1
+    fi
+    rm -rf "${dst:?}" && cp -a "$src" "$dst"
 }
 
 # 0. Connectivity preflight.
@@ -75,7 +88,9 @@ if [ "$DO_SCRAPE" -eq 1 ]; then
     if ! python3 -c "import requests, bs4" 2>/dev/null; then
         warn "scraper deps missing (need requests, beautifulsoup4) — skipping scrape."; fail=1
     elif [ ! -f "$SCRAPER" ]; then
-        warn "scraper not found at $SCRAPER — skipping scrape."; fail=1
+        warn "scraper not found at $SCRAPER — skipping scrape."
+        warn "The scraper is not part of this repo; set RCC_WEB_SCRAPER to its path."
+        fail=1
     else
         python3 "$SCRAPER" || { warn "scraper failed — keeping previous web mirror."; fail=1; }
     fi
@@ -130,5 +145,8 @@ fi
 echo "Docs refreshed. The app rebuilds its search index on next start (cache cleared on restart)."
 
 # ── Schedule it (weekly, from an internet-connected host) ──────────────────────
-#   crontab -e, then add (Mondays 03:00):
-#     0 3 * * 1  /project/rcc/youzhi/rcc-app/refresh-docs.sh >> /project/rcc/youzhi/rcc-app/refresh-docs.log 2>&1
+#   crontab -e, then add (Mondays 03:00), adjusting the path to your checkout:
+#     0 3 * * 1  /path/to/rcc-app/refresh-docs.sh >> /path/to/rcc-app/refresh-docs.log 2>&1
+#
+# Better: run it in CI on a schedule and open a pull request, so the diff of what
+# changed upstream gets reviewed instead of landing silently on a server.
