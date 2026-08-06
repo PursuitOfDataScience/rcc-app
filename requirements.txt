@@ -1,4 +1,12 @@
-streamlit
-anthropic
-pypdf
-mistralai
+# Lower bounds are the part that matters. `mistralai` 1.x changed both the import
+# path (`from mistralai import Mistral`) and the streaming shape
+# (`chunk.data.choices[0].delta`), and `st.container(key=...)` plus `st.popover`
+# need a recent Streamlit. Generate a lockfile (`pip freeze > requirements.lock`
+# or `uv lock`) for reproducible deploys.
+#
+# `anthropic` used to be listed here and was never imported. `pymupdf` was the
+# reverse: imported as `fitz` but never declared, so the fast PDF path never ran.
+streamlit>=1.40,<2
+mistralai>=1.0,<2
+pypdf>=4.0
+pymupdf>=1.24

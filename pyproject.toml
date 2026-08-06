@@ -1,0 +1,17 @@
+[tool.ruff]
+line-length = 92
+target-version = "py310"
+
+[tool.ruff.lint.isort]
+known-first-party = ["sage", "app", "stub_streamlit"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM"]
+ignore = [
+    "E501",    # line length is handled by the formatter
+    "SIM105",  # contextlib.suppress is less readable in the few places this fires
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
