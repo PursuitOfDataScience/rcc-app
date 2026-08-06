@@ -131,6 +131,10 @@ body {{ margin: 0; background: {BACKGROUNDS[scheme]}; color: {FOREGROUNDS[scheme
 .stChatInput textarea {{ width: 100%; background: transparent; border: 0;
                         color: inherit; font: inherit; resize: none; }}
 .stChatMessage {{ display: flex; }}
+[data-testid="stSelectbox"] {{ font-size: 0.9rem; }}
+[data-baseweb="select"] > div {{ padding: 0.3rem 0.6rem; border-radius: 6px;
+   background: {'#262730' if scheme == 'dark' else '#f0f2f6'};
+   border: 1px solid {'#3a3b46' if scheme == 'dark' else '#d5d6d8'}; }}
 #host-bar {{ position: fixed; top: 0; right: 0; width: {HOST_BAR_W}px;
             height: {HOST_BAR}px; background: {BACKGROUNDS[scheme]}; z-index: 9999; }}
 """
@@ -150,6 +154,9 @@ def _cards_html() -> str:
 
 TOPBAR = """<div class="st-key-topbar element-container">
   <div data-testid="stHorizontalBlock">
+    <div data-testid="stColumn"><div data-testid="stSelectbox">
+      <div data-baseweb="select"><div>OpenCode Zen · deepseek v4 flash free</div></div>
+    </div></div>
     <div data-testid="stColumn"><div class="stButton"><button><p>ℹ️</p></button></div></div>
     <div data-testid="stColumn"><div class="stButton"><button><p>🗑️</p></button></div></div>
   </div></div>"""
@@ -186,8 +193,12 @@ python train.py --epochs 100 --batch-size 64 --output /scratch/midway3/$USER/run
 </div>"""
 
 
+# app.py injects this on the welcome screen only (see the comment there).
+LANDING_OVERRIDE = ("<style>[data-testid='stMainBlockContainer'], "
+                    ".main .block-container{padding-bottom: 10rem !important;}</style>")
+
 SCENARIOS = {
-    "landing": TOPBAR + f"""
+    "landing": LANDING_OVERRIDE + TOPBAR + f"""
 <div class="element-container"><div class="stMarkdown">
   <div class="welcome">
     <h1 class="welcome-title">What can I help you with?</h1>
@@ -303,6 +314,7 @@ SELECTORS = [
     ".source-chip", ".st-key-answer-5", ".st-key-answer-0", ".stChatMessage pre",
     ".stChatMessage code", '[data-testid="stBottomBlockContainer"]',
     ".st-key-topbar button",
+    '.st-key-topbar [data-baseweb="select"] > div',
 ] + [f".st-key-example-card-{i} button p" for i in range(6)]
 
 
@@ -339,7 +351,11 @@ def render(name, html, width, height, shot=False):
     start, end = out.find("<title>"), out.find("</title>")
     if start == -1:
         return None
-    return json.loads(out[start + 7 : end].replace("&quot;", '"').replace("&amp;", "&"))
+    import html as _html
+
+    # The payload rides back in <title>, so every entity has to come back out —
+    # `&gt;` in particular, or any selector containing ">" gets a mangled key.
+    return json.loads(_html.unescape(out[start + 7 : end]))
 
 
 def audit(data, scenario, scheme, width, scrolled: bool, generating=False) -> list[str]:

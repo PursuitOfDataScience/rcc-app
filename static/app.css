@@ -152,6 +152,22 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
 .st-key-topbar [data-testid="stHorizontalBlock"] { gap: 0.4rem !important; width: auto !important; }
 .st-key-topbar [data-testid="stColumn"] { width: auto !important; flex: 0 0 auto !important; min-width: 0 !important; }
 
+/* Model picker. Compact so the fixed top bar never crowds the conversation. */
+.st-key-topbar [data-testid="stSelectbox"] { width: 100% !important; max-width: 230px; }
+
+.st-key-topbar [data-baseweb="select"] > div {
+    background: var(--control-bg) !important;
+    border: 1px solid var(--control-border) !important;
+    border-radius: var(--radius-sm) !important;
+    min-height: 34px !important;
+    font-size: 0.78rem !important;
+    color: var(--text-secondary) !important;
+    backdrop-filter: blur(8px);
+}
+
+.st-key-topbar [data-baseweb="select"] > div:hover { border-color: var(--brand-line) !important; }
+.st-key-topbar [data-testid="stWidgetLabel"] { display: none !important; }
+
 .st-key-topbar button {
     background: var(--control-bg) !important;
     border: 1px solid var(--control-border) !important;
@@ -674,6 +690,21 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
     outline-offset: 2px !important;
 }
 
+/* ===== SHORT VIEWPORTS =====
+ * Claw back vertical space so the welcome screen fits without scrolling on a
+ * laptop window that is not full height. Scrolling there is what pushes the
+ * title up under the browser and host chrome. */
+@media (max-height: 720px) {
+    .welcome { margin-top: 0 !important; padding-top: 0.25rem; }
+    .welcome-title { font-size: clamp(1.35rem, 3.4vw, 1.8rem) !important; }
+    .welcome-subtitle { margin-bottom: 0.35rem; }
+    [class*="st-key-example-card-"] button { height: 48px !important; min-height: 48px !important; }
+    .st-key-examples [data-testid="stHorizontalBlock"] { margin-bottom: 0.45rem !important; }
+    /* Still has to clear the host toolbar (~46px); the space is clawed back from
+     * the card heights and the welcome margins above, not from this. */
+    .main .block-container, [data-testid="stMainBlockContainer"] { padding-top: 3.5rem !important; }
+}
+
 /* ===== MOBILE ===== */
 @media (max-width: 640px) {
     .st-key-examples [data-testid="stHorizontalBlock"] {
@@ -685,7 +716,12 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
 
     .user-message { padding-right: 0 !important; }
     .user-bubble { max-width: 88%; }
-    .st-key-topbar { top: 4px; left: 8px; }
+    /* At this width the host toolbar spans over half the screen, so the controls
+     * cannot sit beside it — drop them below it instead, and give the content
+     * enough top padding to clear both. */
+    .st-key-topbar { top: 52px; left: 8px; right: 8px; }
+    .st-key-topbar [data-testid="stSelectbox"] { max-width: none; }
+    .main .block-container, [data-testid="stMainBlockContainer"] { padding-top: 6rem !important; }
     .welcome { margin-top: 4vh; }
 }
 

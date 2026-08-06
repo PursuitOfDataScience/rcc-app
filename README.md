@@ -2,10 +2,11 @@
 
 A chat assistant for the University of Chicago's [Research Computing Center](https://rcc.uchicago.edu/). Ask about accounts, SSH, Slurm jobs, storage, and software — answers are retrieved from the **official RCC User Guide** and RCC website, and every answer links the exact sections it used.
 
-Built with [Streamlit](https://streamlit.io/) and the [Mistral](https://mistral.ai/) API. **Read-only and RAG-only** — it reads documentation and never runs commands on the cluster.
+Built with [Streamlit](https://streamlit.io/). Answers come from [Mistral](https://mistral.ai/) or from the free models on [OpenCode Zen](https://opencode.ai/docs/zen/), switchable from a picker in the app. **Read-only and RAG-only** — it reads documentation and never runs commands on the cluster.
 
 ## Features
 
+- 🔀 **Model picker** — switch between Mistral and OpenCode Zen's free models mid-conversation, so a spent quota does not stop the app.
 - 🔎 **Grounded answers** — retrieves real RCC documentation; no invented commands, partitions or quotas.
 - 🔗 **Real citations** — a Sources strip under each answer deep-links to the section it came from, plus Related sections from the same page.
 - 💬 **Streaming replies** with conversation memory for follow-ups.
@@ -17,15 +18,37 @@ Built with [Streamlit](https://streamlit.io/) and the [Mistral](https://mistral.
 
 ```bash
 pip install -r requirements.txt
-export MISTRAL_API_KEY=...
-streamlit run app.py            # → http://localhost:8501
+export MISTRAL_API_KEY=...        # and/or OPENCODE_API_KEY=sk-zen-...
+streamlit run app.py              # → http://localhost:8501
 ```
 
-Or put the key in `.streamlit/secrets.toml` (gitignored):
+At least one key is needed; set both and a picker appears in the top bar.
+[OpenCode Zen](https://opencode.ai/docs/zen/) keys are free and start with
+`sk-zen-`, which is a way to keep working once a paid quota runs out.
+
+Or put them in `.streamlit/secrets.toml` (gitignored):
 
 ```toml
 MISTRAL_API_KEY = "..."
+OPENCODE_API_KEY = "sk-zen-..."
 ```
+
+## Providers
+
+Both providers sit behind one interface in [`sage/providers.py`](sage/providers.py) and
+normalise onto the same streaming chunk, so nothing downstream knows which is in use.
+
+- **Mistral** — the official SDK.
+- **OpenCode Zen** — the OpenAI-compatible endpoint at `https://opencode.ai/zen/v1`.
+  Its model list is discovered from `GET /models` at runtime rather than hardcoded,
+  because a free tier's lineup changes without notice; `SAGE_OPENCODE_MODELS` is only
+  the fallback when discovery fails.
+
+Not every free model can call tools. Those answer from a **single retrieval pass**
+instead of the search/read loop: the question is searched up front and the matching
+sections are put in the prompt, so answers stay grounded and still get a Sources
+strip. List such models in `SAGE_TOOLLESS_MODELS`, or let the app detect it — a
+provider that rejects a request because of tools is retried that way automatically.
 
 ## How it works
 
@@ -44,8 +67,13 @@ Everything is environment-driven. The defaults are in [`sage/config.py`](sage/co
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `MISTRAL_API_KEY` | *(required)* | Mistral API key (or `.streamlit/secrets.toml`) |
-| `SAGE_MODEL` | `mistral-small-latest` | Chat model |
+| `MISTRAL_API_KEY` | *(one required)* | Mistral API key |
+| `OPENCODE_API_KEY` | *(one required)* | OpenCode Zen key (`sk-zen-…`), free tier |
+| `SAGE_DEFAULT_MODEL` | `mistral:mistral-small-latest` | Model a fresh session starts on, `provider:model-id` |
+| `SAGE_MISTRAL_MODELS` | small/medium/large | Mistral models offered in the picker |
+| `SAGE_OPENCODE_MODELS` | deepseek-v4-flash-free, … | Fallback list if `GET /models` fails |
+| `OPENCODE_BASE_URL` | `https://opencode.ai/zen/v1` | OpenAI-compatible endpoint |
+| `SAGE_TOOLLESS_MODELS` | *(empty)* | Substrings of models that cannot call tools |
 | `SAGE_MAX_TOKENS` | `1600` | Response cap |
 | `SAGE_TEMPERATURE` | `0.2` | Sampling temperature |
 | `RCC_DOCS_PATH` | `./docs` | User Guide markdown source |
@@ -127,7 +155,8 @@ sage/
   links.py              # rewrite internal paths to published URLs
   files.py              # upload handling
   history.py            # message building, attachment stubbing, trimming
-  llm.py                # Mistral client, streaming, typed errors
+  providers.py          # Mistral + OpenAI-compatible (OpenCode Zen) adapters
+  llm.py                # turn assembly, streaming, typed errors
   prompts.py            # system prompt
   feedback.py           # optional 👍/👎 sink
 static/app.css          # all styling

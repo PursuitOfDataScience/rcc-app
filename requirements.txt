@@ -8,5 +8,9 @@
 # reverse: imported as `fitz` but never declared, so the fast PDF path never ran.
 streamlit>=1.40,<2
 mistralai>=1.0,<2
+# OpenCode Zen and any other OpenAI-compatible endpoint are called over plain
+# HTTP. mistralai pulls httpx in anyway; declared because sage/providers.py
+# imports it directly.
+httpx>=0.27
 pypdf>=4.0
 pymupdf>=1.24

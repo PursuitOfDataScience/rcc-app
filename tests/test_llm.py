@@ -1,38 +1,46 @@
 """Streaming and error handling, exercised against a fake Mistral SDK surface."""
 
-from types import SimpleNamespace
-
 import pytest
 
 from sage import llm
+from sage.providers import Chunk
 
 
 def event(content=None, tool_calls=None):
-    delta = SimpleNamespace(content=content, tool_calls=tool_calls)
-    return SimpleNamespace(data=SimpleNamespace(choices=[SimpleNamespace(delta=delta)]))
+    """A normalised provider chunk."""
+    return Chunk(text=content or "", tool_calls=tool_calls or [])
 
 
 def call(index=0, cid=None, name=None, arguments=None):
-    function = SimpleNamespace(name=name, arguments=arguments)
-    return SimpleNamespace(index=index, id=cid, function=function)
+    return {
+        "index": index,
+        "id": cid or "",
+        "name": name or "",
+        "arguments": arguments or "",
+    }
 
 
-class FakeClient:
-    """Mimics `client.chat.stream(...)`, optionally failing the first N calls."""
+class FakeProvider:
+    """A provider whose stream can fail the first N times."""
+
+    name = "fake"
 
     def __init__(self, events, failures=0, error=None):
         self.events = events
         self.failures = failures
         self.error = error or RuntimeError("boom")
         self.calls = 0
-        self.chat = SimpleNamespace(stream=self._stream)
+        self.kwargs = {}
 
-    def _stream(self, **kwargs):
+    def models(self):
+        return []
+
+    def stream(self, model, messages, tools):
         self.calls += 1
-        self.kwargs = kwargs
+        self.kwargs = {"model": model, "messages": messages, "tools": tools}
         if self.calls <= self.failures:
             raise self.error
-        return iter(self.events)
+        yield from self.events
 
 
 class TestTurn:
@@ -86,17 +94,8 @@ class TestTurn:
         turn.consume()
         assert turn.tool_calls == []
 
-    def test_empty_and_malformed_events_are_skipped(self):
-        events = [
-            SimpleNamespace(data=None),
-            SimpleNamespace(data=SimpleNamespace(choices=[])),
-            event("ok"),
-        ]
-        assert llm.Turn(stream=iter(events)).consume().text == "ok"
-
-    def test_list_content_parts_are_joined(self):
-        turn = llm.Turn(stream=iter([event(["a", SimpleNamespace(text="b")])]))
-        assert turn.consume().text == "ab"
+    def test_non_chunk_events_are_skipped(self):
+        assert llm.Turn(stream=iter([None, "junk", event("ok")])).consume().text == "ok"
 
     def test_stream_failures_are_classified(self):
         def explode():
@@ -118,107 +117,46 @@ class TestTurn:
         assert '"path"' in message["tool_calls"][0]["function"]["arguments"]
 
 
-class TestStreamShapes:
-    """mistralai 1.x hands back a context manager; some builds a bare iterator."""
-
-    class ContextStream:
-        def __init__(self, events):
-            self.events = events
-            self.entered = False
-            self.exited = False
-
-        def __enter__(self):
-            self.entered = True
-            return iter(self.events)
-
-        def __exit__(self, *_exc):
-            self.exited = True
-            return False
-
-    def test_a_context_manager_stream_is_entered_and_closed(self):
-        stream = self.ContextStream([event("hello "), event("world")])
-        turn = llm.Turn(stream=stream).consume()
-        assert stream.entered
-        assert stream.exited
-        assert turn.text == "hello world"
-
-    def test_a_context_manager_that_returns_none_still_iterates(self):
-        class SelfIterating:
-            def __init__(self, events):
-                self._it = iter(events)
-                self.exited = False
-
-            def __enter__(self):
-                return None  # some SDKs return None and expect self-iteration
-
-            def __exit__(self, *_exc):
-                self.exited = True
-                return False
-
-            def __iter__(self):
-                return self._it
-
-        stream = SelfIterating([event("ok")])
-        assert llm.Turn(stream=stream).consume().text == "ok"
-        assert stream.exited
-
-    def test_a_plain_iterator_still_works(self):
-        assert llm.Turn(stream=iter([event("plain")])).consume().text == "plain"
-
-    def test_the_stream_is_closed_even_when_it_raises(self):
-        stream = self.ContextStream([])
-
-        def explode():
-            yield "x"
-            raise TimeoutError("connection dropped")
-
-        stream.__enter__ = lambda: explode()
-        with pytest.raises(llm.AssistantError):
-            llm.Turn(stream=stream).consume()
-        assert stream.exited
-
-
 class TestStart:
-    def test_generation_parameters_are_always_bounded(self):
-        """max_tokens and temperature were previously unset entirely."""
-        client = FakeClient([event("x")])
-        llm.start(client, [{"role": "user", "content": "hi"}], [{"t": 1}])
-        assert client.kwargs["max_tokens"] > 0
-        assert client.kwargs["temperature"] is not None
-        assert client.kwargs["tool_choice"] == "auto"
+    def test_the_model_and_tools_reach_the_provider(self):
+        provider = FakeProvider([event("x")])
+        llm.start(provider, "some-model", [{"role": "user", "content": "hi"}], [{"t": 1}])
+        assert provider.kwargs["model"] == "some-model"
+        assert provider.kwargs["tools"] == [{"t": 1}]
 
-    def test_no_tools_means_no_tool_choice(self):
-        client = FakeClient([event("x")])
-        llm.start(client, [{"role": "user", "content": "hi"}])
-        assert client.kwargs["tools"] is None
-        assert client.kwargs["tool_choice"] is None
+    def test_failures_surface_at_start_so_they_can_be_retried(self):
+        """provider.stream is a generator, so start() must pull the first chunk."""
+        provider = FakeProvider([], failures=1, error=RuntimeError("unauthorized"))
+        with pytest.raises(llm.AssistantError):
+            llm.start(provider, "m", [], None)
+        assert provider.calls == 1
 
     def test_transient_failures_are_retried(self, monkeypatch):
         monkeypatch.setattr(llm.time, "sleep", lambda _seconds: None)
         error = RuntimeError("503 service unavailable")
         error.status_code = 503
-        client = FakeClient([event("recovered")], failures=1, error=error)
-        turn = llm.start(client, [], None)
+        provider = FakeProvider([event("recovered")], failures=1, error=error)
+        turn = llm.start(provider, "m", [], None)
         assert turn.consume().text == "recovered"
-        assert client.calls == 2
+        assert provider.calls == 2
 
     def test_permanent_failures_are_not_retried(self):
         error = RuntimeError("unauthorized")
         error.status_code = 401
-        client = FakeClient([], failures=5, error=error)
+        provider = FakeProvider([], failures=5, error=error)
         with pytest.raises(llm.AssistantError) as caught:
-            llm.start(client, [], None)
+            llm.start(provider, "m", [], None)
         assert caught.value.kind == "auth"
-        assert client.calls == 1
+        assert provider.calls == 1
 
     def test_retries_give_up_and_surface_the_error(self, monkeypatch):
         monkeypatch.setattr(llm.time, "sleep", lambda _seconds: None)
         error = RuntimeError("rate limit exceeded")
-        client = FakeClient([], failures=99, error=error)
+        provider = FakeProvider([], failures=99, error=error)
         with pytest.raises(llm.AssistantError) as caught:
-            llm.start(client, [], None)
+            llm.start(provider, "m", [], None)
         assert caught.value.kind == "rate_limit"
-        assert client.calls == llm.config.REQUEST_RETRIES + 1
+        assert provider.calls == llm.config.REQUEST_RETRIES + 1
 
 
 class TestClassify:
@@ -255,12 +193,6 @@ class TestClassify:
 
     def test_unknown_kinds_fall_back_safely(self):
         assert llm.AssistantError("nonsense-kind").kind == "unknown"
-
-
-def test_missing_api_key_is_an_auth_error():
-    with pytest.raises(llm.AssistantError) as caught:
-        llm.create_client("")
-    assert caught.value.kind == "auth"
 
 
 def test_tool_result_message_shape():

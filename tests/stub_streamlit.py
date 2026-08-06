@@ -54,7 +54,7 @@ class Slot:
 
 
 class StubStreamlit(ModuleType):
-    def __init__(self, chat_input=None, buttons=None, upload=None):
+    def __init__(self, chat_input=None, buttons=None, upload=None, selections=None):
         super().__init__("streamlit")
         self.session_state = SessionState()
         self.events: list[tuple[str, object]] = []
@@ -65,6 +65,7 @@ class StubStreamlit(ModuleType):
         self._chat_input = chat_input
         self._buttons = buttons or {}
         self._upload = upload
+        self._selections = selections or {}
         self.secrets = SimpleNamespace(get=lambda _key, default="": default)
 
     # --- layout -----------------------------------------------------------
@@ -129,6 +130,13 @@ class StubStreamlit(ModuleType):
 
     def chat_input(self, placeholder=None, **_kwargs):
         return self._chat_input
+
+    def selectbox(self, label, options=None, index=0, key=None, **_kwargs):
+        options = list(options or [])
+        self.events.append(("selectbox", (key, tuple(options))))
+        if key in self._selections:
+            return self._selections[key]
+        return options[index] if options else None
 
     # --- control flow -----------------------------------------------------
     def stop(self):
