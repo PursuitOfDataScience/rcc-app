@@ -338,11 +338,8 @@ if not has_messages:
         """
         <div class="welcome">
             <h1 class="welcome-title">What can I help you with?</h1>
-            <p class="welcome-subtitle">Ask about accounts, SSH, Slurm jobs, storage
-            and software at the UChicago Research Computing Center — answered from the
-            official documentation, with links to the exact sections used.</p>
-            <p class="welcome-limits">Sage reads the docs. It cannot run commands or
-            see your account, jobs or quotas.</p>
+            <p class="welcome-subtitle">Answered from the official UChicago RCC
+            documentation, with links to the sections used.</p>
         </div>
         """,
         unsafe_allow_html=True,
@@ -364,6 +361,7 @@ if not has_messages:
                     ):
                         start_new_turn(question)
 else:
+    # Marker only: app.js keys page-scroll behaviour off its presence.
     st.markdown('<div class="chat-container"></div>', unsafe_allow_html=True)
 
     rendered = st.session_state.messages
