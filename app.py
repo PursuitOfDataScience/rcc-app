@@ -30,13 +30,15 @@ logger = logging.getLogger("sage.app")
 
 STATIC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 
+# (icon, card label, question actually sent). The label is kept short so every
+# card is a single line; the question stays conversational for the model.
 EXAMPLES = [
-    ("🚀", "How do I connect to Midway via SSH?"),
-    ("💾", "What are the storage quotas on Midway?"),
-    ("⚙️", "How do I submit a batch job with sbatch?"),
-    ("🐍", "How do I set up a Python environment?"),
-    ("🎮", "How do I run PyTorch on GPUs?"),
-    ("📊", "How do I check my allocation balance?"),
+    ("🚀", "Connect to Midway via SSH", "How do I connect to Midway via SSH?"),
+    ("💾", "Storage quotas", "What are the storage quotas on Midway?"),
+    ("⚙️", "Submit a batch job", "How do I submit a batch job with sbatch?"),
+    ("🐍", "Set up a Python environment", "How do I set up a Python environment?"),
+    ("🎮", "Run PyTorch on GPUs", "How do I run PyTorch on GPUs?"),
+    ("📊", "Check my allocation", "How do I check my allocation balance?"),
 ]
 
 st.set_page_config(
@@ -108,6 +110,7 @@ for key, default in (
     ("attachment", None),
     ("uploader_key", 0),
     ("error", None),
+    ("error_detail", ""),
 ):
     st.session_state.setdefault(key, default)
 
@@ -219,6 +222,17 @@ def render_assistant(position: int, message: dict) -> None:
         sources = message.get("sources", [])
         render_sources(sources, related_sections(sources))
         render_rating(position, message)
+
+
+def _detail(exc: BaseException | None) -> str:
+    """A one-line, non-secret description of a failure for the details panel."""
+    if exc is None:
+        return ""
+    text = f"{type(exc).__name__}: {exc}"
+    status = getattr(exc, "status_code", None)
+    if status:
+        text = f"{text}  (HTTP {status})"
+    return f"{text}\nmodel={config.MODEL}"[:800]
 
 
 def status_html(text: str) -> str:
@@ -338,8 +352,8 @@ if not has_messages:
         """
         <div class="welcome">
             <h1 class="welcome-title">What can I help you with?</h1>
-            <p class="welcome-subtitle">Answered from the official UChicago RCC
-            documentation, with links to the sections used.</p>
+            <p class="welcome-subtitle">Answers from the official UChicago RCC
+            documentation, with citations.</p>
         </div>
         """,
         unsafe_allow_html=True,
@@ -352,11 +366,12 @@ if not has_messages:
                 position = row + offset
                 if position >= len(EXAMPLES):
                     continue
-                icon, question = EXAMPLES[position]
+                icon, label, question = EXAMPLES[position]
                 with column, st.container(key=f"example-card-{position}"):
                     if st.button(
-                        f"{icon} {question}",
+                        f"{icon} {label}",
                         key=f"example-{position}",
+                        help=question,
                         use_container_width=True,
                     ):
                         start_new_turn(question)
@@ -381,10 +396,17 @@ else:
             f'<div class="error-body">{html.escape(st.session_state.error)}</div></div>',
             unsafe_allow_html=True,
         )
+        if st.session_state.error_detail:
+            # Streamlit Cloud logs are awkward to reach; surfacing the real
+            # exception here is what turns "something went wrong" into a fixable
+            # report. Collapsed so it stays out of the way for normal users.
+            with st.expander("Technical details"):
+                st.code(st.session_state.error_detail, language="text")
         columns = st.columns([1, 1, 1])
         with columns[1]:
             if st.button("↻ Try again", key="retry", use_container_width=True):
                 st.session_state.error = None
+                st.session_state.error_detail = ""
                 if st.session_state.messages[-1]["role"] == "user":
                     st.session_state.processing = True
                 st.rerun()
@@ -506,11 +528,13 @@ if st.session_state.processing:
             exc_info=exc.original if exc.kind == "unknown" else None,
         )
         st.session_state.error = exc.user_message
+        st.session_state.error_detail = _detail(exc.original or exc)
     except Exception as exc:  # last-resort guard so the UI never dies
         status.empty()
         answer.empty()
         logger.exception("Unexpected failure")
         st.session_state.error = llm.classify(exc).user_message
+        st.session_state.error_detail = _detail(exc)
     finally:
         st.session_state.processing = False
         st.rerun()

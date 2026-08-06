@@ -32,6 +32,20 @@ jobs:
       - name: Check app.js parses
         run: node --check static/app.js
 
+      # Renders static/app.css against a replica of Streamlit's DOM in the Chrome
+      # already present on the runner, and fails on clipping, content hidden behind
+      # the input bar, horizontal overflow, unwanted wrapping or low contrast.
+      # Every UI bug that has shipped from this repo was pure CSS.
+      - name: Check the layout renders correctly
+        env:
+          SAGE_CHROME: /usr/bin/google-chrome
+        run: |
+          if [ ! -x "$SAGE_CHROME" ]; then
+            echo "::warning::No Chrome on the runner; skipping the layout check."
+            exit 0
+          fi
+          python tools/render_check.py
+
   deps:
     name: Dependencies resolve
     runs-on: ubuntu-latest

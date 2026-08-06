@@ -122,7 +122,10 @@
 .main .block-container,
 [data-testid="stMainBlockContainer"] {
     padding-top: 2.75rem !important;
-    padding-bottom: 1.5rem !important;
+    /* Must clear the fixed input bar. Streamlit's own default is 10rem for exactly
+     * this reason; overriding it to 1.5rem left the newest answer 131px underneath
+     * the input (measured — see tools/render_check.py). */
+    padding-bottom: 11rem !important;
     max-width: var(--content-max);
 }
 
@@ -201,7 +204,10 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
 .welcome-subtitle {
     font-size: clamp(0.9rem, 2vw, 1.05rem);
     color: var(--text-secondary);
-    max-width: 34rem;
+    /* Wide enough to keep the one-line subtitle on one line; it still wraps
+     * gracefully on narrow screens. */
+    max-width: min(40rem, 92vw);
+    text-wrap: pretty;
     margin: 0 auto 0.6rem;
     line-height: 1.55;
     animation: fadeInUp 0.6s ease-out 0.25s both;
@@ -238,8 +244,9 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
     justify-content: center !important;
     text-align: center !important;
     width: 100% !important;
-    height: 68px !important;
-    min-height: 68px !important;
+    /* Single-line labels, so the card no longer needs to be tall enough for two. */
+    height: 56px !important;
+    min-height: 56px !important;
     padding: 10px 16px !important;
     background: var(--card-bg) !important;
     border: 1px solid var(--card-border) !important;
@@ -674,7 +681,7 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
         gap: 0.5rem !important;
     }
 
-    [class*="st-key-example-card-"] button { width: 100% !important; height: 60px !important; min-height: 60px !important; }
+    [class*="st-key-example-card-"] button { width: 100% !important; height: 52px !important; min-height: 52px !important; }
 
     .user-message { padding-right: 0 !important; }
     .user-bubble { max-width: 88%; }
