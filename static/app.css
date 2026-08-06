@@ -17,12 +17,16 @@
     --gradient-text-start: #800000;
     --gradient-text-end: #a5122a;
     --brand-text: #800000;
+    /* Borders and focus rings. --brand itself is only for gradient *fills* (white
+     * text on maroon works in both themes); as a 1px line on a dark page it is
+     * 1.73:1, which is not a visible focus indicator. */
+    --brand-line: #800000;
 
     --text-primary: #1f2937;
     --text-secondary: #4b5563;
     --text-muted: #6b7280;          /* 4.83:1 on white — do not add opacity */
     --icon: #52525b;
-    --icon-hover: var(--brand);
+    --icon-hover: var(--brand-text);
 
     --card-bg: linear-gradient(145deg, #ffffff 0%, #f8fafc 100%);
     --card-bg-hover: linear-gradient(145deg, #fbeaec 0%, #f6d9dd 100%);
@@ -73,6 +77,7 @@
         --gradient-text-start: #f2b0b6;
         --gradient-text-end: #e08a94;
         --brand-text: #f0a8ac;
+        --brand-line: #e08a94;
 
         --text-primary: #e5e7eb;
         --text-secondary: #b6bcc7;
@@ -151,7 +156,7 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
 
 .st-key-topbar button:hover {
     background: var(--control-bg-hover) !important;
-    border-color: var(--brand) !important;
+    border-color: var(--brand-line) !important;
     color: var(--brand-text) !important;
 }
 
@@ -290,7 +295,7 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
 }
 
 .stChatInput > div:focus-within {
-    border-color: var(--brand) !important;
+    border-color: var(--brand-line) !important;
     box-shadow: 0 4px 20px rgba(128, 0, 0, 0.25) !important;
 }
 
@@ -652,18 +657,8 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
 .source-chip:focus-visible,
 .stChatInput button:focus-visible,
 .stButton button:focus-visible {
-    outline: 2px solid var(--brand) !important;
+    outline: 2px solid var(--brand-line) !important;
     outline-offset: 2px !important;
-}
-
-@media (prefers-color-scheme: dark) {
-    #paperclip-btn:focus-visible,
-    .rcc-copy-btn:focus-visible,
-    .source-chip:focus-visible,
-    .stChatInput button:focus-visible,
-    .stButton button:focus-visible {
-        outline-color: var(--brand-text) !important;
-    }
 }
 
 /* ===== MOBILE ===== */
