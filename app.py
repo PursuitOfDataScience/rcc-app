@@ -497,7 +497,14 @@ if st.session_state.processing:
     except llm.AssistantError as exc:
         status.empty()
         answer.empty()
-        logger.error("Turn failed (%s): %s", exc.kind, exc.original)
+        # An "unknown" kind means classify() had nothing to go on, so log the full
+        # traceback — otherwise the only signal is a generic message on screen.
+        logger.error(
+            "Turn failed (%s): %r",
+            exc.kind,
+            exc.original,
+            exc_info=exc.original if exc.kind == "unknown" else None,
+        )
         st.session_state.error = exc.user_message
     except Exception as exc:  # last-resort guard so the UI never dies
         status.empty()

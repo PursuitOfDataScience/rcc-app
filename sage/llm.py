@@ -93,6 +93,19 @@ def create_client(api_key: str):
         raise classify(exc) from exc
 
 
+def _open(stream):
+    """Return (iterable, context_manager_to_close).
+
+    `mistralai` 1.x returns a context manager from `chat.stream()` — the documented
+    usage is `with client.chat.stream(...) as events:` — while some builds return a
+    plain iterator. Entering it when possible makes both shapes work.
+    """
+    if hasattr(type(stream), "__enter__"):
+        opened = stream.__enter__()
+        return (stream if opened is None else opened), stream
+    return stream, None
+
+
 @dataclass
 class Turn:
     """One model turn. Iterate `deltas()` to stream, or `consume()` to block."""
@@ -104,8 +117,9 @@ class Turn:
 
     def deltas(self) -> Iterator[str]:
         pending: dict[int, dict] = {}
+        source, manager = _open(self.stream)
         try:
-            for event in self.stream:
+            for event in source:
                 data = getattr(event, "data", None)
                 if not data or not getattr(data, "choices", None):
                     continue
@@ -141,6 +155,12 @@ class Turn:
                             )
         except Exception as exc:
             raise classify(exc) from exc
+        finally:
+            if manager is not None:
+                try:
+                    manager.__exit__(None, None, None)
+                except Exception:  # closing must never mask the real error
+                    logger.debug("Ignoring error while closing the stream", exc_info=True)
 
         self.tool_calls = [
             {"id": slot["id"], "name": slot["name"], "input": _parse(slot["args"])}
