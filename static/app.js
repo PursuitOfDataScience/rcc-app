@@ -23,35 +23,65 @@
 
     /* --- scrolling ------------------------------------------------------- */
 
-    function updateScrollBehavior() {
-        var hasChat = !!doc.querySelector('.chat-container');
-        var value = hasChat ? 'auto' : 'hidden';
-        ['[data-testid="stAppViewContainer"]', '[data-testid="stMain"]'].forEach(function (selector) {
-            var el = doc.querySelector(selector);
-            if (el) el.style.overflow = value;
-        });
-        doc.body.style.overflow = value;
-    }
-
     var NEAR_BOTTOM_PX = 140;
 
-    function autoScroll() {
-        // Only pin the view while generating, and only when the reader is already
-        // near the bottom, so scrolling up to re-read earlier messages sticks.
-        if (!isProcessing()) return;
-        var targets = [
-            doc.querySelector('[data-testid="stAppViewContainer"]'),
+    // The single element that actually scrolls.
+    //
+    // This used to force `overflow: auto` onto stAppViewContainer, stMain and body,
+    // manufacturing three nested scrollports where Streamlit has one — and then
+    // scroll all of them (plus documentElement) to the bottom. The scroll amounts
+    // compounded, pushing the newest message clean above the top of the viewport
+    // and slicing it in half. Forcing overflow also risked trapping content that
+    // overflowed the welcome screen on a short window, so it is gone entirely:
+    // Streamlit's own scrolling is left alone.
+    function scroller() {
+        var candidates = [
             doc.querySelector('[data-testid="stMain"]'),
-            doc.documentElement,
-            doc.body
+            doc.scrollingElement,
+            doc.documentElement
         ];
-        for (var i = 0; i < targets.length; i++) {
-            var el = targets[i];
-            if (el && el.scrollHeight > el.clientHeight) {
-                var fromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-                if (fromBottom <= NEAR_BOTTOM_PX) el.scrollTop = el.scrollHeight;
-            }
+        for (var i = 0; i < candidates.length; i++) {
+            var el = candidates[i];
+            if (el && el.scrollHeight > el.clientHeight + 1) return el;
         }
+        return null;
+    }
+
+    // Clearance for the host toolbar and our own fixed controls.
+    var TOP_GAP = 58;
+    var pinnedTurn = false;
+
+    function autoScroll() {
+        if (!isProcessing()) { pinnedTurn = false; return; }
+        var el = scroller();
+        if (!el) return;
+
+        // Put the question at the TOP of the viewport once per turn and let the
+        // answer stream in beneath it, the way every chat UI behaves.
+        //
+        // This used to pin to the document's absolute bottom on every frame. On
+        // anything but a tall window that scrolls the question clean off the top —
+        // and because the container reserves ~11rem below the last message to clear
+        // the fixed input, the bottom of the document is mostly empty padding, so
+        // pinning there wasted a third of the viewport on blank space.
+        var messages = doc.querySelectorAll('.user-message');
+        var latest = messages[messages.length - 1];
+        if (!latest) return;
+
+        if (!pinnedTurn) {
+            pinnedTurn = true;
+            var target = latest.getBoundingClientRect().top + el.scrollTop - TOP_GAP;
+            el.scrollTop = Math.max(0, Math.min(target, el.scrollHeight - el.clientHeight));
+            return;
+        }
+
+        // Then leave the view alone for the rest of the turn. Chasing the tail as
+        // tokens arrive re-scrolls the question straight back off the top on any
+        // window where the reply plus the input bar exceeds the viewport — and
+        // "am I near the bottom?" is always true on a short document, so the pin
+        // above would be undone on the very next frame. A reply longer than the
+        // screen is the reader's to scroll; nothing here should grab the viewport
+        // out from under them.
     }
 
     /* --- injected controls ---------------------------------------------- */
@@ -223,7 +253,6 @@
     /* --- scheduling ------------------------------------------------------ */
 
     function sync() {
-        updateScrollBehavior();
         addPaperclip();
         addDisclaimer();
         addCodeCopyButtons();

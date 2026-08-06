@@ -47,6 +47,7 @@ def _read(*parts: str) -> str:
 
 
 CSS = _read("static", "app.css")
+JS = _read("static", "app.js")
 APP = _read("app.py")
 
 
@@ -261,7 +262,13 @@ function solidBg(el) {
   return 'rgb(' + Math.round(out[0]) + ',' + Math.round(out[1]) + ',' + Math.round(out[2]) + ')';
 }
 function box(sel) {
-  var el = document.querySelector(sel);
+  var el;
+  if (sel.indexOf('last:') === 0) {
+    var all = document.querySelectorAll(sel.slice(5));
+    el = all.length ? all[all.length - 1] : null;
+  } else {
+    el = document.querySelector(sel);
+  }
   if (!el) return null;
   var r = el.getBoundingClientRect(), cs = getComputedStyle(el);
   var lh = parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.2;
@@ -276,17 +283,22 @@ function box(sel) {
 }
 var main = document.querySelector('[data-testid="stMain"]');
 if (window.__scrollBottom && main) main.scrollTop = main.scrollHeight;
-var out = {viewport: {w: innerWidth, h: innerHeight}, hostBar: HOSTBAR,
+function snapshot() {
+  var out = {viewport: {w: innerWidth, h: innerHeight}, hostBar: HOSTBAR,
            scrolled: main ? Math.round(main.scrollTop) : 0,
            docOverflowX: Math.max(0, document.documentElement.scrollWidth - innerWidth),
            els: {}};
-SELECTORS.forEach(function (s) { out.els[s] = box(s); });
-document.title = JSON.stringify(out);
+  SELECTORS.forEach(function (s) { out.els[s] = box(s); });
+  document.title = JSON.stringify(out);
+}
+// Give app.js's requestAnimationFrame + interval work time to settle.
+setTimeout(snapshot, 700);
 </script>
 """
 
 SELECTORS = [
-    ".welcome-title", ".welcome-subtitle", ".user-bubble", ".error-card",
+    ".welcome-title", ".welcome-subtitle", ".user-bubble", "last:.user-bubble",
+    ".error-card",
     ".error-title", ".error-body", ".ai-disclaimer", ".sources-label",
     ".source-chip", ".st-key-answer-5", ".st-key-answer-0", ".stChatMessage pre",
     ".stChatMessage code", '[data-testid="stBottomBlockContainer"]',
@@ -294,7 +306,7 @@ SELECTORS = [
 ] + [f".st-key-example-card-{i} button p" for i in range(6)]
 
 
-def page(body: str, scheme: str, scroll: bool) -> str:
+def page(body: str, scheme: str, scroll: bool, generating: bool = False) -> str:
     return f"""<!doctype html><html><head><meta charset="utf-8">
 <style>{base_css(scheme)}</style><style>{theme_css(scheme)}</style></head><body>
 <div id="host-bar"></div>
@@ -307,7 +319,9 @@ def page(body: str, scheme: str, scroll: bool) -> str:
     <p class="ai-disclaimer">Sage can make mistakes and cannot see your account or jobs.
        Verify commands against the linked docs.</p>
   </div></div>
+{'<div id="processing-signal" hidden></div>' if generating else ''}
 <script>window.__scrollBottom = {str(scroll).lower()};</script>
+{'<script>' + JS + '</script>' if generating else ''}
 {MEASURE.replace("HOSTBAR", str(HOST_BAR)).replace("SELECTORS", json.dumps(SELECTORS))}
 </body></html>"""
 
@@ -328,7 +342,7 @@ def render(name, html, width, height, shot=False):
     return json.loads(out[start + 7 : end].replace("&quot;", '"').replace("&amp;", "&"))
 
 
-def audit(data, scenario, scheme, width, scrolled: bool) -> list[str]:
+def audit(data, scenario, scheme, width, scrolled: bool, generating=False) -> list[str]:
     problems, els = [], data["els"]
     where = f"{scenario}/{scheme}/{width}px"
 
@@ -362,8 +376,18 @@ def audit(data, scenario, scheme, width, scrolled: bool) -> list[str]:
                     f"{where}: {sel} contrast {b['contrast']}:1 (needs {need}:1)"
                 )
 
+    if generating:
+        # The question must stay on screen while its answer streams in. Pinning to
+        # the document bottom used to scroll it clean off the top.
+        asked = els.get("last:.user-bubble")
+        if asked and asked["top"] < data["hostBar"]:
+            problems.append(
+                f"{where}: the question is {data['hostBar'] - asked['top']}px above "
+                "the fold while its answer generates"
+            )
+
     newest = els.get(".st-key-answer-5") or els.get(".st-key-answer-0") or els.get(".error-card")
-    if scrolled and newest and bar and newest["bottom"] > bar["top"]:
+    if scrolled and not generating and newest and bar and newest["bottom"] > bar["top"]:
         problems.append(
             f"{where}: newest content is {newest['bottom'] - bar['top']}px under the input bar"
         )
@@ -381,16 +405,23 @@ def main() -> int:
             for width, height in widths:
                 # Every screen is checked twice: as the user lands on it, and
                 # scrolled to the bottom the way app.js leaves it after a reply.
-                states = [False] if scenario == "landing" else [False, True]
-                for scroll in states:
-                    name = f"{scenario}-{scheme}-{width}{'-scrolled' if scroll else ''}"
-                    data = render(name, page(body, scheme, scroll), width, height,
-                                  shot=(scheme == "dark" and width == 1263 and not scroll))
+                # at rest / user-scrolled / generating (app.js driving the scroll)
+                states = ([(False, False)] if scenario == "landing"
+                          else [(False, False), (True, False), (False, True)])
+                for scroll, generating in states:
+                    suffix = "-scrolled" if scroll else ("-generating" if generating else "")
+                    name = f"{scenario}-{scheme}-{width}{suffix}"
+                    data = render(name, page(body, scheme, scroll, generating), width, height,
+                                  shot=(scheme == "dark" and width == 1263 and not scroll
+                                        and not generating))
                     if data is None:
                         failures.append(f"{name}: render failed")
                         continue
                     checked += 1
-                    failures.extend(audit(data, scenario, scheme, width, scroll))
+                    failures.extend(
+                        audit(data, scenario, scheme, width,
+                              scroll or generating, generating)
+                    )
                     if verbose:
                         print(f"\n--- {name} (usable {data['viewport']['h']}px, "
                               f"scrollTop {data['scrolled']}) ---")

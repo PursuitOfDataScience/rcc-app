@@ -83,13 +83,15 @@ python tools/render_check.py "New subtitle"  # try alternative hero copy
 ```
 
 It renders four screens (landing, answer, long chat, error) in both colour schemes
-at five widths, each both at rest and scrolled — 70 renders — and fails on
+at five widths, in three states — at rest, scrolled, and mid-generation with the
+real `static/app.js` driving the page — 100 renders. It fails on
 clipping, content hidden behind the input bar, horizontal overflow, unwanted
 wrapping, or contrast below WCAG AA. CI runs it too.
 
 It catches what reading the CSS does not. So far: the newest answer sitting 131px
 underneath the chat input, the hero subtitle and all six starter cards wrapping to
-two lines, and a focus ring at 1.73:1 on the dark background.
+two lines, a focus ring at 1.73:1 on the dark background, and the question being
+scrolled off the top of the screen while its answer streamed in.
 
 ### The retrieval eval
 
