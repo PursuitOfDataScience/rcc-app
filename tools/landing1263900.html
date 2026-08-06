@@ -1,4 +1,30 @@
-/* Sage — RCC User Guide assistant.
+<!doctype html><html><head><meta charset="utf-8">
+<style>
+* { box-sizing: border-box; }
+body { margin: 0; background: #0e1117; color: #e5e7eb;
+       font-family: "Source Sans Pro", system-ui, sans-serif; }
+[data-testid="stAppViewContainer"] { min-height: 100vh; }
+[data-testid="stMain"] { overflow: auto; height: 100vh; }
+.block-container { padding: 6rem 1rem 10rem; margin: 0 auto; }
+.stMarkdown h1 { font-size: 2.75rem; font-weight: 600; line-height: 1.2;
+                 padding: 1.25rem 0 1rem; margin: 0; }
+.stMarkdown p { margin: 0 0 1rem; }
+.element-container { width: 100%; }
+[data-testid="stVerticalBlock"] { display: flex; flex-direction: column; }
+[data-testid="stHorizontalBlock"] { display: flex; flex-direction: row; }
+[data-testid="stColumn"] { flex: 1; }
+.stButton button { width: 100%; padding: 0.4rem 0.75rem; border-radius: 8px;
+                   background: #262730; color: #e5e7eb; border: 1px solid #3a3b46;
+                   font: inherit; cursor: pointer; }
+[data-testid="stBottomBlockContainer"] { position: fixed; bottom: 0; left: 0;
+                                         right: 0; background: #0e1117; padding: 1rem; }
+.stChatInput > div { background: #262730; }
+.stChatInput textarea { width: 100%; background: transparent; border: 0;
+                        color: #e5e7eb; font: inherit; resize: none; }
+/* Simulated host chrome */
+#host-bar { position: fixed; top: 0; left: 0; right: 0; height: 46px;
+            background: #0e1117; z-index: 9999; }
+</style><style>/* Sage — RCC User Guide assistant.
  *
  * Light is the default and dark is the media-query override, matching Streamlit's
  * own fallback. All colour lives in custom properties; app.js reads these rather
@@ -714,3 +740,73 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
     .user-bubble { background: none !important; color: #000 !important; border: 1px solid #999; }
     .stChatMessage, .source-chip { color: #000 !important; }
 }
+</style></head>
+<body>
+<div id="host-bar"></div>
+<div data-testid="stAppViewContainer">
+  <div data-testid="stMain" class="main">
+    <div data-testid="stMainBlockContainer" class="block-container">
+      <div data-testid="stVerticalBlock">
+<div class="st-key-topbar element-container"><div data-testid="stHorizontalBlock">
+  <div data-testid="stColumn"><div class="stButton"><button>ℹ️</button></div></div>
+</div></div>
+<div class="element-container"><div class="stMarkdown">
+  <div class="welcome">
+    <h1 class="welcome-title">What can I help you with?</h1>
+    <p class="welcome-subtitle">Answers from the official UChicago RCC documentation, with citations.</p>
+  </div>
+</div></div>
+<div class="st-key-examples element-container"><div data-testid="stHorizontalBlock">
+      <div data-testid="stColumn"><div class="st-key-example-card-0 element-container">
+        <div class="stButton"><button>🚀 How do I connect to Midway via SSH?</button></div></div></div>
+      <div data-testid="stColumn"><div class="st-key-example-card-1 element-container">
+        <div class="stButton"><button>💾 What are the storage quotas on Midway?</button></div></div></div>
+    </div><div data-testid="stHorizontalBlock">
+      <div data-testid="stColumn"><div class="st-key-example-card-2 element-container">
+        <div class="stButton"><button>⚙️ How do I submit a batch job with sbatch?</button></div></div></div>
+      <div data-testid="stColumn"><div class="st-key-example-card-3 element-container">
+        <div class="stButton"><button>🐍 How do I set up a Python environment?</button></div></div></div>
+    </div><div data-testid="stHorizontalBlock">
+      <div data-testid="stColumn"><div class="st-key-example-card-4 element-container">
+        <div class="stButton"><button>🎮 How do I run PyTorch on GPUs?</button></div></div></div>
+      <div data-testid="stColumn"><div class="st-key-example-card-5 element-container">
+        <div class="stButton"><button>📊 How do I check my allocation balance?</button></div></div></div>
+    </div></div>
+</div>
+    </div>
+  </div>
+  <div data-testid="stBottomBlockContainer">
+    <div class="stChatInput"><div><textarea placeholder="Ask anything about RCC…"></textarea></div></div>
+    <p class="ai-disclaimer">Sage can make mistakes and cannot see your account or jobs.
+       Verify commands against the linked docs.</p>
+  </div>
+</div>
+<script>window.__scrollBottom = false;</script>
+
+<script>
+function box(sel) {
+  var el = document.querySelector(sel);
+  if (!el) return null;
+  var r = el.getBoundingClientRect();
+  var cs = getComputedStyle(el);
+  var lh = parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.2;
+  return {top: Math.round(r.top), bottom: Math.round(r.bottom),
+          height: Math.round(r.height), lines: Math.max(1, Math.round(r.height / lh)),
+          scrollH: Math.round(el.scrollHeight), clientH: Math.round(el.clientHeight)};
+}
+var main = document.querySelector('[data-testid="stMain"]');
+if (window.__scrollBottom && main) main.scrollTop = main.scrollHeight;
+var out = {
+  viewport: {w: innerWidth, h: innerHeight},
+  hostBar: 46,
+  scrolled: main ? Math.round(main.scrollTop) : 0,
+  overflows: main ? main.scrollHeight > main.clientHeight : false,
+  els: {}
+};
+['.welcome-title', '.welcome-subtitle', '.user-bubble', '.error-card',
+ '.st-key-example-card-5 button', '[data-testid="stBottomBlockContainer"]'
+].forEach(function (s) { out.els[s] = box(s); });
+document.title = JSON.stringify(out);
+</script>
+
+</body></html>

@@ -69,6 +69,23 @@ pytest          # unit tests + retrieval eval
 ruff check .    # lint
 ```
 
+### Checking the layout without Streamlit
+
+Streamlit often cannot be installed where this repo is worked on, and every UI bug
+that has actually shipped here was pure CSS. `tools/render_check.py` renders
+`static/app.css` against a replica of Streamlit's DOM in headless Chromium and
+measures whether anything is clipped, hidden under the fixed input bar, or wrapping
+onto an extra line:
+
+```bash
+python tools/render_check.py                 # measure and report
+python tools/render_check.py "New subtitle"  # try alternative hero copy
+```
+
+Run it after touching `static/app.css`. It catches what reading the CSS does not —
+it found the newest answer sitting 131px underneath the chat input, and the hero
+subtitle wrapping to two lines.
+
 ### The retrieval eval
 
 [`tests/test_retrieval_eval.py`](tests/test_retrieval_eval.py) is a golden set of real RCC questions paired with the page that should answer them. It is the safety net for any change to chunking, ranking or synonyms — without it, every tuning decision is a guess.
