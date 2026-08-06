@@ -77,18 +77,28 @@ def _subtitle_from_app():
 
 SUBTITLE = _subtitle_from_app()
 
+def _card_labels():
+    """The real card labels from app.py, so the check matches what ships."""
+    source = _read("app.py")
+    block = re.search(r"EXAMPLES = \[(.*?)\]", source, re.S).group(1)
+    return [
+        f"{icon} {label}"
+        for icon, label, _question in re.findall(
+            r'\(\s*"([^"]+)",\s*"([^"]+)",\s*"([^"]+)"\s*\)', block
+        )
+    ]
+
+
+CARD_LABELS = _card_labels()
+
 CARDS = "".join(
     f'''<div data-testid="stHorizontalBlock">
       <div data-testid="stColumn"><div class="st-key-example-card-{a} element-container">
-        <div class="stButton"><button>{ta}</button></div></div></div>
+        <div class="stButton"><button><p>{CARD_LABELS[a]}</p></button></div></div></div>
       <div data-testid="stColumn"><div class="st-key-example-card-{b} element-container">
-        <div class="stButton"><button>{tb}</button></div></div></div>
+        <div class="stButton"><button><p>{CARD_LABELS[b]}</p></button></div></div></div>
     </div>'''
-    for a, b, ta, tb in [
-        (0, 1, "🚀 How do I connect to Midway via SSH?", "💾 What are the storage quotas on Midway?"),
-        (2, 3, "⚙️ How do I submit a batch job with sbatch?", "🐍 How do I set up a Python environment?"),
-        (4, 5, "🎮 How do I run PyTorch on GPUs?", "📊 How do I check my allocation balance?"),
-    ]
+    for a, b in [(0, 1), (2, 3), (4, 5)]
 )
 
 WELCOME_BODY = f"""
@@ -149,8 +159,9 @@ var out = {
   els: {}
 };
 ['.welcome-title', '.welcome-subtitle', '.user-bubble', '.error-card',
- '.st-key-example-card-5 button', '[data-testid="stBottomBlockContainer"]'
-].forEach(function (s) { out.els[s] = box(s); });
+ '[data-testid="stBottomBlockContainer"]']
+ .concat([0,1,2,3,4,5].map(function(i){return '.st-key-example-card-'+i+' button p';}))
+ .forEach(function (s) { out.els[s] = box(s); });
 document.title = JSON.stringify(out);
 </script>
 """
@@ -213,7 +224,7 @@ def report(label, data):
         if b["bottom"] > data["viewport"]["h"]:
             flags.append("BELOW FOLD")
         state = "  ".join(flags) or "ok"
-        extra = f" lines={b['lines']}" if "subtitle" in sel else ""
+        extra = f" lines={b['lines']}" if ("subtitle" in sel or "card" in sel) else ""
         print(f"  {sel:44} top={b['top']:>5} bottom={b['bottom']:>5}{extra}  {state}")
 
 

@@ -30,13 +30,15 @@ logger = logging.getLogger("sage.app")
 
 STATIC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 
+# (icon, card label, question actually sent). The label is kept short so every
+# card is a single line; the question stays conversational for the model.
 EXAMPLES = [
-    ("🚀", "How do I connect to Midway via SSH?"),
-    ("💾", "What are the storage quotas on Midway?"),
-    ("⚙️", "How do I submit a batch job with sbatch?"),
-    ("🐍", "How do I set up a Python environment?"),
-    ("🎮", "How do I run PyTorch on GPUs?"),
-    ("📊", "How do I check my allocation balance?"),
+    ("🚀", "Connect to Midway via SSH", "How do I connect to Midway via SSH?"),
+    ("💾", "Storage quotas", "What are the storage quotas on Midway?"),
+    ("⚙️", "Submit a batch job", "How do I submit a batch job with sbatch?"),
+    ("🐍", "Set up a Python environment", "How do I set up a Python environment?"),
+    ("🎮", "Run PyTorch on GPUs", "How do I run PyTorch on GPUs?"),
+    ("📊", "Check my allocation", "How do I check my allocation balance?"),
 ]
 
 st.set_page_config(
@@ -364,11 +366,12 @@ if not has_messages:
                 position = row + offset
                 if position >= len(EXAMPLES):
                     continue
-                icon, question = EXAMPLES[position]
+                icon, label, question = EXAMPLES[position]
                 with column, st.container(key=f"example-card-{position}"):
                     if st.button(
-                        f"{icon} {question}",
+                        f"{icon} {label}",
                         key=f"example-{position}",
+                        help=question,
                         use_container_width=True,
                     ):
                         start_new_turn(question)
