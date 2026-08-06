@@ -1,0 +1,21 @@
+# `base` is deliberately unset so Streamlit follows the browser's colour scheme.
+# static/app.css keys off `prefers-color-scheme`, and pinning a base here would
+# desync the app's palette from Streamlit's own chrome.
+[theme]
+primaryColor = "#800000"
+font = "sans serif"
+
+[server]
+# Uploads are truncated to ~30k characters anyway; the old 200 MB default meant a
+# huge PDF was read into memory before anything checked its size.
+maxUploadSize = 10
+enableXsrfProtection = true
+
+[browser]
+gatherUsageStats = false
+
+[client]
+# Hides the Deploy button and hamburger, but keeps the running/stop indicator
+# so a long generation can still be cancelled.
+toolbarMode = "minimal"
+showErrorDetails = false

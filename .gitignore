@@ -2,6 +2,21 @@
 .doc-backups/
 refresh-docs.log
 
+# Local checkout refresh-docs.sh clones the upstream User Guide into
+.user-guide/
+
+# Secrets — never commit an API key
+.streamlit/secrets.toml
+
+# Feedback sink (SAGE_FEEDBACK_LOG)
+*.jsonl
+
 # Python
 __pycache__/
 *.pyc
+.venv/
+venv/
+
+# Tooling caches
+.pytest_cache/
+.ruff_cache/
