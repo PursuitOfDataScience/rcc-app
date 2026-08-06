@@ -15,11 +15,17 @@ import os
 import streamlit as st
 import streamlit.components.v1 as components
 
-from sage import config, feedback, files, history, links, llm
+from sage import config, feedback, files, history, links, llm, providers
 from sage import corpus as corpus_mod
 from sage.prompts import SYSTEM_PROMPT
 from sage.search import Index
-from sage.tools import READ_DOC, SEARCH_DOCS, TOOL_SCHEMAS, ToolRunner
+from sage.tools import (
+    READ_DOC,
+    SEARCH_DOCS,
+    TOOL_SCHEMAS,
+    ToolRunner,
+    gather_context,
+)
 
 logging.basicConfig(
     level=getattr(logging, config.LOG_LEVEL, logging.WARNING),
@@ -77,27 +83,43 @@ def get_index() -> Index:
     return index
 
 
-def resolve_api_key() -> str:
-    key = config.api_key()
+def resolve_api_key(provider: str) -> str:
+    key = config.api_key(provider)
     if key:
         return key
     try:
-        return str(st.secrets.get("MISTRAL_API_KEY", ""))
+        return str(st.secrets.get(config.API_KEY_VARS[provider], ""))
     except Exception:  # no secrets.toml present
         return ""
 
 
+def configured_providers() -> list[str]:
+    """Providers that actually have a key, in preference order."""
+    return [name for name in (providers.MISTRAL, providers.OPENCODE)
+            if resolve_api_key(name)]
+
+
 @st.cache_resource(show_spinner=False)
-def get_client():
-    """Cached without arguments so the key never lands in a cache identity."""
-    return llm.create_client(resolve_api_key())
+def get_provider(name: str):
+    """Cached per provider; the key is read inside so it never becomes a cache key."""
+    return providers.build(name, resolve_api_key(name))
 
 
-API_KEY = resolve_api_key()
-if not API_KEY:
+@st.cache_resource(show_spinner=False)
+def available_models(name: str) -> list[providers.Model]:
+    try:
+        return get_provider(name).models()
+    except Exception as exc:
+        logger.warning("Could not list models for %s: %s", name, exc)
+        return []
+
+
+READY = configured_providers()
+if not READY:
     st.error(
-        "**MISTRAL_API_KEY is not set.** Export it in the environment, or add it to "
-        "`.streamlit/secrets.toml`, then reload."
+        "**No API key is set.** Provide `MISTRAL_API_KEY` and/or `OPENCODE_API_KEY` "
+        "in the environment or `.streamlit/secrets.toml`, then reload. "
+        "OpenCode Zen keys are free and start with `sk-zen-`."
     )
     st.stop()
 
@@ -111,8 +133,34 @@ for key, default in (
     ("uploader_key", 0),
     ("error", None),
     ("error_detail", ""),
+    ("model", ""),
 ):
     st.session_state.setdefault(key, default)
+
+
+def model_options() -> list[providers.Model]:
+    options: list[providers.Model] = []
+    for name in READY:
+        options.extend(available_models(name))
+    return options
+
+
+MODELS = model_options()
+
+
+def current_model() -> providers.Model:
+    """The selected model, falling back to the configured default then anything."""
+    for candidate in (st.session_state.model, config.DEFAULT_MODEL):
+        chosen = providers.parse_key(candidate)
+        if chosen and any(option.key == chosen.key for option in MODELS):
+            return chosen
+    if MODELS:
+        return MODELS[0]
+    return providers.Model(READY[0], config.MODEL)
+
+
+MODEL = current_model()
+st.session_state.model = MODEL.key
 
 
 # --- rendering helpers -----------------------------------------------------
@@ -229,10 +277,12 @@ def _detail(exc: BaseException | None) -> str:
     if exc is None:
         return ""
     text = f"{type(exc).__name__}: {exc}"
-    status = getattr(exc, "status_code", None)
+    status = getattr(exc, "status_code", None) or getattr(
+        getattr(exc, "response", None), "status_code", None
+    )
     if status:
         text = f"{text}  (HTTP {status})"
-    return f"{text}\nmodel={config.MODEL}"[:800]
+    return f"{text}\nmodel={MODEL.key}"[:800]
 
 
 def status_html(text: str) -> str:
@@ -330,12 +380,35 @@ def render_about() -> None:
 
 has_messages = bool(st.session_state.messages)
 
+def render_model_picker() -> None:
+    """Switch provider/model mid-session — the way round a spent API quota."""
+    if len(MODELS) < 2:
+        return
+    keys = [option.key for option in MODELS]
+    labels = {option.key: option.label for option in MODELS}
+    chosen = st.selectbox(
+        "Model",
+        options=keys,
+        index=keys.index(MODEL.key) if MODEL.key in keys else 0,
+        format_func=lambda key: labels[key],
+        label_visibility="collapsed",
+        key="model-select",
+        help="Which model answers. OpenCode Zen hosts free models.",
+    )
+    if chosen and chosen != st.session_state.model:
+        st.session_state.model = chosen
+        st.rerun()
+
+
 with st.container(key="topbar"):
-    slots = st.columns([1, 1], gap="small") if has_messages else [st.container()]
-    with slots[0], st.popover("ℹ️", help="About Sage"):
+    widths = [7, 1, 1] if has_messages else [7, 1]
+    slots = st.columns(widths, gap="small")
+    with slots[0]:
+        render_model_picker()
+    with slots[1], st.popover("ℹ️", help="About Sage"):
         render_about()
     if has_messages:
-        with slots[1]:
+        with slots[2]:
             if st.button("🗑️", key="clear", help="Clear this conversation"):
                 st.session_state.messages = []
                 st.session_state.processing = False
@@ -473,11 +546,45 @@ if st.session_state.processing:
     answer = st.empty()
     runner = ToolRunner(INDEX)
     final_text = ""
+    question = st.session_state.messages[-1].get("text", "")
+
+    def grounded(messages: list[dict]) -> list[dict]:
+        """Retrieve up front, for models that cannot call tools."""
+        context, chunks = gather_context(INDEX, question)
+        for chunk in chunks:
+            runner.sources.append(chunk)
+        if not context:
+            return messages
+        return [
+            messages[0],
+            {
+                "role": "system",
+                "content": (
+                    "Answer only from these RCC documentation sections. Cite them "
+                    "as [Title](path) using the exact path in each header. If they "
+                    "do not cover the question, say so.\n\n" + context
+                ),
+            },
+            *messages[1:],
+        ]
 
     try:
-        client = get_client()
+        provider = get_provider(MODEL.provider)
         messages = history.build(st.session_state.messages, SYSTEM_PROMPT)
-        turn = llm.start(client, messages, TOOL_SCHEMAS)
+        use_tools = MODEL.supports_tools
+
+        if use_tools:
+            try:
+                turn = llm.start(provider, MODEL.id, messages, TOOL_SCHEMAS)
+            except llm.AssistantError as exc:
+                if not llm.rejects_tools(exc.original or exc):
+                    raise
+                # The model does not do tool calls; retrieve up front instead.
+                logger.info("%s rejected tools; using single-pass retrieval", MODEL.id)
+                use_tools = False
+        if not use_tools:
+            messages = grounded(messages)
+            turn = llm.start(provider, MODEL.id, messages, None)
 
         for round_number in range(config.MAX_TOOL_ROUNDS + 1):
             with answer.container(), st.chat_message("assistant"):
@@ -488,7 +595,7 @@ if st.session_state.processing:
             if streamed:
                 final_text = streamed
 
-            if not turn.tool_calls:
+            if not turn.tool_calls or not use_tools:
                 break
             if round_number == config.MAX_TOOL_ROUNDS:
                 logger.warning("Tool-round limit reached without a final answer")
@@ -505,7 +612,7 @@ if st.session_state.processing:
                 messages.append(
                     llm.tool_result_message(call, runner.run(call["name"], call["input"]))
                 )
-            turn = llm.start(client, messages, TOOL_SCHEMAS)
+            turn = llm.start(provider, MODEL.id, messages, TOOL_SCHEMAS)
 
         status.empty()
         sources = [
@@ -521,7 +628,13 @@ if st.session_state.processing:
         # Re-render once with links resolved, so a raw `docs/...md` target never flashes.
         answer.empty()
         st.session_state.messages.append(
-            {"role": "assistant", "text": final_text, "sources": sources, "rating": None}
+            {
+                "role": "assistant",
+                "text": final_text,
+                "sources": sources,
+                "rating": None,
+                "model": MODEL.key,
+            }
         )
         if runner.queries and not sources:
             feedback.record_miss(runner.queries, st.session_state.messages[-2]["text"])

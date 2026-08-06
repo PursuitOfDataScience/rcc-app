@@ -1,4 +1,4 @@
-"""Mistral client, streaming, and error classification.
+"""Turn assembly, streaming, and error classification.
 
 There used to be two near-identical stream readers — one that yielded deltas for
 the UI and one that collected silently — and the tool loop used the silent one for
@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from . import config
+from .providers import Chunk
 
 logger = logging.getLogger(__name__)
 
@@ -54,11 +55,15 @@ def classify(exc: BaseException) -> AssistantError:
         return exc
 
     status = getattr(exc, "status_code", None) or getattr(exc, "code", None)
+    if status is None:
+        # httpx.HTTPStatusError keeps the code on .response
+        status = getattr(getattr(exc, "response", None), "status_code", None)
     text = f"{type(exc).__name__} {exc}".lower()
 
     if status in (401, 403) or "unauthorized" in text or "invalid api key" in text:
         kind = "auth"
-    elif status == 429 or "rate limit" in text or "too many requests" in text:
+    elif (status == 429 or "rate limit" in text or "too many requests" in text
+          or "quota" in text or "insufficient" in text or "credit" in text):
         kind = "rate_limit"
     elif (
         ("context" in text and ("length" in text or "token" in text))
@@ -78,37 +83,13 @@ def classify(exc: BaseException) -> AssistantError:
     return AssistantError(kind, exc)
 
 
-def create_client(api_key: str):
-    """Build a Mistral SDK v1 client. Raises AssistantError with a usable message."""
-    if not api_key:
-        raise AssistantError("auth")
-    try:
-        from mistralai import Mistral  # noqa: PLC0415
-    except ImportError as exc:  # pragma: no cover - environment problem
-        logger.error("mistralai SDK missing or too old: %s", exc)
-        raise AssistantError("unknown", exc) from exc
-    try:
-        return Mistral(api_key=api_key)
-    except Exception as exc:  # pragma: no cover
-        raise classify(exc) from exc
-
-
-def _open(stream):
-    """Return (iterable, context_manager_to_close).
-
-    `mistralai` 1.x returns a context manager from `chat.stream()` — the documented
-    usage is `with client.chat.stream(...) as events:` — while some builds return a
-    plain iterator. Entering it when possible makes both shapes work.
-    """
-    if hasattr(type(stream), "__enter__"):
-        opened = stream.__enter__()
-        return (stream if opened is None else opened), stream
-    return stream, None
-
-
 @dataclass
 class Turn:
-    """One model turn. Iterate `deltas()` to stream, or `consume()` to block."""
+    """One model turn. Iterate `deltas()` to stream, or `consume()` to block.
+
+    Consumes normalised `Chunk`s, so Mistral and any OpenAI-compatible endpoint
+    go through exactly the same assembly and error handling.
+    """
 
     stream: Any
     text: str = ""
@@ -117,50 +98,25 @@ class Turn:
 
     def deltas(self) -> Iterator[str]:
         pending: dict[int, dict] = {}
-        source, manager = _open(self.stream)
         try:
-            for event in source:
-                data = getattr(event, "data", None)
-                if not data or not getattr(data, "choices", None):
+            for chunk in self.stream:
+                if not isinstance(chunk, Chunk):
                     continue
-                delta = data.choices[0].delta
-
-                content = getattr(delta, "content", None)
-                if content:
-                    # Some SDK versions deliver content as a list of parts.
-                    if isinstance(content, list):
-                        content = "".join(
-                            part if isinstance(part, str) else getattr(part, "text", "")
-                            for part in content
-                        )
-                    if content:
-                        self.text += content
-                        yield content
-
-                for call in getattr(delta, "tool_calls", None) or []:
-                    index = getattr(call, "index", 0) or 0
-                    slot = pending.setdefault(index, {"id": "", "name": "", "args": ""})
-                    if getattr(call, "id", None):
-                        slot["id"] = call.id
-                    function = getattr(call, "function", None)
-                    if function is not None:
-                        if getattr(function, "name", None):
-                            slot["name"] = function.name
-                        if getattr(function, "arguments", None):
-                            arguments = function.arguments
-                            slot["args"] += (
-                                arguments
-                                if isinstance(arguments, str)
-                                else json.dumps(arguments)
-                            )
+                if chunk.text:
+                    self.text += chunk.text
+                    yield chunk.text
+                for fragment in chunk.tool_calls:
+                    slot = pending.setdefault(
+                        fragment["index"], {"id": "", "name": "", "args": ""}
+                    )
+                    if fragment.get("id"):
+                        slot["id"] = fragment["id"]
+                    if fragment.get("name"):
+                        slot["name"] = fragment["name"]
+                    if fragment.get("arguments"):
+                        slot["args"] += fragment["arguments"]
         except Exception as exc:
             raise classify(exc) from exc
-        finally:
-            if manager is not None:
-                try:
-                    manager.__exit__(None, None, None)
-                except Exception:  # closing must never mask the real error
-                    logger.debug("Ignoring error while closing the stream", exc_info=True)
 
         self.tool_calls = [
             {"id": slot["id"], "name": slot["name"], "input": _parse(slot["args"])}
@@ -204,22 +160,20 @@ def _parse(arguments: str) -> dict:
     return parsed if isinstance(parsed, dict) else {}
 
 
-def start(client, messages: list[dict], tools: list[dict] | None = None) -> Turn:
+def start(provider, model: str, messages: list[dict],
+          tools: list[dict] | None = None) -> Turn:
     """Open a streaming turn, retrying transient failures before any output."""
     attempts = max(config.REQUEST_RETRIES, 0) + 1
     last: AssistantError | None = None
 
     for attempt in range(attempts):
         try:
-            stream = client.chat.stream(
-                model=config.MODEL,
-                messages=messages,
-                tools=tools or None,
-                tool_choice="auto" if tools else None,
-                max_tokens=config.MAX_TOKENS,
-                temperature=config.TEMPERATURE,
-            )
-            return Turn(stream=stream)
+            stream = provider.stream(model, messages, tools)
+            # `stream` is a generator, so the request has not been made yet. Pull
+            # the first chunk here so connection and auth failures surface where
+            # they can still be retried, rather than mid-render.
+            first = next(stream, None)
+            return Turn(stream=_replay(first, stream))
         except Exception as exc:
             error = classify(exc)
             last = error
@@ -227,11 +181,26 @@ def start(client, messages: list[dict], tools: list[dict] | None = None) -> Turn
                 raise error from exc
             delay = 2**attempt
             logger.warning(
-                "Transient %s from Mistral, retrying in %ss", error.kind, delay
+                "Transient %s from %s, retrying in %ss", error.kind, provider.name, delay
             )
             time.sleep(delay)
 
     raise last or AssistantError("unknown")
+
+
+def _replay(first, rest) -> Iterator[Chunk]:
+    if first is not None:
+        yield first
+    yield from rest
+
+
+def rejects_tools(exc: BaseException) -> bool:
+    """Whether a failure looks like the model simply not supporting tool calls."""
+    text = f"{type(exc).__name__} {exc}".lower()
+    return ("tool" in text or "function" in text) and any(
+        mark in text for mark in
+        ("not support", "unsupported", "invalid", "unknown parameter", "unrecognized")
+    )
 
 
 def tool_result_message(call: dict, content: str) -> dict:

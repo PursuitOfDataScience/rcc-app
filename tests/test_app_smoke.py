@@ -5,53 +5,65 @@ that the sections actually read become the Sources strip, and that a failure lan
 a typed, user-readable error instead of taking the page down.
 """
 
-from types import SimpleNamespace
-
 import pytest
 
 import stub_streamlit
-from sage import llm
+from sage import config, llm, providers
 
 
 def event(content=None, tool_calls=None):
-    delta = SimpleNamespace(content=content, tool_calls=tool_calls)
-    return SimpleNamespace(data=SimpleNamespace(choices=[SimpleNamespace(delta=delta)]))
+    return providers.Chunk(text=content or "", tool_calls=tool_calls or [])
 
 
 def tool_call(index, cid, name, arguments):
-    return SimpleNamespace(
-        index=index, id=cid, function=SimpleNamespace(name=name, arguments=arguments)
-    )
+    return {"index": index, "id": cid, "name": name, "arguments": arguments}
 
 
-class ScriptedClient:
-    """Replays a list of turns, one per `chat.stream(...)` call."""
+class ScriptedProvider:
+    """Replays a list of turns, one per `stream(...)` call."""
 
-    def __init__(self, turns, error=None):
+    def __init__(self, turns, error=None, name="mistral", models=("m1",)):
+        self.name = name
         self.turns = list(turns)
         self.error = error
         self.calls = 0
         self.sent: list[list[dict]] = []
-        self.chat = SimpleNamespace(stream=self._stream)
+        self.tools_seen: list = []
+        self._models = models
 
-    def _stream(self, **kwargs):
+    def models(self):
+        return [providers.Model(self.name, model_id) for model_id in self._models]
+
+    def stream(self, model, messages, tools):
         self.calls += 1
-        self.sent.append(kwargs["messages"])
+        self.sent.append(messages)
+        self.tools_seen.append(tools)
         if self.error:
             raise self.error
         if not self.turns:
-            raise AssertionError("client called more times than scripted")
-        return iter(self.turns.pop(0))
+            raise AssertionError("provider called more times than scripted")
+        yield from self.turns.pop(0)
 
 
-def run_app(monkeypatch, *, client=None, session=None, **stub_kwargs):
-    """Import app.py under the stub and return (stub, module-or-None)."""
+def run_app(monkeypatch, *, client=None, session=None, extra=None,
+            opencode=False, **stub_kwargs):
+    """Import app.py under the stub and return (stub, module-or-None).
+
+    `opencode=True` configures a second provider, so the model picker appears.
+    """
     monkeypatch.setenv("MISTRAL_API_KEY", "test-key")
+    if opencode:
+        monkeypatch.setenv("OPENCODE_API_KEY", "sk-zen-test")
+    else:
+        monkeypatch.delenv("OPENCODE_API_KEY", raising=False)
     stub = stub_streamlit.install(**stub_kwargs)
     if session:
         stub.session_state.update(session)
     if client is not None:
-        monkeypatch.setattr(llm, "create_client", lambda _key: client)
+        registry = {client.name: client, **(extra or {})}
+        monkeypatch.setattr(
+            providers, "build", lambda name, _key: registry[name]
+        )
 
     module = None
     try:
@@ -109,7 +121,7 @@ class TestTurnLoop:
         }
 
     def test_search_read_answer_produces_a_stored_answer(self, monkeypatch):
-        client = ScriptedClient([self.SEARCH, self.READ, self.ANSWER])
+        client = ScriptedProvider([self.SEARCH, self.READ, self.ANSWER])
         stub, _module = run_app(monkeypatch, client=client, session=self.session())
 
         assert client.calls == 3
@@ -122,14 +134,14 @@ class TestTurnLoop:
     def test_the_final_answer_is_streamed_not_dumped(self, monkeypatch):
         """The old loop collected the post-tool answer silently, so the most common
         interaction (search -> read -> answer) never streamed at all."""
-        client = ScriptedClient([self.SEARCH, self.READ, self.ANSWER])
+        client = ScriptedProvider([self.SEARCH, self.READ, self.ANSWER])
         stub, _module = run_app(monkeypatch, client=client, session=self.session())
         # The answer arrived as two separate deltas through write_stream, which only
         # happens if the post-tool turn was consumed as a live generator.
         assert stub.stream_chunks[-1] == 2
 
     def test_sections_that_were_read_become_sources(self, monkeypatch):
-        client = ScriptedClient([self.SEARCH, self.READ, self.ANSWER])
+        client = ScriptedProvider([self.SEARCH, self.READ, self.ANSWER])
         stub, _module = run_app(monkeypatch, client=client, session=self.session())
         sources = stub.session_state["messages"][-1]["sources"]
         assert [source["id"] for source in sources] == ["docs/storage/main.md#quotas"]
@@ -137,7 +149,7 @@ class TestTurnLoop:
         assert sources[0]["source"] == "docs"
 
     def test_tool_results_are_sent_back_to_the_model(self, monkeypatch):
-        client = ScriptedClient([self.SEARCH, self.READ, self.ANSWER])
+        client = ScriptedProvider([self.SEARCH, self.READ, self.ANSWER])
         run_app(monkeypatch, client=client, session=self.session())
         final = client.sent[-1]
         roles = [message["role"] for message in final]
@@ -148,14 +160,14 @@ class TestTurnLoop:
         assert any("Quotas" in body for body in tool_bodies)
 
     def test_related_sections_are_offered_alongside_sources(self, monkeypatch):
-        client = ScriptedClient([self.SEARCH, self.READ, self.ANSWER])
+        client = ScriptedProvider([self.SEARCH, self.READ, self.ANSWER])
         stub, _module = run_app(monkeypatch, client=client, session=self.session())
         # Rendering the stored answer happens on the rerun, so render it here.
         html = "\n".join(stub.markdown_html)
         assert "Sources" in html or stub.session_state["messages"][-1]["sources"]
 
     def test_an_answer_with_no_tools_still_works(self, monkeypatch):
-        client = ScriptedClient([[event("I cannot run commands.")]])
+        client = ScriptedProvider([[event("I cannot run commands.")]])
         stub, _module = run_app(monkeypatch, client=client, session=self.session())
         assert client.calls == 1
         assert stub.session_state["messages"][-1]["text"] == "I cannot run commands."
@@ -164,7 +176,7 @@ class TestTurnLoop:
     def test_the_tool_round_limit_is_enforced(self, monkeypatch):
         from sage import config
 
-        client = ScriptedClient([self.SEARCH] * (config.MAX_TOOL_ROUNDS + 1))
+        client = ScriptedProvider([self.SEARCH] * (config.MAX_TOOL_ROUNDS + 1))
         stub, _module = run_app(monkeypatch, client=client, session=self.session())
         assert client.calls == config.MAX_TOOL_ROUNDS + 1
         assert "wasn't able to finish" in stub.session_state["messages"][-1]["text"]
@@ -172,7 +184,7 @@ class TestTurnLoop:
     def test_api_failure_becomes_a_typed_user_message(self, monkeypatch):
         error = RuntimeError("rate limit exceeded")
         monkeypatch.setattr(llm.time, "sleep", lambda _s: None)
-        client = ScriptedClient([], error=error)
+        client = ScriptedProvider([], error=error)
         stub, _module = run_app(monkeypatch, client=client, session=self.session())
         assert stub.session_state["error"] == llm.AssistantError("rate_limit").user_message
         assert stub.session_state["processing"] is False
@@ -180,10 +192,114 @@ class TestTurnLoop:
         assert stub.session_state["messages"][-1]["role"] == "user"
 
     def test_an_unexpected_exception_does_not_take_the_page_down(self, monkeypatch):
-        client = ScriptedClient([], error=ValueError("totally unexpected"))
+        client = ScriptedProvider([], error=ValueError("totally unexpected"))
         stub, _module = run_app(monkeypatch, client=client, session=self.session())
         assert stub.session_state["error"]
         assert stub.session_state["processing"] is False
+
+
+class TestModelPicker:
+    """Switching provider mid-session is the way round a spent API quota."""
+
+    def session(self):
+        return {"messages": [], "processing": False}
+
+    def test_no_picker_when_only_one_model_is_available(self, monkeypatch):
+        provider = ScriptedProvider([], models=("only-one",))
+        stub, _m = run_app(monkeypatch, client=provider, session=self.session())
+        assert not [e for e in stub.events if e[0] == "selectbox"]
+
+    def test_picker_lists_every_model_from_every_configured_provider(self, monkeypatch):
+        mistral = ScriptedProvider([], name="mistral", models=("mistral-small-latest",))
+        zen = ScriptedProvider([], name="opencode",
+                               models=("deepseek-v4-flash-free", "big-pickle"))
+        stub, _m = run_app(monkeypatch, client=mistral, extra={"opencode": zen},
+                           session=self.session(), opencode=True)
+        picks = [e for e in stub.events if e[0] == "selectbox"]
+        assert picks, "expected a model picker"
+        offered = picks[0][1][1]
+        assert "mistral:mistral-small-latest" in offered
+        assert "opencode:deepseek-v4-flash-free" in offered
+        assert "opencode:big-pickle" in offered
+
+    def test_the_selected_model_is_the_one_used(self, monkeypatch):
+        mistral = ScriptedProvider([], name="mistral", models=("mistral-small-latest",))
+        zen = ScriptedProvider([[event("Zen answered.")]], name="opencode",
+                               models=("deepseek-v4-flash-free",))
+        session = {
+            "messages": [{"role": "user", "text": "hi", "attachment": None}],
+            "processing": True,
+            "model": "opencode:deepseek-v4-flash-free",
+        }
+        stub, _m = run_app(monkeypatch, client=mistral, extra={"opencode": zen},
+                           session=session, opencode=True)
+        assert zen.calls == 1
+        assert mistral.calls == 0
+        assert stub.session_state["messages"][-1]["text"] == "Zen answered."
+        assert stub.session_state["messages"][-1]["model"] == (
+            "opencode:deepseek-v4-flash-free"
+        )
+
+    def test_an_unknown_saved_model_falls_back_instead_of_crashing(self, monkeypatch):
+        provider = ScriptedProvider([[event("ok")]], models=("m1",))
+        session = {
+            "messages": [{"role": "user", "text": "hi", "attachment": None}],
+            "processing": True,
+            "model": "opencode:retired-model",
+        }
+        stub, _m = run_app(monkeypatch, client=provider, session=session)
+        assert stub.session_state["model"] == "mistral:m1"
+        assert stub.session_state["error"] is None
+
+
+class TestToollessModels:
+    """Free models that cannot call tools still answer, from a single retrieval."""
+
+    def session(self, model):
+        return {
+            "messages": [
+                {"role": "user", "text": "what is my storage quota", "attachment": None}
+            ],
+            "processing": True,
+            "model": model,
+        }
+
+    def test_a_configured_toolless_model_retrieves_up_front(self, monkeypatch):
+        # config reads env at import, so patch the value the app actually uses.
+        monkeypatch.setattr(config, "TOOLLESS_MODELS", ("big-pickle",))
+        zen = ScriptedProvider([[event("Your quota is 30 GB.")]], name="opencode",
+                               models=("big-pickle",))
+        mistral = ScriptedProvider([], name="mistral", models=("m1",))
+        stub, _m = run_app(monkeypatch, client=mistral, extra={"opencode": zen},
+                           session=self.session("opencode:big-pickle"), opencode=True)
+        assert zen.calls == 1
+        assert zen.tools_seen == [None], "tools must not be offered"
+        sent = "\n".join(m["content"] for m in zen.sent[0])
+        assert "Answer only from these RCC documentation sections" in sent
+        assert "docs/storage" in sent
+        answer = stub.session_state["messages"][-1]
+        assert answer["text"] == "Your quota is 30 GB."
+        assert answer["sources"], "retrieved sections should become the Sources strip"
+
+    def test_a_provider_rejecting_tools_falls_back_automatically(self, monkeypatch):
+        monkeypatch.setattr(config, "TOOLLESS_MODELS", ())
+
+        class RejectsTools(ScriptedProvider):
+            def stream(self, model, messages, tools):
+                self.calls += 1
+                self.sent.append(messages)
+                self.tools_seen.append(tools)
+                if tools:
+                    raise RuntimeError("this model does not support tools")
+                yield event("Answered without tools.")
+
+        provider = RejectsTools([], models=("m1",))
+        stub, _m = run_app(monkeypatch, client=provider,
+                           session=self.session("mistral:m1"))
+        assert provider.tools_seen[0] is not None
+        assert provider.tools_seen[-1] is None
+        assert stub.session_state["messages"][-1]["text"] == "Answered without tools."
+        assert stub.session_state["error"] is None
 
 
 class TestConversationRendering:

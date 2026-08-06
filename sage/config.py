@@ -42,6 +42,37 @@ def _env_list(name: str, default: tuple[str, ...]) -> tuple[str, ...]:
 
 # --- model -----------------------------------------------------------------
 
+# --- providers -------------------------------------------------------------
+# Which provider/model a fresh session starts on, as "provider:model-id".
+DEFAULT_MODEL = os.getenv("SAGE_DEFAULT_MODEL", "mistral:mistral-small-latest")
+
+MISTRAL_MODELS = _env_list(
+    "SAGE_MISTRAL_MODELS",
+    ("mistral-small-latest", "mistral-medium-latest", "mistral-large-latest"),
+)
+
+# OpenCode Zen is an OpenAI-compatible endpoint fronting a set of free models —
+# a way to keep working once a paid key is out of credit. The live list is
+# discovered from GET /models at runtime; this is only the fallback, since a free
+# tier's lineup changes without notice.
+OPENCODE_BASE_URL = os.getenv("OPENCODE_BASE_URL", "https://opencode.ai/zen/v1")
+OPENCODE_MODELS = _env_list(
+    "SAGE_OPENCODE_MODELS",
+    (
+        "deepseek-v4-flash-free",
+        "big-pickle",
+        "mimo-v2.5",
+        "nemotron-3-ultra",
+        "north-mini-code",
+    ),
+)
+
+# Substrings marking models that cannot call tools. Those answer from a single
+# retrieval pass instead of the search/read loop. The app also falls back
+# automatically if a provider rejects a request because of tools.
+TOOLLESS_MODELS = _env_list("SAGE_TOOLLESS_MODELS", ())
+
+# Retained for compatibility; the UI picker overrides it per session.
 MODEL = os.getenv("SAGE_MODEL", "mistral-small-latest")
 MAX_TOKENS = _env_int("SAGE_MAX_TOKENS", 1600)
 TEMPERATURE = _env_float("SAGE_TEMPERATURE", 0.2)
@@ -140,9 +171,12 @@ FEEDBACK_LOG = os.getenv("SAGE_FEEDBACK_LOG", "")
 SNAPSHOT_FILE = os.getenv("SAGE_SNAPSHOT_FILE", "./docs_snapshot.json")
 
 
-def api_key() -> str:
-    """Mistral key from the environment. The UI adds an `st.secrets` fallback."""
-    return os.getenv("MISTRAL_API_KEY", "")
+API_KEY_VARS = {"mistral": "MISTRAL_API_KEY", "opencode": "OPENCODE_API_KEY"}
+
+
+def api_key(provider: str = "mistral") -> str:
+    """Provider key from the environment. The UI adds an `st.secrets` fallback."""
+    return os.getenv(API_KEY_VARS.get(provider, "MISTRAL_API_KEY"), "")
 
 
 def snapshot() -> dict:

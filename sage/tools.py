@@ -100,6 +100,20 @@ def _outline(document) -> str:
     return "Sections on this page:\n" + "\n".join(shown) + more
 
 
+def gather_context(index: Index, query: str, limit: int | None = None):
+    """One-shot retrieval for models that cannot call tools.
+
+    Returns (context_text, chunks). The chunks become the answer's Sources strip,
+    exactly as if the model had read them itself.
+    """
+    results = index.search(query, limit or config.SEARCH_RESULTS)
+    blocks = [
+        f"=== {result.chunk.breadcrumb} ({result.chunk.id}) ===\n{result.chunk.text}"
+        for result in results
+    ]
+    return "\n\n".join(blocks), [result.chunk for result in results]
+
+
 class ToolRunner:
     """Executes tool calls and records which sections were actually read."""
 
