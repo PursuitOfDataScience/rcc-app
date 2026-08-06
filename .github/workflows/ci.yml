@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Lint and test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # The retrieval layer is importable without Streamlit or the Mistral SDK,
+      # which is what keeps this job fast. pypdf is installed so the upload tests
+      # exercise real parsing rather than the ImportError fallback.
+      - name: Install test dependencies
+        run: pip install --disable-pip-version-check pytest ruff pypdf
+
+      - name: Lint
+        run: ruff check .
+
+      - name: Test
+        run: pytest -q
+
+      - name: Check app.js parses
+        run: node --check static/app.js
+
+  deps:
+    name: Dependencies resolve
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install runtime dependencies
+        run: pip install --disable-pip-version-check -r requirements.txt
+
+      # Guards the class of bug this replaced: requirements.txt listed a package
+      # that was never imported while omitting one that was, and the SDK import
+      # path differs between mistralai 0.x and 1.x.
+      - name: Verify the imports the app actually uses
+        run: |
+          python - <<'PY'
+          import streamlit
+          import pymupdf
+          from mistralai import Mistral
+          from pypdf import PdfReader
+          print("streamlit", streamlit.__version__)
+          print("imports OK")
+          PY
+
+      - name: Build the documentation index
+        run: |
+          python - <<'PY'
+          import logging
+          logging.basicConfig(level=logging.INFO)
+          from sage import corpus, search
+          built = corpus.build()
+          index = search.Index(built)
+          assert built.chunks, "no chunks indexed"
+          assert index.search("storage quota"), "search returned nothing"
+          print("index:", corpus.summarize(built))
+          PY
