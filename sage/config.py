@@ -1,0 +1,155 @@
+"""Runtime configuration.
+
+Every value can be overridden by an environment variable so a deployment can be
+retuned without touching code. This module must stay importable without Streamlit.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+
+# --- helpers ---------------------------------------------------------------
+
+
+def _env_int(name: str, default: int) -> int:
+    raw = os.getenv(name)
+    if not raw:
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        return default
+
+
+def _env_float(name: str, default: float) -> float:
+    raw = os.getenv(name)
+    if not raw:
+        return default
+    try:
+        return float(raw)
+    except ValueError:
+        return default
+
+
+def _env_list(name: str, default: tuple[str, ...]) -> tuple[str, ...]:
+    """Comma-separated env override. `NAME=` (empty) explicitly clears the list."""
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return tuple(item.strip() for item in raw.split(",") if item.strip())
+
+
+# --- model -----------------------------------------------------------------
+
+MODEL = os.getenv("SAGE_MODEL", "mistral-small-latest")
+MAX_TOKENS = _env_int("SAGE_MAX_TOKENS", 1600)
+TEMPERATURE = _env_float("SAGE_TEMPERATURE", 0.2)
+MAX_TOOL_ROUNDS = _env_int("SAGE_MAX_TOOL_ROUNDS", 6)
+REQUEST_RETRIES = _env_int("SAGE_REQUEST_RETRIES", 2)
+
+# --- corpus ----------------------------------------------------------------
+
+DOCS_PATH = os.getenv("RCC_DOCS_PATH", "./docs")
+WEB_PATH = os.getenv("RCC_WEB_PATH", "./web")
+
+SOURCES = {"docs": DOCS_PATH, "web": WEB_PATH}
+SOURCE_EXTENSIONS = {"docs": (".md",), "web": (".txt",)}
+
+# The user guide is canonical and maintained; the scraped site is marketing copy.
+# A mild prior keeps the guide on top when both match equally well.
+SOURCE_WEIGHT = {"docs": 1.15, "web": 1.0}
+
+# Scraped hosts that are not RCC computing documentation. `learn-radiology` is
+# radiology teaching material (PI-RADS, mpMRI) and `vislab` is project showcase
+# content; neither can answer an HPC how-to, and both add false-positive matches.
+# Clear with `SAGE_EXCLUDE_HOSTS=` to index everything again.
+EXCLUDED_HOSTS = _env_list(
+    "SAGE_EXCLUDE_HOSTS",
+    ("learn-radiology.rcc.uchicago.edu", "vislab.rcc.uchicago.edu"),
+)
+
+# Bare citation dumps: thousands of paper titles that answer no how-to question
+# but match a lot of keywords. Matched against the path suffix.
+EXCLUDED_FILES = _env_list(
+    "SAGE_EXCLUDE_FILES",
+    (
+        "grants-publications_list-of-publications.txt",
+        "grants-publications_publications.txt",
+        "publications.txt",
+    ),
+)
+
+# --- chunking --------------------------------------------------------------
+#
+# Whole-file reads used to be truncated at 15k chars, which silently cut 62% of
+# docs/slurm/sbatch.md — the single most important page in the corpus. Indexing
+# heading-sized chunks removes the need to truncate at all.
+
+MAX_CHUNK_CHARS = _env_int("SAGE_MAX_CHUNK_CHARS", 6000)
+MIN_CHUNK_CHARS = _env_int("SAGE_MIN_CHUNK_CHARS", 120)
+# Cap for reading a whole page. Pages above it return an outline plus their
+# opening, so the model asks for the section it actually needs.
+MAX_DOC_CHARS = _env_int("SAGE_MAX_DOC_CHARS", 20000)
+WEB_CHUNK_CHARS = _env_int("SAGE_WEB_CHUNK_CHARS", 2400)
+WEB_CHUNK_OVERLAP = _env_int("SAGE_WEB_CHUNK_OVERLAP", 240)
+
+# --- search ----------------------------------------------------------------
+
+SEARCH_RESULTS = _env_int("SAGE_SEARCH_RESULTS", 6)
+SNIPPET_CHARS = _env_int("SAGE_SNIPPET_CHARS", 240)
+
+BM25_K1 = _env_float("SAGE_BM25_K1", 1.5)
+BM25_B = _env_float("SAGE_BM25_B", 0.75)
+TITLE_BOOST = _env_float("SAGE_TITLE_BOOST", 2.5)
+PATH_BOOST = _env_float("SAGE_PATH_BOOST", 1.2)
+# 0.8 measured best on tests/test_retrieval_eval.py (recall@3 94%→97%, p@1 76%→79%)
+# without raising scores for off-topic queries. Re-run that eval if you change it.
+SYNONYM_WEIGHT = _env_float("SAGE_SYNONYM_WEIGHT", 0.8)
+
+# --- conversation ----------------------------------------------------------
+
+# Rough character budget for the history sent upstream. Trimming happens oldest
+# first; the system prompt and the current question are never dropped.
+HISTORY_CHAR_BUDGET = _env_int("SAGE_HISTORY_CHAR_BUDGET", 48000)
+# Older attachments collapse to a stub so a PDF is not re-uploaded every turn.
+ATTACHMENT_FULL_TEXT_TURNS = _env_int("SAGE_ATTACHMENT_FULL_TEXT_TURNS", 1)
+MAX_PROMPT_CHARS = _env_int("SAGE_MAX_PROMPT_CHARS", 8000)
+
+# --- uploads ---------------------------------------------------------------
+
+MAX_UPLOAD_BYTES = _env_int("SAGE_MAX_UPLOAD_BYTES", 10 * 1024 * 1024)
+MAX_FILE_TEXT_CHARS = _env_int("SAGE_MAX_FILE_TEXT_CHARS", 30000)
+UPLOAD_EXTENSIONS = ("pdf", "txt", "md", "py", "json", "csv", "yml", "yaml")
+
+# --- links -----------------------------------------------------------------
+
+DOCS_BASE_URL = os.getenv(
+    "RCC_DOCS_BASE_URL", "https://rcc-uchicago.github.io/user-guide/"
+)
+HELP_DESK_URL = (
+    "https://rcc.uchicago.edu/support-and-services/consulting-and-technical-support"
+)
+HELP_DESK_EMAIL = os.getenv("RCC_HELP_EMAIL", "help@rcc.uchicago.edu")
+
+# --- ops -------------------------------------------------------------------
+
+LOG_LEVEL = os.getenv("LOG_LEVEL", "WARNING").upper()
+# Set to a writable path to collect thumbs-up/down as JSON lines. Unset = no sink.
+FEEDBACK_LOG = os.getenv("SAGE_FEEDBACK_LOG", "")
+SNAPSHOT_FILE = os.getenv("SAGE_SNAPSHOT_FILE", "./docs_snapshot.json")
+
+
+def api_key() -> str:
+    """Mistral key from the environment. The UI adds an `st.secrets` fallback."""
+    return os.getenv("MISTRAL_API_KEY", "")
+
+
+def snapshot() -> dict:
+    """Docs freshness stamp written by refresh-docs.sh. Never raises."""
+    try:
+        with open(SNAPSHOT_FILE, encoding="utf-8") as handle:
+            data = json.load(handle)
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
