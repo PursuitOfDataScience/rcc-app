@@ -106,11 +106,3 @@ docs/                   # RCC User Guide (markdown)
 web/                    # scraped RCC website (text)
 docs_snapshot.json      # source commit + sync date
 ```
-
-## Known gaps
-
-- **Semantic search.** Retrieval is lexical. `mistral-embed` vectors fused with BM25 would close cases like "which queue should I submit to" (`slurm/partitions.md` never says "queue").
-- **No auth or rate limiting.** Deployed publicly, the API key is exposed to unlimited use. Put it behind CNetID SSO or Cloudflare Access first.
-- **Figures are not rendered.** The Globus and ThinLinc walkthroughs are mostly screenshots; `docs/img/` is ~41 MB the text pipeline cannot use.
-- **`docs/data_transfer/cloud/rclone.md` is empty upstream**, so rclone questions cannot be answered. Indexing warns for any page with no content.
-- **Cancelling a generation** uses Streamlit's own run indicator; there is no in-page Stop button.
