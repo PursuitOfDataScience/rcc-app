@@ -127,13 +127,51 @@
     // reader is looking at the bottom of the page.
     function tail() {
         var edge = null;
+        // `.stChatMessage` covers what is in flight as well as what has landed —
+        // the status row and the streaming answer both render inside one. Without
+        // it the slack above a short conversation is measured to the bottom of the
+        // *question*, which pushes the answer being streamed under the input bar.
         var nodes = doc.querySelectorAll('[class*="st-key-answer-"], .user-message,' +
-            '.notice, .error-card, [class*="st-key-error-actions"]');
+            '.stChatMessage, .notice, .error-card, [class*="st-key-error-actions"]');
         nodes.forEach(function (node) {
             var bottom = node.getBoundingClientRect().bottom;
             if (edge === null || bottom > edge) edge = bottom;
         });
         return edge;
+    }
+
+    // Sit a conversation shorter than the window just above the composer, by
+    // padding the space above it, so the reader is not left looking at a screenful
+    // of nothing between the answer and the box they type in.
+    //
+    // The stylesheet used to do this with `min-height: 100dvh` and
+    // `justify-content: flex-end`. That shipped, and on the landing screen the
+    // hero ended up above the top of the window: where flex puts the free space
+    // depends on how Streamlit lays out the page around the block, and when the
+    // guess is wrong the overflow goes out of the end of a scrollport that cannot
+    // be scrolled back. Padding at the top can only push content down.
+    //
+    // Two things keep it from fighting itself. It is measured with its own last
+    // value subtracted, so what it computes never depends on what it computed
+    // before; and it is only applied to a page that would not scroll without it,
+    // measured the same way, so a long conversation scrolled up to the top cannot
+    // be read as a screenful of slack.
+    function fill(port) {
+        var applied = parseFloat(
+            doc.documentElement.style.getPropertyValue('--fill')
+        ) || 0;
+        var bar = doc.querySelector('[data-testid="stBottomBlockContainer"]');
+        var end = tail();
+        if (!bar || end === null || !doc.querySelector('.chat-container')) {
+            publish('--fill', 0);
+            return;
+        }
+        if (port.scrollHeight - applied > port.clientHeight + 1) {
+            publish('--fill', 0);   // long enough to scroll; there is no slack
+            return;
+        }
+        var slack = bar.getBoundingClientRect().top - (end - applied) - TAIL_GAP;
+        publish('--fill', Math.max(0, Math.min(Math.round(slack), port.clientHeight)));
     }
 
     // Close the dead space the pin leaves behind once an answer has landed.
@@ -167,9 +205,28 @@
         if (move > 4) el.scrollTop += move;
     }
 
+    // A landing screen starts at the top. Streamlit keeps the scroll position
+    // across a rerun, so arriving at this screen by clearing a conversation left
+    // the page parked where that conversation had been: hero off the top of the
+    // window, starter cards against the top edge, and nothing on screen to
+    // suggest the page had simply not scrolled back. Once per visit to the
+    // screen, so it never fights a reader scrolling it themselves.
+    function landing(el) {
+        if (doc.querySelector('.chat-container')) {
+            delete doc.body.dataset.sageAtTop;
+            return false;
+        }
+        if (doc.body.dataset.sageAtTop !== 'done') {
+            doc.body.dataset.sageAtTop = 'done';
+            if (el.scrollTop > 0) el.scrollTop = 0;
+        }
+        return true;
+    }
+
     function autoScroll() {
         var el = scroller();
         if (!el) return;
+        if (landing(el)) return;
         if (!isProcessing()) {
             pinnedTurn = false;
             settle(el, doc.querySelectorAll('[class*="st-key-answer-"]'));
@@ -368,26 +425,47 @@
         addCodeCopyButtons();
         addAnswerCopyButtons();
         blockSendWhileProcessing();
-        // Before autoScroll: it measures the gap to the input bar, and the bar's
-        // own height is what this settles.
+        // Order matters both times: the bar's height is what the page reserves
+        // for it, the slack above a short conversation is measured against that
+        // reservation, and autoScroll measures the gap the two of them leave.
         measureChrome();
+        var port = doc.querySelector('[data-testid="stMain"]') || doc.scrollingElement;
+        if (port) fill(port);
         autoScroll();
+    }
+
+    function safeSync() {
+        try { sync(); } catch (err) { /* never break the page */ }
     }
 
     // Streaming mutates the DOM once per token. Running the full sync on every
     // mutation meant a document-wide querySelectorAll sweep per token; coalescing
-    // into one animation frame keeps it O(frames) instead of O(tokens).
+    // keeps it O(frames) instead of O(tokens).
+    //
+    // A frame callback *and* a timer, whichever arrives first. Coalescing on rAF
+    // alone assumes the page is painting: in a browser that is producing no
+    // frames — headless Chrome under a virtual clock, a backgrounded tab — the
+    // callback never ran, `queued` stayed true for ever, and every later mutation
+    // was dropped on the floor. CI found that as a page still sized by the
+    // stylesheet's fallbacks, several renders deep.
     var queued = false;
+    function flush() {
+        if (!queued) return;
+        queued = false;
+        safeSync();
+    }
+
     function schedule() {
         if (queued) return;
         queued = true;
-        window.requestAnimationFrame(function () {
-            queued = false;
-            try { sync(); } catch (err) { /* never break the page */ }
-        });
+        window.requestAnimationFrame(flush);
+        window.setTimeout(flush, 32);
     }
 
-    schedule();
+    // Straight away rather than a frame from now: until this has run, the page is
+    // laid out around the stylesheet's guess at the input bar rather than its
+    // measured height, and that is a frame the reader sees.
+    safeSync();
     new MutationObserver(schedule).observe(doc.body, { childList: true, subtree: true });
     // Streaming appends text nodes that sometimes do not trigger the observer.
     setInterval(function () { if (isProcessing()) schedule(); }, 250);
