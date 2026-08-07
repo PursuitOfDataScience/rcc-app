@@ -6,7 +6,7 @@ Built with [Streamlit](https://streamlit.io/). Answers come from [Mistral](https
 
 ## Features
 
-- 🔀 **Model picker** — the button at the bottom right of the composer names the model in use; open it to switch between Mistral and OpenCode Zen's free models mid-conversation. A spent quota also fails over on its own, and the error card offers the switch in one click.
+- 🔀 **Model picker** — the button in the bottom-right corner of the composer names the model in use; open it to switch between Mistral and OpenCode Zen's free models mid-conversation. A spent quota also fails over on its own, and the error card offers the switch in one click.
 - 🔎 **Grounded answers** — retrieves real RCC documentation; no invented commands, partitions or quotas.
 - 🔗 **Real citations** — a Sources strip under each answer deep-links to the section it came from, plus Related sections from the same page.
 - 💬 **Streaming replies** with conversation memory for follow-ups.
@@ -115,7 +115,9 @@ Streamlit emits, answer, short answer, long chat, error) in both colour schemes 
 five widths, in five states — the first frame, before `static/app.js` has measured
 how much room the input bar needs; at rest; scrolled; mid-generation; and
 just-finished, the last four with the real `static/app.js` driving the page — 240
-renders. It fails on clipping, content hidden behind the input bar, horizontal
+renders. Half the screens pin Streamlit's input bar with `position: fixed` and half
+with `position: sticky`, because Streamlit has shipped both and the difference
+decides whether the page must reserve room for it or already has. It fails on clipping, content hidden behind the input bar, horizontal
 overflow, unwanted wrapping, a control something else is painted on top of, the gap
 between a question and its answer, dead space above the input bar, or contrast
 below WCAG AA. CI runs it too.
@@ -124,9 +126,12 @@ It catches what reading the CSS does not. So far: the newest answer sitting 131p
 underneath the chat input, the hero subtitle and all six starter cards wrapping to
 two lines, a focus ring at 1.73:1 on the dark background, the question being
 scrolled off the top of the screen while its answer streamed in, the controls under
-the input being painted over by Streamlit's own pinned bar, and those same controls
+the input being painted over by Streamlit's own pinned bar, those same controls
 stacking into a column when the `st-key-…` class lands on the vertical block rather
-than on a wrapper around it.
+than on a wrapper around it, and a `padding-top` override in a media query that
+silently ate the slack `app.js` puts above a short conversation — which then grew by
+42px a frame, because it measured the slack as "what is left after the padding I
+applied" with padding that was being ignored.
 
 What it cannot catch is a wrong assumption about Streamlit's own markup: it audits
 this stylesheet against a replica, so a rule that reaches nothing in the real DOM
@@ -155,8 +160,7 @@ The bundled `docs/`/`web/` snapshot comes from the upstream [`user-guide`](https
 
 Paths default to repo-relative locations and can be overridden with `RCC_USER_GUIDE_REPO`, `RCC_WEB_MIRROR` and `RCC_WEB_SCRAPER`. The website scraper is **not** vendored here, so `--scrape` needs `RCC_WEB_SCRAPER` pointed at it.
 
-The sync date and upstream commit are recorded in `docs_snapshot.json` and shown
-in the note under the landing screen's starter cards.
+The sync date and upstream commit are recorded in `docs_snapshot.json`.
 
 ## Layout
 

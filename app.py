@@ -371,39 +371,22 @@ DISCLAIMER = (
 )
 
 
-def render_landing_note() -> None:
-    """What Sage is and is not, on the screen where a reader starts.
+def disclaimer_html() -> str:
+    """The one line under the input, and everything that survived from the ℹ️ panel.
 
-    This was an ℹ️ popover in the row under the input, and a button whose only job
-    is to explain the app has no business sitting next to the box you type in — it
-    is one more thing in the way on every screen, for something you read once. The
-    landing screen has room to just say it, and that is the screen you are on when
-    you have not read it yet.
+    Both of its predecessors were too much. As a popover it was a control in the way
+    on every screen for something you read once; as three paragraphs under the
+    starter cards it was a wall of small print on the first thing a new user sees.
+    What is actually load-bearing is: this can be wrong, it cannot see your account,
+    and here is a human to ask. That fits on one line at 11px, next to the model
+    name, and nothing else earns a place at the bottom of the window.
     """
-    stamp = config.snapshot()
-    synced = html.escape(str(stamp.get("refreshed_at", "unknown")))
-    commit = html.escape(str(stamp.get("user_guide_commit", "unknown")))
     # Escaped even though these are operator-set, not user-set: an env var landing
     # unescaped inside an href is the kind of thing that stops being harmless later.
     help_url = html.escape(config.HELP_DESK_URL, quote=True)
-    help_email = html.escape(config.HELP_DESK_EMAIL, quote=True)
-    st.markdown(
-        f"""
-        <div class="landing-note">
-        <p><strong>Read-only.</strong> Every answer is retrieved from the official
-        <a href="https://rcc.uchicago.edu/" target="_blank" rel="noopener">RCC</a>
-        User Guide and website, and cites the sections it used. Sage cannot run
-        commands or read files on the cluster, and cannot see your account, jobs,
-        quotas or allocations.</p>
-        <p>Still stuck? Ask the <a href="{help_url}" target="_blank"
-        rel="noopener">RCC Help Desk</a>, email
-        <a href="mailto:{help_email}">{help_email}</a>, or drop into the walk-in
-        lab in Regenstein 216 during business hours.</p>
-        <p class="landing-meta">Documentation synced {synced} · user-guide
-        <code>{commit}</code> · {html.escape(corpus_mod.summarize(CORPUS))}</p>
-        </div>
-        """,
-        unsafe_allow_html=True,
+    return (
+        f'<p class="ai-disclaimer">{DISCLAIMER} <a href="{help_url}" '
+        f'target="_blank" rel="noopener">RCC Help Desk</a></p>'
     )
 
 
@@ -446,7 +429,7 @@ def render_model_picker() -> None:
 
 
 def render_controls() -> None:
-    """The model picker and Clear — bottom right, under the input box.
+    """One line under the input: the disclaimer left, Clear and the picker right.
 
     This row used to be a bar above the conversation, which was wrong twice over.
     It sat in the band Streamlit's own full-width header takes the clicks for, so
@@ -455,33 +438,37 @@ def render_controls() -> None:
     inside it did not render at all. Under the input it is beside the thing it
     affects, on every screen, at the opposite end of the page from that header.
 
-    Clear first, picker last, because the row is right-aligned and the picker is
-    the one that belongs in the corner: it names what will answer, next to the
-    button that sends. There is no ℹ️ here any more — see `render_landing_note`.
+    One line, in this order: the disclaimer takes the space on the left, then Clear,
+    then the picker in the corner — it names what will answer, next to the button
+    that sends. Two rows here (controls above, disclaimer below) is a fifth of a
+    phone screen spent on furniture, which is how the bottom of this app came to
+    look, in the words of the person using it, nasty.
 
-    No `st.columns`: a column has no intrinsic width, which is how the picker
-    came to be invisible twice. The strip is laid out by CSS instead, so each
-    control is as wide as its own label and the worst a broken stylesheet can do
-    is stack the two of them.
+    One container, not a strip wrapping a row. Two of them meant two sets of layout
+    rules for two elements whose identity depends on which one `st.container(key=…)`
+    hangs the key off — and the inner rule outranked the outer one, which is how the
+    controls ended up stacked in a column in the app while every render in the
+    harness had them in a row.
+
+    No `st.columns`: a column has no intrinsic width, which is how the picker came
+    to be invisible twice. The row is laid out by CSS instead, so each control is
+    as wide as its own label and the worst a broken stylesheet can do is stack them.
     """
     with st.container(key="composer-strip"):
-        with st.container(key="controls"):
-            if has_messages and st.button(
-                "🗑️", key="clear", help="Clear this conversation"
-            ):
-                st.session_state.messages = []
-                st.session_state.processing = False
-                st.session_state.attachment = None
-                st.session_state.error = None
-                st.session_state.notice = ""
-                st.session_state.failed_over = False
-                st.session_state.switched_from = None
-                st.session_state.uploader_key += 1
-                st.rerun()
-            render_model_picker()
-        st.markdown(
-            f'<p class="ai-disclaimer">{DISCLAIMER}</p>', unsafe_allow_html=True
-        )
+        st.markdown(disclaimer_html(), unsafe_allow_html=True)
+        if has_messages and st.button(
+            "🗑️", key="clear", help="Clear this conversation"
+        ):
+            st.session_state.messages = []
+            st.session_state.processing = False
+            st.session_state.attachment = None
+            st.session_state.error = None
+            st.session_state.notice = ""
+            st.session_state.failed_over = False
+            st.session_state.switched_from = None
+            st.session_state.uploader_key += 1
+            st.rerun()
+        render_model_picker()
 
 
 # --- body ------------------------------------------------------------------
@@ -515,8 +502,6 @@ if not has_messages:
                         use_container_width=True,
                     ):
                         start_new_turn(question)
-
-    render_landing_note()
 else:
     # Marker only: app.js keys page-scroll behaviour off its presence — without it
     # the screen is the landing screen, which always starts at the top.

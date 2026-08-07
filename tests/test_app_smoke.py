@@ -90,22 +90,25 @@ class TestWelcome:
         # sentence in it is split across lines wherever that happened to land.
         html = " ".join("\n".join(stub.markdown_html).split())
         assert "What can I help you with?" in html
-        # The limits line was removed from the hero: it duplicated the disclaimer
-        # under the input. The note below the cards still states them, in place of
-        # the ℹ️ popover that used to hold them from the row under the input.
+        # The hero says what this is and the line under the input says what it
+        # cannot do. Nothing else: the limits used to be a third line in the hero,
+        # then an ℹ️ popover in the row under the input, then three paragraphs of
+        # small print under the starter cards. Each was one explanation too many
+        # in the way of the box you type in.
         assert "Sage reads the docs" not in html
-        assert "cannot run commands or read files on the cluster" in html
-        assert "cannot see your account, jobs, quotas or allocations" in html
+        assert "What Sage is" not in html
+        assert "Documentation synced" not in html
+        assert "drop into the walk-in lab" not in html
+        assert "Sage can make mistakes" in html
         assert "RCC Help Desk" in html
-        assert "Documentation synced" in html
 
-    def test_the_landing_note_is_not_a_control_in_the_composer(self, monkeypatch):
-        """It was an ℹ️ popover in the row under the input. A button whose only job
-        is to explain the app is one more thing in the way on every screen, for
-        something you read once — and the screen you read it on is this one."""
+    def test_nothing_explains_the_app_with_a_control(self, monkeypatch):
+        """A button whose only job is to explain the app is one more thing in the
+        way on every screen, for something you read once."""
         stub, _module = run_app(monkeypatch)
         assert ("popover", "ℹ️") not in stub.events
         assert "clear" not in stub.button_labels
+        assert not any("landing-note" in html for html in stub.markdown_html)
 
     def test_no_hover_tooltip_on_a_control_that_already_has_a_label(self, monkeypatch):
         """A tooltip repeating a card's own text is a black box chasing the
@@ -339,8 +342,11 @@ class TestComposerStrip:
     def test_the_controls_live_in_the_strip_under_the_input(self, monkeypatch):
         stub, _m = self.two_providers(monkeypatch, {"messages": [], "processing": False})
         assert "composer-strip" in self._containers(stub)
-        assert "controls" in self._containers(stub)
         assert "topbar" not in self._containers(stub)
+        # One container, not a strip wrapping a row: two of them meant two sets of
+        # layout rules for two elements whose identity depends on where Streamlit
+        # hangs the `st-key-…` class, and the inner rule outranked the outer one.
+        assert "controls" not in self._containers(stub)
 
     def test_the_strip_is_rendered_after_the_input(self, monkeypatch):
         """Order is the whole point: rendered before it, this is a top bar again."""
