@@ -23,7 +23,15 @@ It has already caught what reading the CSS did not:
   * 46px of nothing between the last line typed and the bottom of the input box,
     which is the send button taking a row of its own once the text passes one line.
     The replica had no send button at all, so the box was always exactly as tall as
-    its text and the bug was not expressible here.
+    its text and the bug was not expressible here;
+  * three separate bugs in the attachment chips, the first time a chip was rendered
+    here at all: the newest answer 5px behind one row of them and 38px behind two,
+    because every spacing measurement in app.js went to the input bar's top edge and
+    the chips are pinned above it; the chips floating 58px above the box on the first
+    frame, from a `--bar-band` fallback tuned like a reservation when it is a
+    position; and the chip's own text at 4.39:1 in light mode, which is under AA and
+    had never been measured because the chip was the only thing using that colour as
+    text. One screen, three bugs, none of them visible from reading the CSS.
 
 The dead space at the end of a conversation outlived three rounds of fixes because
 of a line in this file: the bar was modelled `position: fixed`, the stylesheet
@@ -281,6 +289,29 @@ def _cards_html() -> str:
     return rows
 
 
+def chips(wrapped: bool = True) -> str:
+    """Attachment chips, rendered where app.py renders them: above the controls.
+
+    Modelled at all because they were not, and the consequence was a row of `fixed`
+    elements nothing in this file had ever measured. Two of them, one with a long
+    name, because the row wraps and a single short chip proves nothing about that.
+    Both container shapes, for the reason `strip` renders both.
+    """
+    buttons = "".join(
+        f'<div class="element-container"><div class="stButton">'
+        f"<button><p>{label}</p></button></div></div>"
+        for label in (
+            "📝 slurm-12345.out · 8,412 characters  ✕",
+            "🖼️ pasted-image.png · 184 KB image  ✕",
+        )
+    )
+    if wrapped:
+        return ('<div class="st-key-attachments element-container">'
+                f'<div data-testid="stVerticalBlock">{buttons}</div></div>')
+    return ('<div class="st-key-attachments" data-testid="stVerticalBlock">'
+            f"{buttons}</div>")
+
+
 def strip(clear: bool = True, wrapped: bool = True) -> str:
     """The controls under the input: Clear, then the model picker.
 
@@ -467,6 +498,11 @@ SCENARIOS = {
     # The same half-written question with the send button stacked under the text. This
     # is the shape the dead space appears in; the one above is the shape it does not.
     "composing-column": CHAT_MARKER + SHORT_ANSWER + strip(),
+    # A conversation with files attached but not yet sent. The chips are `fixed` above
+    # the input, and the page has to reserve room for them or they land on the newest
+    # answer — which nothing here could have caught, because nothing here had a chip.
+    "attached": CHAT_MARKER + SHORT_ANSWER + chips() + strip(),
+    "attached-flat": CHAT_MARKER + SHORT_ANSWER + chips(wrapped=False) + strip(),
     "in-flight": CHAT_MARKER + IN_FLIGHT + strip(wrapped=False),
     "error": CHAT_MARKER
     + """
@@ -646,6 +682,10 @@ function snapshot() {
            atEnd: !port || port.scrollHeight - port.clientHeight - port.scrollTop <= 2,
            docOverflowX: Math.max(0, document.documentElement.scrollWidth - innerWidth),
            reserved: {bar: root.getPropertyValue('--bar-h').trim(),
+                      // The bar alone, which is what the chips are anchored to. Named
+                      // separately because a failure where the two disagree is a
+                      // different bug from either of them being wrong.
+                      band: root.getPropertyValue('--bar-band').trim(),
                       strip: root.getPropertyValue('--strip-h').trim(),
                       fill: root.getPropertyValue('--fill').trim()},
            els: {}};
@@ -669,6 +709,9 @@ INPUT = ".stChatInput textarea"
 # band of nothing under what was typed.
 INPUT_BOX = ".stChatInput > div"
 SEND = '.stChatInput button:not(#paperclip-btn)'
+# The attachment chips. `fixed` above the input, so they are part of the composer's
+# footprint: whatever the page reserves at its end has to cover them too.
+CHIPS = ".st-key-attachments"
 
 SELECTORS = [
     ".welcome-title", ".welcome-subtitle", ".user-bubble", "last:.user-bubble",
@@ -676,7 +719,7 @@ SELECTORS = [
     ".error-title", ".error-body", ".sources-label",
     ".source-chip", ".st-key-answer-5", ".st-key-answer-0", ".stChatMessage pre",
     ".stChatMessage code", '[data-testid="stBottomBlockContainer"]',
-    STRIP, INPUT, INPUT_BOX, SEND,
+    STRIP, INPUT, INPUT_BOX, SEND, CHIPS, ".st-key-attachments button",
     ".st-key-composer-strip button",
     # The rightmost control in the strip, so the row is measured end to end: with
     # a model name in it, it is the widest thing under the input.
@@ -719,6 +762,10 @@ MAX_TAIL_GAP = 64
 # rounding — anything more is a row of furniture, which is what the send button was
 # taking once the text grew past one line.
 MAX_INPUT_DEAD_SPACE = 20
+# Room allowed between the attachment chips and the top of the input box. They are
+# pinned 0.35rem above it; this is that plus the bar's own top padding and rounding.
+# Rendered in the flow instead, they were most of a page away.
+MAX_CHIP_GAP = 40
 
 
 def page(body: str, scheme: str, scroll: bool, generating: bool = False,
@@ -893,6 +940,14 @@ def audit(data, scenario, scheme, width, state: str) -> list[str]:
         problems.append(f"{where}: page scrolls sideways by {data['docOverflowX']}px")
 
     bar = els.get('[data-testid="stBottomBlockContainer"]')
+    # The top of everything pinned at the bottom, not just of the bar. The attachment
+    # chips sit above the bar and are `fixed` too, so a gap measured to the bar's top
+    # would read as healthy while a chip sat on the newest answer. Every check below
+    # that used to say "the input bar" now means "the composer", which is what a reader
+    # sees: one block of furniture at the bottom of the page.
+    chip_row = els.get(CHIPS)
+    if bar and chip_row and chip_row["top"] < bar["top"]:
+        bar = dict(bar, top=chip_row["top"])
     for sel, b in els.items():
         if not b:
             continue
@@ -944,6 +999,24 @@ def audit(data, scenario, scheme, width, state: str) -> list[str]:
         )
     if band and picker and picker["top"] < band["top"] - 1:
         problems.append(f"{where}: the model picker is outside the strip pinned for it")
+
+    # The chips belong to the composer, immediately above the box. They used to render
+    # in the flow, which put them under the starter cards in the middle of the page —
+    # "at a random spot in the middle of the ui" — so both halves of that are checked:
+    # above the input, and not adrift from it.
+    box = els.get(INPUT_BOX)
+    if chip_row and box:
+        if chip_row["bottom"] > box["top"] + 1:
+            problems.append(
+                f"{where}: the attachment chips overlap the input box by "
+                f"{chip_row['bottom'] - box['top']}px"
+            )
+        elif box["top"] - chip_row["bottom"] > MAX_CHIP_GAP:
+            problems.append(
+                f"{where}: the attachment chips are {box['top'] - chip_row['bottom']}px "
+                f"above the input box (want at most {MAX_CHIP_GAP} — they are part of "
+                f"the composer, not of the page)"
+            )
 
     # Inside the box: how much of it is neither text nor the room the text sits in.
     # With the send button in the flow it is a flex item beside the textarea, and once

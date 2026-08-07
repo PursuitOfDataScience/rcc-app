@@ -42,10 +42,19 @@
     --control-border: rgba(0, 0, 0, 0.12);
 
     --input-border: #d1d5db;
+    /* The popover panel. Its own pair rather than reusing --card-bg, because the card
+     * background is a gradient and a floating panel wants one flat colour — and
+     * because this is the one surface Streamlit renders outside everything else this
+     * file reaches, so it must be stated, not inherited. */
+    --popover-bg: #ffffff;
+    --popover-border: #e2e8f0;
     --code-inline-bg: rgba(128, 0, 0, 0.1);
     --code-inline-fg: #8a1020;
 
-    --ok: #15803d;
+    /* Darker than the #15803d it was. Over its own 12%-green background on white
+     * that read 4.39:1 — under AA — which nothing here measured until the attachment
+     * chip was modelled, because the chip was the only thing using it as *text*. */
+    --ok: #0f6b30;
     --ok-bg: rgba(22, 163, 74, 0.12);
     --danger: #b91c1c;
     --danger-bg: rgba(239, 68, 68, 0.1);
@@ -78,6 +87,17 @@
      * Generous on purpose: over-reserving is dead space app.js takes back on the
      * first frame, under-reserving hides an answer. */
     --strip-h: 4.5rem;
+    /* The bar alone, and what the page reserves. They differ by the attachment chips,
+     * which are pinned to the first and counted in the second — see `measureChrome`
+     * for why those cannot be one number.
+     *
+     * The two fallbacks are tuned in opposite directions on purpose. `--bar-h` is a
+     * reservation, so generous is safe: extra is dead space app.js takes back on the
+     * first frame, missing hides an answer. `--bar-band` is a *position*, so generous
+     * is not safe — at 12rem against a measured 134px it floated the chips 58px above
+     * the box they belong to, which the `attached` screens caught the moment they
+     * existed. 8.5rem is 136px: just past the measurement, not past the box. */
+    --bar-band: 8.5rem;
     --bar-h: 12rem;
     /* What is left between the last message and the bar. Also how far the page
      * can scroll past its last message, so it is dead space, one gap's worth. */
@@ -120,6 +140,10 @@
         --control-border: rgba(255, 255, 255, 0.18);
 
         --input-border: #374151;
+        /* Streamlit painted this one white on a near-black page. Matched to the input
+         * box's own surface so the panel reads as part of the composer it belongs to. */
+        --popover-bg: #1c1d24;
+        --popover-border: rgba(255, 255, 255, 0.16);
         --code-inline-bg: rgba(240, 168, 172, 0.14);
         --code-inline-fg: #f0a8ac;
 
@@ -272,14 +296,76 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
     min-width: 0 !important;
 }
 
-/* Model picker. A popover trigger, i.e. a button, so it is sized by its own
- * label — with a ceiling, because a discovered model id can be long. */
+/* Model picker. A popover trigger, i.e. a button, so it would be sized by its own
+ * label — which is exactly the problem. Every model has a different-length name, so
+ * picking one resized this button, which reflowed the right-aligned row it sits in
+ * and moved the panel anchored to it. That is the jitter: not an animation, a layout
+ * that depended on the length of the current selection.
+ *
+ * A fixed width instead, wide enough for the longest name the picker offers and
+ * ellipsed past that, so switching models changes the text and nothing else. */
 .st-key-composer-strip [data-testid="stPopover"] button {
-    width: auto !important;
+    width: 15rem !important;
     max-width: 15rem;
+    justify-content: space-between;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+}
+
+.st-key-composer-strip [data-testid="stPopover"] button p {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* ===== THE POPOVER PANEL =====
+ *
+ * Rendered in a portal at the end of <body>, outside everything else this stylesheet
+ * reaches, and it came out white on a page that is otherwise dark — "very sharp and
+ * uncomfortable", which is what an unthemed panel looks like next to a themed one.
+ *
+ * `[data-baseweb="popover"]` is the handle rather than a Streamlit test id: Streamlit
+ * builds its popover on Base Web, the attribute is Base Web's own contract, and it is
+ * the one name here that does not belong to an unversioned internal. The test id is
+ * matched too, for the version that carries it, but the rule does not depend on it. */
+[data-baseweb="popover"] [data-testid="stPopoverBody"],
+[data-baseweb="popover"] > div > div,
+[data-testid="stPopoverBody"] {
+    background: var(--popover-bg) !important;
+    color: var(--text-primary) !important;
+    border: 1px solid var(--popover-border) !important;
+    border-radius: var(--radius-md) !important;
+    box-shadow: var(--shadow-lg) !important;
+}
+
+/* A width of its own, for the same reason the trigger has one: the panel is a column
+ * of model names, and letting it size to the longest one meant it changed width — and
+ * so did its position, since it is anchored to a right-aligned trigger. */
+[data-testid="stPopoverBody"] {
+    width: 19rem !important;
+    max-width: min(19rem, 92vw) !important;
+}
+
+[data-baseweb="popover"] [data-testid="stCaptionContainer"],
+[data-testid="stPopoverBody"] [data-testid="stCaptionContainer"] {
+    color: var(--text-muted) !important;
+}
+
+/* The model buttons inside it. Full width, left-aligned, and quiet: they are a list
+ * to read down, not six calls to action. */
+[data-testid="stPopoverBody"] .stButton button {
+    width: 100% !important;
+    justify-content: flex-start !important;
+    text-align: left !important;
+    background: transparent !important;
+    border: 1px solid transparent !important;
+    color: var(--text-primary) !important;
+}
+
+[data-testid="stPopoverBody"] .stButton button:hover {
+    background: var(--control-bg-hover) !important;
+    border-color: var(--control-border) !important;
 }
 
 .st-key-composer-strip button {
@@ -383,15 +469,21 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
 }
 
 /* ===== EXAMPLE CARDS ===== */
+/* Wider than the 600px it was, and tied to the input box rather than to a number of
+ * its own. The six cards are the whole landing screen, and at 600px in a 1400px
+ * window they sat in the middle of it looking squeezed — while the box you type in,
+ * directly below, was half again as wide. Matching `--input-max` lines the two up:
+ * the cards and the composer are the same column, which is the alignment a reader
+ * reads as deliberate. */
 .st-key-examples {
-    max-width: min(600px, 88vw);
+    max-width: var(--input-max);
     margin: 0 auto;
     padding: 0 var(--space-md);
 }
 
 .st-key-examples [data-testid="stHorizontalBlock"] {
-    gap: 0.6rem !important;
-    margin-bottom: 0.6rem !important;
+    gap: 0.7rem !important;
+    margin-bottom: 0.7rem !important;
 }
 
 /* Each card gets its own keyed container, so the stagger uses stable class hooks
@@ -403,14 +495,20 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
     justify-content: center !important;
     text-align: center !important;
     width: 100% !important;
-    /* Single-line labels, so the card no longer needs to be tall enough for two. */
-    height: 56px !important;
-    min-height: 56px !important;
-    padding: 10px 16px !important;
+    /* Single-line labels, so the card no longer needs to be tall enough for two —
+     * but taller and roomier than that minimum. At 56px in a 92vw grid the six of
+     * them read as squeezed into a corner of a very large window, which is what they
+     * were: the only thing on the landing screen and using a fifth of it. */
+    height: 72px !important;
+    min-height: 72px !important;
+    padding: 12px 20px !important;
     background: var(--card-bg) !important;
     border: 1px solid var(--card-border) !important;
     border-radius: var(--radius-md) !important;
-    font-size: clamp(0.84rem, 1.9vw, 0.95rem) !important;
+    /* Up with the height. The ceiling stays a ceiling because the label has to hold
+     * one line at every width — tools/render_check.py fails the whole run if any card
+     * wraps, which is what keeps this honest rather than a guess. */
+    font-size: clamp(0.9rem, 2vw, 1.05rem) !important;
     font-weight: 500 !important;
     line-height: 1.3 !important;
     color: var(--text-primary) !important;
@@ -563,15 +661,65 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
     border: 0 !important;
 }
 
-/* ===== ATTACHMENT CHIP ===== */
-.st-key-attachment {
-    max-width: var(--input-max);
-    margin: 0 auto 0.4rem !important;
+/* ===== ATTACHMENT CHIPS ===== */
+/* Pinned directly above the input box, not left wherever the script reached them.
+ * In the flow they rendered under the starter cards — a chip for a file you are
+ * about to send, halfway up the page, a long way from the box you are about to send
+ * it from. Reported as "at a random spot in the middle of the ui".
+ *
+ * `--bar-band` is the input bar's own height measured from the bottom of the window,
+ * published by app.js. It deliberately does NOT include this row: the page's bottom
+ * reservation (`--bar-h`) is bar-band plus the height of these chips, so anchoring
+ * them to the band cannot feed back into the number that positions them. An earlier
+ * version of that loop, in a different rule, ran away by 42px a frame. */
+.st-key-attachments {
+    position: fixed;
+    bottom: calc(var(--bar-band, 12rem) + 0.35rem);
+    left: 50%;
+    transform: translateX(-50%);
+    width: var(--input-max) !important;
+    max-width: 100% !important;
+    /* Above Streamlit's own chrome, for the same reason the controls strip below the
+     * input is: the pinned bottom container paints over anything that merely beats
+     * the page content. */
+    z-index: 999995;
     display: flex !important;
+    flex-direction: row !important;
+    flex-wrap: wrap !important;
+    align-items: center !important;
     justify-content: flex-start !important;
+    gap: 0.35rem !important;
 }
 
-.st-key-attachment button {
+/* Named for both container shapes, because `st.container(key=…)` puts the class on a
+ * wrapper in some Streamlit versions and on the vertical block itself in others — and
+ * a row rule that reaches only one of them stacks the chips into a column. That
+ * exact bug shipped once already, with the controls under the input. */
+.st-key-attachments > [data-testid="stVerticalBlock"] {
+    display: flex !important;
+    flex-direction: row !important;
+    flex-wrap: wrap !important;
+    align-items: center !important;
+    gap: 0.35rem !important;
+    width: 100% !important;
+}
+
+.st-key-attachments .element-container,
+.st-key-attachments [data-testid="stElementContainer"],
+.st-key-attachments .stButton {
+    width: auto !important;
+    flex: 0 0 auto !important;
+    min-width: 0 !important;
+}
+
+/* The "this model cannot read images" line, which is the one thing in here that is
+ * not a chip. Given the whole width so it sits under them rather than beside one. */
+.st-key-attachments [data-testid="stCaptionContainer"] {
+    flex: 1 1 100% !important;
+    font-size: 0.7rem !important;
+}
+
+.st-key-attachments button {
     width: auto !important;
     min-width: 0 !important;
     background: var(--ok-bg) !important;
@@ -583,7 +731,7 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
     min-height: 0 !important;
 }
 
-.st-key-attachment button:hover {
+.st-key-attachments button:hover {
     background: var(--danger-bg) !important;
     border-color: var(--danger) !important;
     color: var(--danger) !important;
@@ -924,7 +1072,7 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
      * from, and they only have to hold for the first frame — but they still have
      * to hold, and to agree with each other, so --bar-h covers this --strip-h
      * plus the input and the bar's padding. */
-    :root { --strip-h: 6rem; --bar-h: 13rem; }
+    :root { --strip-h: 6rem; --bar-band: 10rem; --bar-h: 14rem; }
     .welcome { margin-top: 4vh; }
 }
 

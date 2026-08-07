@@ -129,7 +129,14 @@ CORPUS = INDEX.corpus
 for key, default in (
     ("messages", []),
     ("processing", False),
-    ("attachment", None),
+    # A list, not one file. Holding one meant the guard below dropped anything
+    # offered while a file was already attached, and a second attachment looked from
+    # the outside like a control that does nothing.
+    ("attachments", []),
+    # Keys of files the user dismissed with the chip's ✕. The uploader widget still
+    # reports them on every rerun — nothing here can reach into it and remove one —
+    # so without this they come straight back on the next run.
+    ("dropped_uploads", set()),
     ("uploader_key", 0),
     ("error", None),
     ("error_detail", ""),
@@ -192,13 +199,11 @@ def escape(text: str) -> str:
 
 
 def render_user(message: dict) -> None:
-    attachment = message.get("attachment")
-    badge = ""
-    if attachment is not None:
-        badge = (
-            f'<div class="attachment-badge">{attachment.icon} '
-            f"{html.escape(attachment.filename)}</div>"
-        )
+    badge = "".join(
+        f'<div class="attachment-badge">{item.icon} '
+        f"{html.escape(item.filename)}</div>"
+        for item in (message.get("attachments") or [])
+    )
     st.markdown(
         f'<div class="user-message"><div class="user-bubble">{badge}'
         f'{escape(message.get("text", ""))}</div></div>',
@@ -349,13 +354,18 @@ def describe(calls: list[dict]) -> str:
     return "Working"
 
 
-def start_new_turn(question: str, attachment=None) -> None:
+def start_new_turn(question: str, attachments=None) -> None:
     st.session_state.messages.append(
-        {"role": "user", "text": question, "attachment": attachment}
+        {"role": "user", "text": question, "attachments": list(attachments or [])}
     )
     st.session_state.processing = True
     st.session_state.error = None
-    st.session_state.attachment = None
+    st.session_state.attachments = []
+    # Both, together: the widget is reset so its files stop being reported, and the
+    # dismissal list is emptied because the keys in it refer to a widget that no
+    # longer exists. Leaving stale keys behind would silently refuse a file with the
+    # same name later in the conversation.
+    st.session_state.dropped_uploads = set()
     st.session_state.uploader_key += 1
     st.rerun()
 
@@ -440,7 +450,8 @@ def render_controls() -> None:
         ):
             st.session_state.messages = []
             st.session_state.processing = False
-            st.session_state.attachment = None
+            st.session_state.attachments = []
+            st.session_state.dropped_uploads = set()
             st.session_state.error = None
             st.session_state.notice = ""
             st.session_state.failed_over = False
@@ -547,31 +558,81 @@ else:
 
 # --- input -----------------------------------------------------------------
 
+# `accept_multiple_files`, and no `type=`.
+#
+# The type filter was a list of extensions the picker would offer, and it is gone for
+# the same reason the extension gate in `files.process` went: it refused a pasted
+# screenshot outright (the name app.js gives one is not on any list) and it refused
+# every cluster file whose extension nobody thought of. `files.process` reads the
+# bytes and says yes or no with a reason, which is the check that was doing the work
+# anyway.
 upload = st.file_uploader(
     "Attach a file",
-    type=list(config.UPLOAD_EXTENSIONS),
+    accept_multiple_files=True,
     key=f"uploader-{st.session_state.uploader_key}",
     label_visibility="collapsed",
 )
 
-if upload is not None and st.session_state.attachment is None:
-    attachment, error = files.process(upload.name, upload.getvalue())
-    if error:
-        st.session_state.uploader_key += 1
-        st.warning(f"⚠️ {error}")
-        st.rerun()
-    st.session_state.attachment = attachment
 
-if st.session_state.attachment is not None:
-    current = st.session_state.attachment
-    with st.container(key="attachment"):
-        if st.button(
-            f"{current.icon} {current.filename} · {current.summary}  ✕",
-            key="drop-attachment",
+def upload_key(item) -> tuple:
+    """Identity of an uploaded file across reruns.
+
+    Name and size, not Streamlit's `file_id`: the id changes on every rerun for the
+    same file in some versions, which would re-process and re-append one attachment
+    for every interaction with the page.
+    """
+    return (item.name, item.size)
+
+
+held = {(item.filename, item.size) for item in st.session_state.attachments}
+for item in upload or []:
+    key = upload_key(item)
+    if key in st.session_state.dropped_uploads or key in held:
+        continue
+    attachment, error = files.process(item.name, item.getvalue())
+    if error:
+        # Remembered as dismissed rather than clearing the whole widget: a bad file
+        # among three good ones used to reset the uploader and take the other two
+        # with it.
+        st.session_state.dropped_uploads.add(key)
+        st.warning(f"⚠️ {error}")
+        continue
+    attachment.size = item.size
+    st.session_state.attachments.append(attachment)
+    held.add(key)
+
+
+def render_attachments() -> None:
+    """The chips for what is attached, pinned directly above the input box.
+
+    They used to render wherever the script happened to reach them — in the middle of
+    the page, under the starter cards, a long way from the box they belong to. They
+    are part of the composer, so they are pinned to it: app.js measures this row and
+    the page reserves room for it, exactly as it does for the controls underneath.
+    """
+    if not st.session_state.attachments:
+        return
+    with st.container(key="attachments"):
+        for index, item in enumerate(st.session_state.attachments):
+            if st.button(
+                f"{item.icon} {item.filename} · {item.summary}  ✕",
+                key=f"drop-attachment-{index}",
+                help="Remove this attachment",
+            ):
+                dropped = st.session_state.attachments.pop(index)
+                st.session_state.dropped_uploads.add(
+                    (dropped.filename, getattr(dropped, "size", 0))
+                )
+                st.rerun()
+        if any(item.kind == "image" for item in st.session_state.attachments) and not (
+            config.sees_images(MODEL.id)
         ):
-            st.session_state.attachment = None
-            st.session_state.uploader_key += 1
-            st.rerun()
+            # Said next to the picture, once, rather than discovered when the answer
+            # ignores it. The picker is right there.
+            st.caption(
+                f"{MODEL.label} cannot read images — pick a Pixtral or Claude model "
+                "to have this one looked at."
+            )
 
 # No `max_chars`. That argument is the only thing that puts Streamlit's "15/8000"
 # counter inside the box, and a running character count is noise in a box you type a
@@ -587,6 +648,9 @@ prompt = st.chat_input("Ask anything about RCC…")
 # Rendered here, before the turn below: that block ends in `st.rerun()`, so
 # anything after it is never reached while an answer is generating — which is
 # exactly when a user whose model just ran out of credit reaches for the picker.
+# The chips go with it: they are pinned to the composer too, and rendering them up
+# where the script first hears about the upload is what put them mid-page.
+render_attachments()
 render_controls()
 
 if prompt:
@@ -601,7 +665,7 @@ if prompt:
             "long part as a file."
         )
     else:
-        start_new_turn(asked, st.session_state.attachment)
+        start_new_turn(asked, st.session_state.attachments)
 
 
 # --- the turn --------------------------------------------------------------
@@ -652,7 +716,11 @@ if st.session_state.processing:
 
     try:
         provider = get_provider(MODEL.provider)
-        messages = history.build(st.session_state.messages, SYSTEM_PROMPT)
+        messages = history.build(
+            st.session_state.messages,
+            SYSTEM_PROMPT,
+            vision=config.sees_images(MODEL.id),
+        )
         use_tools = MODEL.supports_tools
 
         if use_tools:

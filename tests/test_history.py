@@ -2,8 +2,10 @@ from sage import config, history
 from sage.files import Attachment
 
 
-def user(text, attachment=None):
-    return {"role": "user", "text": text, "attachment": attachment}
+def user(text, *attachments):
+    """A user turn. Attachments are a list now — holding one is what made a second
+    attached file look like a control that does nothing."""
+    return {"role": "user", "text": text, "attachments": [a for a in attachments if a]}
 
 
 def assistant(text):
@@ -49,7 +51,7 @@ def test_older_attachments_collapse_to_a_stub():
     assert body.count("UNIQUE-BODY-TEXT") == 1
 
     messages.append(assistant("The conclusion is X."))
-    messages.append(user("what about the method?", None))
+    messages.append(user("what about the method?"))
     later = history.build(messages, "S")
     joined = "\n".join(message["content"] for message in later)
     assert joined.count("UNIQUE-BODY-TEXT") == 1
@@ -82,3 +84,57 @@ def test_a_single_oversized_turn_is_clipped_rather_than_dropped():
     built = history.build(messages, "S")
     assert len(built) == 2
     assert len(built[1]["content"]) <= config.HISTORY_CHAR_BUDGET
+
+
+def test_two_attachments_on_one_turn_both_reach_the_model():
+    """One turn used to carry one file. Anything offered while a file was already
+    attached was dropped, which from the outside was a control doing nothing."""
+    log = Attachment("slurm-1.out", "text", "OOM-KILLED-LINE")
+    script = Attachment("submit.sbatch", "text", "SBATCH-BODY")
+    built = history.build([user("why did this die?", log, script)], "S")
+    joined = "\n".join(str(message["content"]) for message in built)
+    assert "OOM-KILLED-LINE" in joined
+    assert "SBATCH-BODY" in joined
+
+
+def test_an_image_is_offered_to_a_vision_model_as_a_picture():
+    shot = Attachment(
+        "pasted-image.png", "image", "", data=b"\x89PNG\r\n\x1a\nbody",
+        mime="image/png",
+    )
+    built = history.build([user("what is this error?", shot)], "S", vision=True)
+    parts = built[-1]["content"]
+    assert isinstance(parts, list), "a vision turn is a list of parts"
+    assert parts[0]["type"] == "text"
+    assert parts[1]["type"] == "image_url"
+    assert parts[1]["image_url"]["url"].startswith("data:image/png;base64,")
+
+
+def test_an_image_is_not_offered_to_a_model_that_cannot_see():
+    """An image sent to a text-only model is a 4xx, not a polite decline."""
+    shot = Attachment(
+        "pasted-image.png", "image", "", data=b"\x89PNG\r\n\x1a\nbody",
+        mime="image/png",
+    )
+    built = history.build([user("what is this error?", shot)], "S", vision=False)
+    assert isinstance(built[-1]["content"], str)
+    assert "pasted-image.png" in built[-1]["content"]
+
+
+def test_a_screenshot_does_not_evict_the_conversation_from_the_budget():
+    """Base64 image bytes are enormous. Counted against a character budget they
+    would push every real turn out to make room for one screenshot."""
+    huge = Attachment(
+        "big.png", "image", "", data=b"\x89PNG\r\n\x1a\n" + b"x" * 200_000,
+        mime="image/png",
+    )
+    messages = [user("first question"), assistant("first answer"),
+                user("look at this", huge)]
+    built = history.build(messages, "S", vision=True)
+    joined = " ".join(
+        part.get("text", "")
+        for message in built
+        for part in (message["content"] if isinstance(message["content"], list)
+                     else [{"text": message["content"]}])
+    )
+    assert "first question" in joined, "one image evicted the whole conversation"

@@ -141,7 +141,7 @@ class TestTurnLoop:
 
     def session(self, question="what is my storage quota"):
         return {
-            "messages": [{"role": "user", "text": question, "attachment": None}],
+            "messages": [{"role": "user", "text": question, "attachments": []}],
             "processing": True,
         }
 
@@ -286,7 +286,7 @@ class TestModelPicker:
         zen = ScriptedProvider([[event("Zen answered.")]], name="opencode",
                                models=("deepseek-v4-flash-free",))
         session = {
-            "messages": [{"role": "user", "text": "hi", "attachment": None}],
+            "messages": [{"role": "user", "text": "hi", "attachments": []}],
             "processing": True,
             "model": "opencode:deepseek-v4-flash-free",
         }
@@ -302,7 +302,7 @@ class TestModelPicker:
     def test_an_unknown_saved_model_falls_back_instead_of_crashing(self, monkeypatch):
         provider = ScriptedProvider([[event("ok")]], models=("m1",))
         session = {
-            "messages": [{"role": "user", "text": "hi", "attachment": None}],
+            "messages": [{"role": "user", "text": "hi", "attachments": []}],
             "processing": True,
             "model": "opencode:retired-model",
         }
@@ -364,7 +364,7 @@ class TestComposerStrip:
 
     def test_the_picker_is_still_there_mid_conversation(self, monkeypatch):
         session = {
-            "messages": [{"role": "user", "text": "hi", "attachment": None}],
+            "messages": [{"role": "user", "text": "hi", "attachments": []}],
             "processing": False,
         }
         stub, _m = self.two_providers(monkeypatch, session)
@@ -375,7 +375,7 @@ class TestComposerStrip:
         assert "clear" not in stub.button_labels
 
         session = {
-            "messages": [{"role": "user", "text": "hi", "attachment": None}],
+            "messages": [{"role": "user", "text": "hi", "attachments": []}],
             "processing": False,
         }
         stub, _m = self.two_providers(monkeypatch, session)
@@ -383,7 +383,7 @@ class TestComposerStrip:
 
     def test_clear_empties_the_conversation(self, monkeypatch):
         session = {
-            "messages": [{"role": "user", "text": "hi", "attachment": None}],
+            "messages": [{"role": "user", "text": "hi", "attachments": []}],
             "processing": False,
             "notice": "stale",
             "failed_over": True,
@@ -403,7 +403,7 @@ class TestComposerStrip:
         """
         stub, _m = self.two_providers(
             monkeypatch,
-            {"messages": [{"role": "user", "text": "hi", "attachment": None}],
+            {"messages": [{"role": "user", "text": "hi", "attachments": []}],
              "processing": False},
         )
         assert not any(
@@ -431,7 +431,7 @@ class TestToollessModels:
     def session(self, model):
         return {
             "messages": [
-                {"role": "user", "text": "what is my storage quota", "attachment": None}
+                {"role": "user", "text": "what is my storage quota", "attachments": []}
             ],
             "processing": True,
             "model": model,
@@ -481,7 +481,7 @@ class TestQuotaFailover:
     def session(self):
         return {
             "messages": [{"role": "user", "text": "what can you do?",
-                          "attachment": None}],
+                          "attachments": []}],
             "processing": True,
             "model": "mistral:m1",
         }
@@ -646,7 +646,7 @@ class TestConversationRendering:
     def test_prior_answers_render_with_resolved_links(self, monkeypatch):
         session = {
             "messages": [
-                {"role": "user", "text": "how do I submit a job", "attachment": None},
+                {"role": "user", "text": "how do I submit a job", "attachments": []},
                 {
                     "role": "assistant",
                     "text": "See [Batch jobs](docs/slurm/sbatch.md).",
@@ -674,7 +674,7 @@ class TestConversationRendering:
                 {
                     "role": "user",
                     "text": "<img src=x onerror=alert(1)>",
-                    "attachment": None,
+                    "attachments": [],
                 }
             ],
             "processing": False,
@@ -683,3 +683,101 @@ class TestConversationRendering:
         html = "\n".join(stub.markdown_html)
         assert "<img src=x" not in html
         assert "&lt;img" in html
+
+
+class TestAttachments:
+    """More than one file, and the chips where the composer is.
+
+    Two bugs lived here. The uploader took one file and the app ignored anything
+    offered while one was already held, so attaching a second did nothing at all and
+    said nothing about why; and the chip rendered wherever the script reached it,
+    which put it in the middle of the page, a long way from the box it belongs to.
+    """
+
+    class Upload:
+        """What st.file_uploader hands back per file."""
+
+        def __init__(self, name, data):
+            self.name = name
+            self._data = data
+            self.size = len(data)
+
+        def getvalue(self):
+            return self._data
+
+    def app(self, monkeypatch, uploads, session=None):
+        mistral = ScriptedProvider([], name="mistral", models=("mistral-small-latest",))
+        return run_app(
+            monkeypatch, client=mistral, upload=uploads,
+            session={"messages": [], "processing": False, **(session or {})},
+        )
+
+    def test_the_uploader_asks_for_more_than_one_file(self, monkeypatch):
+        stub, _m = self.app(monkeypatch, [])
+        assert stub.uploader_kwargs.get("accept_multiple_files") is True
+
+    def test_the_uploader_does_not_filter_by_extension(self, monkeypatch):
+        """`type=` is what refused a pasted screenshot: app.js names one, and no
+        list of extensions was ever going to contain that name. The bytes decide."""
+        stub, _m = self.app(monkeypatch, [])
+        assert "type" not in stub.uploader_kwargs
+
+    def test_two_files_are_both_held(self, monkeypatch):
+        stub, _m = self.app(monkeypatch, [
+            self.Upload("slurm-1.out", b"OOM killed\n"),
+            self.Upload("submit.sbatch", b"#SBATCH -p caslake\n"),
+        ])
+        names = [item.filename for item in stub.session_state["attachments"]]
+        assert names == ["slurm-1.out", "submit.sbatch"]
+
+    def test_the_same_file_is_not_held_twice_across_reruns(self, monkeypatch):
+        """The uploader reports its files again on every rerun. Without an identity
+        check one attachment became one per interaction with the page."""
+        upload = self.Upload("run.err", b"segfault\n")
+        stub, _m = self.app(
+            monkeypatch, [upload],
+            session={"attachments": [self._processed("run.err", b"segfault\n")]},
+        )
+        assert len(stub.session_state["attachments"]) == 1
+
+    @staticmethod
+    def _processed(name, data):
+        from sage import files as files_mod
+
+        attachment, _error = files_mod.process(name, data)
+        attachment.size = len(data)
+        return attachment
+
+    def test_a_rejected_file_does_not_take_the_others_with_it(self, monkeypatch):
+        """A bad file used to reset the whole widget, dropping the good ones too."""
+        stub, _m = self.app(monkeypatch, [
+            self.Upload("good.txt", b"readable\n"),
+            self.Upload("a.out", b"\x7fELF\x02\x01\x01\x00" + b"\x00" * 24),
+        ])
+        names = [item.filename for item in stub.session_state["attachments"]]
+        assert names == ["good.txt"]
+        assert any("does not look like text" in warning for warning in stub.warnings)
+
+    def test_the_chips_are_rendered_in_their_own_pinned_container(self, monkeypatch):
+        stub, _m = self.app(monkeypatch, [self.Upload("notes.md", b"# hi\n")])
+        keys = [key for name, key in stub.events if name == "container"]
+        assert "attachments" in keys
+
+    def test_the_chips_are_rendered_after_the_input_box(self, monkeypatch):
+        """Pinned to the composer, like the controls strip. Rendered where the
+        script first hears about the upload, they landed in the middle of the page."""
+        stub, _m = self.app(monkeypatch, [self.Upload("notes.md", b"# hi\n")])
+        names = [name for name, _key in stub.events]
+        order = [
+            index for index, (name, key) in enumerate(stub.events)
+            if name == "chat_input" or (name == "container" and key == "attachments")
+        ]
+        assert names.count("chat_input") == 1
+        assert len(order) == 2 and order[0] < order[1], stub.events
+
+    def test_an_image_on_a_text_only_model_says_so(self, monkeypatch):
+        """An image sent to a text-only model is a 4xx. Said next to the picture,
+        beside the picker that can fix it, rather than discovered in the answer."""
+        png = b"\x89PNG\r\n\x1a\n" + b"x" * 40
+        stub, _m = self.app(monkeypatch, [self.Upload("pasted-image.png", png)])
+        assert any("cannot read images" in caption for caption in stub.captions)
