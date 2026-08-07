@@ -185,15 +185,21 @@
     // matters more than it looks: a version that ran every frame would yank the
     // page back down each time the reader scrolled up to re-read something.
     function settle(el, answers) {
-        var stamp = String(answers.length);
-        if (doc.body.dataset.sageSettled === stamp) return;
-        doc.body.dataset.sageSettled = stamp;
-
         var messages = doc.querySelectorAll('.user-message');
         var latest = messages[messages.length - 1];
         var end = tail();
         var bar = doc.querySelector('[data-testid="stBottomBlockContainer"]');
+        // Measure first, and only then spend the once-per-answer stamp. Spending
+        // it up front looked equivalent and was not: this runs on a page Streamlit
+        // is still rebuilding, so a pass with no messages in the DOM yet burned the
+        // stamp for that answer count and returned — and the real layout, when it
+        // landed a moment later, carried the same count and was never settled.
+        // That is the dead space that survived two rounds of fixing it.
         if (!latest || end === null || !bar) return;
+
+        var stamp = String(answers.length);
+        if (doc.body.dataset.sageSettled === stamp) return;
+        doc.body.dataset.sageSettled = stamp;
 
         var excess = bar.getBoundingClientRect().top - end - TAIL_GAP;
         if (excess <= 4) return;

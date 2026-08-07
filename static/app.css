@@ -214,8 +214,13 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
      * `[data-testid="stVerticalBlock"] > div` reset above it is the more specific
      * selector, so an `!important` padding here computes to 0. app.js measures the
      * band this occupies from the bottom of the window, so the offset is part of
-     * what the bar reserves and cannot become an overlap. */
-    bottom: 0.4rem;
+     * what the bar reserves and cannot become an overlap.
+     *
+     * A whole 1rem of it. At 0.4rem the disclaimer sat flush against the bottom
+     * edge of the window with its descenders in the last row of pixels, which
+     * reads exactly like text being cut off — because at that size it is. This is
+     * the clearance Streamlit's own bar had before any of this moved. */
+    bottom: 1rem;
     left: 50%;
     transform: translateX(-50%);
     /* Above Streamlit's own chrome, which is where `[data-testid="stHeader"]`
@@ -246,7 +251,10 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
     align-items: stretch !important;
 }
 
-/* Each control as wide as its own label, hard left, flush with the input above.
+/* Each control as wide as its own label, and hard right — the corner every other
+ * assistant puts its model name in, and the corner the send button is already in,
+ * so the two controls that belong to "what happens when I press this" line up.
+ *
  * A row rather than `st.columns`, whose children have no intrinsic width — that
  * is how the picker managed to be in the DOM and invisible on screen, twice.
  *
@@ -264,7 +272,7 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
     flex-direction: row !important;
     flex-wrap: wrap !important;
     align-items: center !important;
-    justify-content: flex-start !important;
+    justify-content: flex-end !important;
     gap: 0.4rem !important;
     width: auto !important;
 }
@@ -864,11 +872,35 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
 .st-key-error-actions .stButton { height: 100%; }
 .st-key-error-actions button { height: 100%; min-height: 40px; }
 
-/* ===== ABOUT PANEL ===== */
-.about-panel { font-size: 0.86rem; color: var(--text-secondary); line-height: 1.6; }
-.about-panel h4 { font-size: 0.95rem; color: var(--text-primary); margin: 0 0 0.4rem; }
-.about-panel ul { margin: 0.2rem 0 0.7rem 1.1rem; padding: 0; }
-.about-panel .about-meta { font-size: 0.76rem; color: var(--text-muted); }
+/* ===== LANDING NOTE =====
+ * What was in the ℹ️ popover, said plainly on the one screen with room for it.
+ * Quiet by design: a reader who wants to type a question should be able to skip
+ * it in one glance, and a reader wondering what this thing can see should find it
+ * without hunting for a button. */
+.landing-note {
+    max-width: min(38rem, 88vw);
+    margin: clamp(1rem, 3vh, 1.75rem) auto 0;
+    padding: 0 var(--space-md);
+    text-align: center;
+    font-size: 0.78rem;
+    line-height: 1.55;
+    color: var(--text-muted);
+    text-wrap: pretty;
+    animation: fadeInUp 0.6s ease-out 0.6s both;
+}
+
+.landing-note p { margin: 0 0 0.35rem !important; }
+.landing-note strong { color: var(--text-secondary); }
+.landing-note a { color: var(--brand-text); text-decoration: underline; }
+.landing-note code {
+    background: var(--code-inline-bg);
+    color: var(--code-inline-fg);
+    padding: 1px 4px;
+    border-radius: 3px;
+    font-size: 0.95em;
+}
+
+.landing-note .landing-meta { font-size: 0.72rem; opacity: 0.85; margin: 0 !important; }
 
 /* ===== ANCHOR LINK CLEANUP ===== */
 .stMarkdown h1 a, .stMarkdown h2 a, .stMarkdown h3 a,

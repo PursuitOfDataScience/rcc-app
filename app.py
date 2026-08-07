@@ -371,36 +371,36 @@ DISCLAIMER = (
 )
 
 
-def render_about() -> None:
+def render_landing_note() -> None:
+    """What Sage is and is not, on the screen where a reader starts.
+
+    This was an ℹ️ popover in the row under the input, and a button whose only job
+    is to explain the app has no business sitting next to the box you type in — it
+    is one more thing in the way on every screen, for something you read once. The
+    landing screen has room to just say it, and that is the screen you are on when
+    you have not read it yet.
+    """
     stamp = config.snapshot()
-    synced = stamp.get("refreshed_at", "unknown")
-    commit = stamp.get("user_guide_commit", "unknown")
+    synced = html.escape(str(stamp.get("refreshed_at", "unknown")))
+    commit = html.escape(str(stamp.get("user_guide_commit", "unknown")))
     # Escaped even though these are operator-set, not user-set: an env var landing
     # unescaped inside an href is the kind of thing that stops being harmless later.
     help_url = html.escape(config.HELP_DESK_URL, quote=True)
     help_email = html.escape(config.HELP_DESK_EMAIL, quote=True)
     st.markdown(
         f"""
-        <div class="about-panel">
-        <h4>What Sage is</h4>
-        A read-only assistant for the UChicago
-        <a href="https://rcc.uchicago.edu/" target="_blank" rel="noopener">Research
-        Computing Center</a>. Every answer is retrieved from the official User Guide
-        and RCC website, and cites the sections it used.
-        <h4>What it cannot do</h4>
-        <ul>
-          <li>Run commands or read files on the cluster</li>
-          <li>See your account, jobs, quotas or allocations</li>
-          <li>Change anything — it only reads documentation</li>
-        </ul>
-        <h4>Still stuck?</h4>
-        Contact the <a href="{help_url}" target="_blank"
-        rel="noopener">RCC Help Desk</a> or email
-        <a href="mailto:{help_email}">{help_email}</a>.
-        The walk-in lab is in Regenstein 216 during business hours.
-        <p class="about-meta">Documentation synced {html.escape(str(synced))} ·
-        user-guide <code>{html.escape(str(commit))}</code> ·
-        {html.escape(corpus_mod.summarize(CORPUS))}</p>
+        <div class="landing-note">
+        <p><strong>Read-only.</strong> Every answer is retrieved from the official
+        <a href="https://rcc.uchicago.edu/" target="_blank" rel="noopener">RCC</a>
+        User Guide and website, and cites the sections it used. Sage cannot run
+        commands or read files on the cluster, and cannot see your account, jobs,
+        quotas or allocations.</p>
+        <p>Still stuck? Ask the <a href="{help_url}" target="_blank"
+        rel="noopener">RCC Help Desk</a>, email
+        <a href="mailto:{help_email}">{help_email}</a>, or drop into the walk-in
+        lab in Regenstein 216 during business hours.</p>
+        <p class="landing-meta">Documentation synced {synced} · user-guide
+        <code>{commit}</code> · {html.escape(corpus_mod.summarize(CORPUS))}</p>
         </div>
         """,
         unsafe_allow_html=True,
@@ -446,7 +446,7 @@ def render_model_picker() -> None:
 
 
 def render_controls() -> None:
-    """The model picker, About and Clear — under the input box, not over the page.
+    """The model picker and Clear — bottom right, under the input box.
 
     This row used to be a bar above the conversation, which was wrong twice over.
     It sat in the band Streamlit's own full-width header takes the clicks for, so
@@ -455,16 +455,17 @@ def render_controls() -> None:
     inside it did not render at all. Under the input it is beside the thing it
     affects, on every screen, at the opposite end of the page from that header.
 
+    Clear first, picker last, because the row is right-aligned and the picker is
+    the one that belongs in the corner: it names what will answer, next to the
+    button that sends. There is no ℹ️ here any more — see `render_landing_note`.
+
     No `st.columns`: a column has no intrinsic width, which is how the picker
     came to be invisible twice. The strip is laid out by CSS instead, so each
     control is as wide as its own label and the worst a broken stylesheet can do
-    is stack the three of them.
+    is stack the two of them.
     """
     with st.container(key="composer-strip"):
         with st.container(key="controls"):
-            render_model_picker()
-            with st.popover("ℹ️", help="About Sage"):
-                render_about()
             if has_messages and st.button(
                 "🗑️", key="clear", help="Clear this conversation"
             ):
@@ -477,6 +478,7 @@ def render_controls() -> None:
                 st.session_state.switched_from = None
                 st.session_state.uploader_key += 1
                 st.rerun()
+            render_model_picker()
         st.markdown(
             f'<p class="ai-disclaimer">{DISCLAIMER}</p>', unsafe_allow_html=True
         )
@@ -513,6 +515,8 @@ if not has_messages:
                         use_container_width=True,
                     ):
                         start_new_turn(question)
+
+    render_landing_note()
 else:
     # Marker only: app.js keys page-scroll behaviour off its presence — without it
     # the screen is the landing screen, which always starts at the top.
