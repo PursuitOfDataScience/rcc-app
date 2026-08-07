@@ -6,7 +6,7 @@ Built with [Streamlit](https://streamlit.io/). Answers come from [Mistral](https
 
 ## Features
 
-- 🔀 **Model picker** — the button at the top left names the model in use; open it to switch between Mistral and OpenCode Zen's free models mid-conversation. A spent quota also fails over on its own, and the error card offers the switch in one click.
+- 🔀 **Model picker** — the button under the chat input names the model in use; open it to switch between Mistral and OpenCode Zen's free models mid-conversation. A spent quota also fails over on its own, and the error card offers the switch in one click.
 - 🔎 **Grounded answers** — retrieves real RCC documentation; no invented commands, partitions or quotas.
 - 🔗 **Real citations** — a Sources strip under each answer deep-links to the section it came from, plus Related sections from the same page.
 - 💬 **Streaming replies** with conversation memory for follow-ups.
@@ -22,7 +22,7 @@ export MISTRAL_API_KEY=...        # and/or OPENCODE_API_KEY=sk-zen-...
 streamlit run app.py              # → http://localhost:8501
 ```
 
-At least one key is needed; set both and a picker appears in the top bar.
+At least one key is needed; set both and a picker appears under the chat input.
 [OpenCode Zen](https://opencode.ai/docs/zen/) keys are free and start with
 `sk-zen-`, which is a way to keep working once a paid quota runs out.
 
@@ -110,16 +110,20 @@ python tools/render_check.py                 # measure and report
 python tools/render_check.py "New subtitle"  # try alternative hero copy
 ```
 
-It renders four screens (landing, answer, long chat, error) in both colour schemes
-at five widths, in three states — at rest, scrolled, and mid-generation with the
-real `static/app.js` driving the page — 100 renders. It fails on
-clipping, content hidden behind the input bar, horizontal overflow, unwanted
-wrapping, or contrast below WCAG AA. CI runs it too.
+It renders five screens (landing, answer, short answer, long chat, error) in both
+colour schemes at five widths, in five states — the first frame, before
+`static/app.js` has measured how much room the input bar needs; at rest; scrolled;
+mid-generation; and just-finished, the last three with the real `static/app.js`
+driving the page — 220 renders. It fails on clipping, content hidden behind the
+input bar, horizontal overflow, unwanted wrapping, a control something else is
+painted on top of, the gap between a question and its answer, dead space above the
+input bar, or contrast below WCAG AA. CI runs it too.
 
 It catches what reading the CSS does not. So far: the newest answer sitting 131px
 underneath the chat input, the hero subtitle and all six starter cards wrapping to
-two lines, a focus ring at 1.73:1 on the dark background, and the question being
-scrolled off the top of the screen while its answer streamed in.
+two lines, a focus ring at 1.73:1 on the dark background, the question being
+scrolled off the top of the screen while its answer streamed in, and the controls
+under the input being painted over by Streamlit's own pinned bar.
 
 ### The retrieval eval
 

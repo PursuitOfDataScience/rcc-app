@@ -5,12 +5,16 @@ Streamlit often cannot be installed where this repo is worked on, and every UI b
 that has actually shipped here was pure CSS. This renders the stylesheet against a
 replica of Streamlit's DOM in headless Chromium and asserts that nothing is
 clipped, hidden behind the fixed input bar, overflowing horizontally, wrapping
-onto an unwanted extra line, or failing contrast.
+onto an unwanted extra line, painted on top of a control, too close to the message
+above it, adrift above the input bar, or failing contrast.
 
 It has already caught what reading the CSS did not:
   * the newest answer sitting 131px underneath the fixed chat input;
   * the hero subtitle and all six starter cards wrapping to two lines;
-  * a maroon focus ring at 1.73:1 on the dark background.
+  * a maroon focus ring at 1.73:1 on the dark background;
+  * the controls under the input painted over by Streamlit's own pinned bar;
+  * 19–25px between a question and its answer, and up to 566px of nothing
+    between the last message and the input box.
 
 It also, for a while, cheerfully passed a top bar that was completely unusable,
 because the replica modelled Streamlit's header as a small right-aligned box
@@ -23,8 +27,11 @@ checks came out of that and are the ones worth keeping honest:
     model is worse than no model, because it reads as a pass.
 
 Four states per screen: at rest, scrolled to the end, mid-generation, and just
-finished — the last one running app.js so the post-turn scroll is measured
-rather than assumed.
+finished. The real app.js runs in every one of them — the room the page leaves for
+the input bar is built from measurements it publishes, so a replica without it
+measures a layout the app never has — and the last two additionally exercise the
+per-turn scroll pin and the settle that closes the space it leaves behind. (The
+landing screen has no turn to be in the middle of, so it renders at rest only.)
 
 Usage:
     python tools/render_check.py            # audit; exits non-zero on failure
@@ -57,10 +64,16 @@ REPO = os.path.dirname(HERE)
 #
 # This used to be modelled as a 220px right-aligned box, on the reasoning that
 # Community Cloud's visible controls are right-aligned. That was wrong, and it
-# is why the top bar passed 100 renders while being unusable in the real app.
+# is why the top bar passed every render while being unusable in the real app.
 HOST_BAR = 60
 # The part that also paints: the Community Cloud control cluster, right-aligned.
 HOST_BAR_W = 220
+# Streamlit's header sits at this z-index. Its pinned bottom container is not
+# documented as being in the same band, but it is Streamlit chrome and it is
+# fixed over the page, so it is modelled as if it were: the strip of controls
+# app.py pins inside that band has to outrank whatever is really there, and a
+# harness that assumed the friendlier number would pass a dead picker again.
+HOST_Z = 999990
 
 
 def _read(*parts: str) -> str:
@@ -88,8 +101,16 @@ def _card_labels() -> list[str]:
     ]
 
 
+def _disclaimer() -> str:
+    """The line under the input. Read from app.py so the two cannot drift apart —
+    its line count is what decides how much room the page has to reserve."""
+    match = re.search(r"^DISCLAIMER = \((.*?)\n\)", APP, re.S | re.M)
+    return "".join(re.findall(r'"([^"]*)"', match.group(1))) if match else "(missing)"
+
+
 SUBTITLE = _subtitle()
 CARDS = _card_labels()
+DISCLAIMER = _disclaimer()
 # Read from app.js so the two can never drift apart.
 TOP_GAP = int(re.search(r"var TOP_GAP = (\d+)", JS).group(1))
 
@@ -150,7 +171,7 @@ body {{ margin: 0; background: {BACKGROUNDS[scheme]}; color: {FOREGROUNDS[scheme
    font: inherit; cursor: pointer; }}
 .stButton button p {{ margin: 0; }}
 [data-testid="stBottomBlockContainer"] {{ position: fixed; bottom: 0; left: 0; right: 0;
-   background: {BACKGROUNDS[scheme]}; padding: 1rem; }}
+   background: {BACKGROUNDS[scheme]}; padding: 1rem; z-index: {HOST_Z}; }}
 .stChatInput > div {{ background: {'#262730' if scheme == 'dark' else '#f0f2f6'}; }}
 .stChatInput textarea {{ width: 100%; background: transparent; border: 0;
                         color: inherit; font: inherit; resize: none; }}
@@ -166,7 +187,7 @@ body {{ margin: 0; background: {BACKGROUNDS[scheme]}; color: {FOREGROUNDS[scheme
 [data-testid="stPopover"] button p {{ margin: 0; }}
 /* Streamlit's header: full width, transparent, and above everything. */
 [data-testid="stHeader"] {{ position: fixed; top: 0; left: 0; right: 0;
-   height: {HOST_BAR}px; background: transparent; z-index: 999990; }}
+   height: {HOST_BAR}px; background: transparent; z-index: {HOST_Z}; }}
 /* The host's own control cluster, which additionally paints. */
 #host-bar {{ position: fixed; top: 0; right: 0; width: {HOST_BAR_W}px;
             height: {HOST_BAR}px; background: {BACKGROUNDS[scheme]}; z-index: 999991; }}
@@ -185,14 +206,34 @@ def _cards_html() -> str:
     return rows
 
 
-TOPBAR = """<div class="st-key-topbar element-container">
-  <div data-testid="stHorizontalBlock">
-    <div data-testid="stColumn"><div data-testid="stPopover"><div class="stPopover">
+def strip(clear: bool = True) -> str:
+    """The controls under the input, and the AI disclaimer under those.
+
+    Rendered last in the block, where app.py renders it, and as two nested keyed
+    containers, which is what `st.container(key=…)` inside another one produces —
+    the stylesheet turns the inner one into a row and that nesting is the thing
+    it has to reach through. `clear` is False on the landing screen, where there
+    is no conversation to throw away.
+    """
+    trash = ('<div class="element-container"><div class="stButton">'
+             "<button><p>🗑️</p></button></div></div>") if clear else ""
+    return f"""<div class="st-key-composer-strip" data-testid="stVerticalBlockBorderWrapper">
+ <div data-testid="stVerticalBlock">
+  <div class="st-key-controls" data-testid="stVerticalBlockBorderWrapper">
+   <div data-testid="stVerticalBlock">
+    <div class="element-container"><div data-testid="stPopover"><div class="stPopover">
       <button><p>Zen · deepseek-v4-flash-free</p></button>
     </div></div></div>
-    <div data-testid="stColumn"><div class="stButton"><button><p>ℹ️</p></button></div></div>
-    <div data-testid="stColumn"><div class="stButton"><button><p>🗑️</p></button></div></div>
-  </div></div>"""
+    <!-- About is a popover too, so the picker's own rules reach its trigger. The
+         ellipsis ceiling in particular: modelled as a plain button, an ℹ️ that
+         those rules had squashed would render fine here and be wrong in the app. -->
+    <div class="element-container"><div data-testid="stPopover"><div class="stPopover">
+      <button><p>ℹ️</p></button></div></div></div>
+    {trash}
+   </div></div>
+  <div class="element-container"><div class="stMarkdown">
+    <p class="ai-disclaimer">{DISCLAIMER}</p></div></div>
+ </div></div>"""
 
 
 def answer_block(index: int) -> str:
@@ -226,21 +267,46 @@ python train.py --epochs 100 --batch-size 64 --output /scratch/midway3/$USER/run
 </div>"""
 
 
+CHAT_MARKER = ('<div class="element-container"><div class="stMarkdown">'
+               '<div class="chat-container"></div></div></div>')
+
+# One question and a two-line reply: the shape that used to leave 121–566px of
+# nothing between the answer and the input box, because the page was shorter than
+# the window and there was no scroll left for app.js to close the gap with. The
+# failover notice is on it because that is when a reader is looking at the bottom.
+SHORT_ANSWER = """
+<div class="element-container"><div class="stMarkdown">
+  <div class="user-message"><div class="user-bubble">How do I submit a batch job with
+  sbatch?</div></div>
+</div></div>
+<div class="st-key-answer-0 element-container"><div class="stChatMessage">
+ <div></div>
+ <div class="stMarkdown"><p>Submit it with <code>sbatch ./my_job.sbatch</code>, and the
+ scheduler prints the job id it assigned.</p></div></div>
+ <div class="sources"><span class="sources-label">Sources</span>
+   <a class="source-chip" href="#">Batch jobs<span class="source-kind">docs</span></a>
+ </div>
+</div>
+<div class="element-container"><div class="stMarkdown">
+  <div class="notice">Mistral · small-latest was unavailable (out of credit), so Zen ·
+  deepseek-v4-flash-free answered instead. Pick a different one from the model button
+  under the input box.</div></div></div>"""
+
 SCENARIOS = {
-    "landing": TOPBAR + f"""
+    "landing": f"""
 <div class="element-container"><div class="stMarkdown">
   <div class="welcome">
     <h1 class="welcome-title">What can I help you with?</h1>
     <p class="welcome-subtitle">{SUBTITLE}</p>
   </div></div></div>
-<div class="st-key-examples element-container">{_cards_html()}</div>""",
-    "answer": TOPBAR + '<div class="element-container"><div class="stMarkdown">'
-    '<div class="chat-container"></div></div></div>' + answer_block(0),
-    "long-chat": TOPBAR + '<div class="element-container"><div class="stMarkdown">'
-    '<div class="chat-container"></div></div></div>'
-    + "".join(answer_block(i) for i in range(6)),
-    "error": TOPBAR + '<div class="element-container"><div class="stMarkdown">'
-    '<div class="chat-container"></div></div></div>'
+<div class="st-key-examples element-container">{_cards_html()}</div>"""
+    + strip(clear=False),
+    "answer": CHAT_MARKER + answer_block(0) + strip(),
+    "short-answer": CHAT_MARKER + SHORT_ANSWER + strip(),
+    "long-chat": CHAT_MARKER
+    + "".join(answer_block(i) for i in range(6))
+    + strip(),
+    "error": CHAT_MARKER
     + """
 <div class="element-container"><div class="stMarkdown">
   <div class="user-message"><div class="user-bubble">How do I run PyTorch on GPUs?</div></div>
@@ -257,7 +323,8 @@ SCENARIOS = {
     <div class="stButton"><button><p>↻ Try again</p></button></div></div></div>
   <div data-testid="stColumn"><div class="st-key-switch-model element-container">
     <div class="stButton"><button><p>→ Use Zen · deepseek-v4-flash-free</p></button></div></div></div>
- </div></div>""",
+ </div></div>"""
+    + strip(),
 }
 
 # Elements every scenario should keep clear of the chrome, and their line budgets.
@@ -363,9 +430,20 @@ if (window.__pinLast && main) {
     main.scrollHeight - main.clientHeight));
 }
 function snapshot() {
+  // The two custom properties app.js publishes. Reported so a failed gap check
+  // says whether the reservation was measured or still on the CSS fallback —
+  // "2px under the input bar" with no numbers took a while to place.
+  var root = getComputedStyle(document.documentElement);
   var out = {viewport: {w: innerWidth, h: innerHeight}, hostBar: HOSTBAR,
            scrolled: main ? Math.round(main.scrollTop) : 0,
+           // Whether there is anywhere to scroll to. A conversation shorter than
+           // the window sits at the bottom of the space reserved for it, so if
+           // that reservation is wrong it lands under the input with no scroll
+           // available to reveal it.
+           canScroll: !!main && main.scrollHeight - main.clientHeight > 1,
            docOverflowX: Math.max(0, document.documentElement.scrollWidth - innerWidth),
+           reserved: {bar: root.getPropertyValue('--bar-h').trim(),
+                      strip: root.getPropertyValue('--strip-h').trim()},
            els: {}};
   SELECTORS.forEach(function (s) { out.els[s] = box(s); });
   document.title = JSON.stringify(out);
@@ -375,19 +453,24 @@ setTimeout(snapshot, 700);
 </script>
 """
 
-# The model picker's trigger. Named because two checks below treat it specially.
-PICKER = '.st-key-topbar [data-testid="stPopover"] button'
+# The model picker's trigger. Named because three checks below treat it specially:
+# collapsed width, whether it is inside the strip pinned for it, and reachability.
+PICKER = '.st-key-controls [data-testid="stPopover"] button'
+# The strip the controls sit in, and the input it must never cover.
+STRIP = ".st-key-composer-strip"
+INPUT = ".stChatInput textarea"
 
 SELECTORS = [
     ".welcome-title", ".welcome-subtitle", ".user-bubble", "last:.user-bubble",
-    ".error-card",
+    ".error-card", ".notice", ".st-key-error-actions",
     ".error-title", ".error-body", ".ai-disclaimer", ".sources-label",
     ".source-chip", ".st-key-answer-5", ".st-key-answer-0", ".stChatMessage pre",
     ".stChatMessage code", '[data-testid="stBottomBlockContainer"]',
-    ".st-key-topbar button",
-    # The rightmost control in the bar. With a model name in it the bar is far
-    # wider than it was, so it can now reach the host toolbar on narrow screens.
-    "last:.st-key-topbar button",
+    STRIP, INPUT,
+    ".st-key-controls button",
+    # The rightmost control in the strip, so the row is measured end to end: with
+    # a model name in it, it is the widest thing under the input.
+    "last:.st-key-controls button",
     PICKER,
     # The error card's actions. The switch one carries a whole model name, so it
     # is the widest button in the app and the first thing to overflow at 360px.
@@ -395,26 +478,38 @@ SELECTORS = [
 ] + [f".st-key-example-card-{i} button p" for i in range(6)]
 
 # Controls a user has to be able to click. For these, occupying a sensible
-# rectangle is not enough — something else must not be on top of them.
+# rectangle is not enough — something else must not be on top of them. The input
+# is on the list because the strip of controls is pinned in a band the bar above
+# it reserves: if the two measurements ever disagree, the strip lands on the
+# textarea, and "the box will not take a click" is the worst bug in the app.
 INTERACTIVE = {
-    PICKER, ".st-key-topbar button", "last:.st-key-topbar button",
+    PICKER, ".st-key-controls button", "last:.st-key-controls button", INPUT,
     ".st-key-retry button p", ".st-key-switch-model button p",
     *(f".st-key-example-card-{i} button p" for i in range(6)),
 }
 
-ELLIPSIS_OK = {PICKER, ".st-key-topbar button"}
+ELLIPSIS_OK = {PICKER, ".st-key-controls button"}
 
-# How far apart things should be, in px. Both ends matter: the first of these
-# was reported as "too close between user message and the top of the response",
-# the second as "big empty space between the bottom of the message and the input".
-GAP_QUESTION_TO_ANSWER = (14, 48)
+# How far apart things should be, in px. Both ends matter: the first of these was
+# reported twice as "barely any spacing between the user and AI messages", at a
+# measured 19–25px; the second as "such a big empty space" between the end of an
+# answer and the input box, at a measured 121–566px.
+GAP_QUESTION_TO_ANSWER = (30, 60)
 # Only an upper bound: a reply taller than the window runs off the bottom, and
 # that is the reader's to scroll, not dead space.
-MAX_TAIL_GAP = 96
+MAX_TAIL_GAP = 64
 
 
 def page(body: str, scheme: str, scroll: bool, generating: bool = False,
-         pin: bool = False) -> str:
+         pin: bool = False, script: bool = True) -> str:
+    """The replica, with or without app.js.
+
+    `script=False` is the app's first frame: the stylesheet's own fallback for how
+    much room the bar takes, before app.js has measured the real thing. It is a
+    state a user sees, and it is the one CI caught an answer 2px underneath the
+    input in — the two fallbacks disagreed with each other by 26px and every
+    render that ran app.js papered over it.
+    """
     return f"""<!doctype html><html><head><meta charset="utf-8">
 <style>{base_css(scheme)}</style><style>{theme_css(scheme)}</style></head><body>
 <div data-testid="stHeader"></div><div id="host-bar"></div>
@@ -424,12 +519,10 @@ def page(body: str, scheme: str, scroll: bool, generating: bool = False,
       <div data-testid="stVerticalBlock">{body}</div></div></div>
   <div data-testid="stBottomBlockContainer">
     <div class="stChatInput"><div><textarea placeholder="Ask anything about RCC…"></textarea></div></div>
-    <p class="ai-disclaimer" id="ai-disclaimer">Sage can make mistakes and cannot see your
-       account or jobs. Verify commands against the linked docs.</p>
   </div></div>
 {'<div id="processing-signal" hidden></div>' if generating else ''}
 <script>window.__scrollBottom = {str(scroll).lower()}; window.__pinLast = {str(pin).lower()};</script>
-<script>{JS}</script>
+{'<script>' + JS + '</script>' if script else ''}
 {MEASURE.replace("HOSTBAR", str(HOST_BAR)).replace("TOPGAP", str(TOP_GAP)).replace("SELECTORS", json.dumps(SELECTORS))}
 </body></html>"""
 
@@ -458,7 +551,9 @@ def audit(data, scenario, scheme, width, state: str) -> list[str]:
     problems, els = [], data["els"]
     where = f"{scenario}/{scheme}/{width}px"
     generating = state == "generating"
-    scrolled = state != "rest"
+    # "unmeasured" is the first frame, so it is at the top of the page like "rest":
+    # the host-toolbar collision check below is meaningful in both.
+    scrolled = state not in ("rest", "unmeasured")
 
     if data["docOverflowX"] > 0:
         problems.append(f"{where}: page scrolls sideways by {data['docOverflowX']}px")
@@ -503,6 +598,18 @@ def audit(data, scenario, scheme, width, state: str) -> list[str]:
             f"{picker['right'] - picker['left']}px wide (collapsed)"
         )
 
+    # The controls belong under the input, not on it. The strip is pinned inside a
+    # band the bar above reserves from a measurement, so this is the check that
+    # the two agree — at every width, in both themes, in every state.
+    band, entry = els.get(STRIP), els.get(INPUT)
+    if band and entry and band["top"] < entry["bottom"]:
+        problems.append(
+            f"{where}: the controls strip overlaps the input by "
+            f"{entry['bottom'] - band['top']}px"
+        )
+    if band and picker and picker["top"] < band["top"] - 1:
+        problems.append(f"{where}: the model picker is outside the strip pinned for it")
+
     if generating:
         # The question must stay on screen while its answer streams in. Pinning to
         # the document bottom used to scroll it clean off the top.
@@ -536,20 +643,42 @@ def audit(data, scenario, scheme, width, state: str) -> list[str]:
                 f"(want {low}–{high})"
             )
 
-    newest = els.get(".st-key-answer-5") or els.get(".st-key-answer-0") or els.get(".error-card")
+    # The bottom of the conversation, whatever ended it — a trailing failover
+    # notice is part of it, and measuring only the answer above one is how the
+    # space under it stayed dead while this harness reported a pass.
+    newest = max(
+        (b for sel, b in els.items()
+         if b and sel in (".st-key-answer-5", ".st-key-answer-0", ".error-card",
+                          ".st-key-error-actions", ".notice")),
+        key=lambda b: b["bottom"], default=None,
+    )
     if newest and bar:
         gap = bar["top"] - newest["bottom"]
-        # Scrolled to the very end, nothing may hide under the fixed input.
-        if state == "scrolled" and gap < 0:
-            problems.append(f"{where}: newest content is {-gap}px under the input bar")
-        # Just finished: this is the view the reader is actually left looking at,
-        # so it is the one that must not be a third of a screen of nothing. Only
-        # meaningful if the page could scroll at all — a conversation shorter than
-        # the window leaves a gap because there is nothing to fill it.
-        if state == "settled" and data["scrolled"] > 0 and gap > MAX_TAIL_GAP:
+        reserved = data.get("reserved", {})
+        # What the page reserved, versus what the bar actually takes. When these
+        # disagree the gap checks below are measuring a stale reservation, which
+        # is a different bug from a stylesheet that reserved the wrong amount.
+        room = (f"reserved --bar-h {reserved.get('bar', '?')} / --strip-h "
+                f"{reserved.get('strip', '?')}, bar is really "
+                f"{data['viewport']['h'] - bar['top']}px")
+        # Scrolled to the very end, nothing may hide under the fixed input — and
+        # on a page with nowhere to scroll, nothing may hide under it at all,
+        # because the conversation is pinned to the bottom of what was reserved
+        # and there is no scroll left to bring it back out.
+        if gap < 0 and (state == "scrolled"
+                        or (state in ("rest", "unmeasured")
+                            and not data.get("canScroll", True))):
+            problems.append(
+                f"{where}: newest content is {-gap}px under the input bar ({room})"
+            )
+        # At rest, just-finished, and on the first frame are the views a reader is
+        # actually left looking at, so they are the ones that must not be a third
+        # of a screen of nothing. A negative gap means the reply runs off the
+        # bottom, which is theirs to scroll; this is only ever about empty space.
+        if state in ("rest", "settled", "unmeasured") and gap > MAX_TAIL_GAP:
             problems.append(
                 f"{where}: {gap}px of dead space between the last message and the "
-                f"input bar (want at most {MAX_TAIL_GAP})"
+                f"input bar (want at most {MAX_TAIL_GAP}; {room})"
             )
     return problems
 
@@ -563,17 +692,20 @@ def main() -> int:
     for scenario, body in SCENARIOS.items():
         for scheme in ("dark", "light"):
             for width, height in widths:
-                # at rest, scrolled to the bottom, mid-generation (app.js
-                # pinning the question), and just-finished (app.js closing the
-                # dead space the pin left behind).
-                states = (["rest"] if scenario == "landing"
-                          else ["rest", "scrolled", "generating", "settled"])
+                # the first frame before app.js has measured the bar, at rest,
+                # scrolled to the bottom, mid-generation (app.js pinning the
+                # question), and just-finished (app.js closing the dead space the
+                # pin left behind).
+                states = (["unmeasured", "rest"] if scenario == "landing"
+                          else ["unmeasured", "rest", "scrolled", "generating",
+                                "settled"])
                 for state in states:
                     suffix = "" if state == "rest" else f"-{state}"
                     name = f"{scenario}-{scheme}-{width}{suffix}"
                     html = page(body, scheme, scroll=state == "scrolled",
                                 generating=state == "generating",
-                                pin=state == "settled")
+                                pin=state == "settled",
+                                script=state != "unmeasured")
                     data = render(name, html, width, height,
                                   shot=(scheme == "dark" and width == 1263
                                         and state == "rest"))

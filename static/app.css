@@ -55,15 +55,33 @@
     --shadow-md: 0 4px 15px rgba(0, 0, 0, 0.06);
     --shadow-lg: 0 8px 25px rgba(128, 0, 0, 0.18);
 
-    --space-xs: 0.25rem;
     --space-sm: 0.5rem;
     --space-md: 1rem;
     --space-lg: 1.5rem;
 
     /* Streamlit's own header strip: full width, transparent, and on top of
-     * everything. Nothing clickable may sit inside it. Content and the top bar
-     * both clear it by this much. */
+     * everything. Nothing clickable may sit inside it, and the content clears it
+     * by this much. */
     --host-header: 3.75rem;
+
+    /* The fixed bottom bar (input + the strip of controls under it) and the
+     * strip on its own. app.js measures both and republishes them here, because
+     * neither is a constant: the disclaimer wraps to two or three lines on a
+     * narrow window, and an attachment chip adds a row.
+     *
+     * These two are only the pre-measurement fallback, and they have to agree
+     * with each other: `--strip-h` is what the bar reserves below the input, so
+     * `--bar-h` must be at least that plus the input and the bar's own padding.
+     * A --bar-h of 9.5rem alongside a --strip-h of 4.5rem was under-counting the
+     * bar it described by 26px, and CI caught the newest answer 2px underneath
+     * the input on the one screen where the measurement had not landed yet.
+     * Generous on purpose: over-reserving is dead space app.js takes back on the
+     * first frame, under-reserving hides an answer. */
+    --strip-h: 4.5rem;
+    --bar-h: 12rem;
+    /* What is left between the last message and the bar. Also how far the page
+     * can scroll past its last message, so it is dead space, one gap's worth. */
+    --tail-gap: 1.75rem;
 
     --content-max: min(820px, 92vw);
     --input-max: min(780px, 88vw);
@@ -127,13 +145,52 @@
 .main .block-container,
 [data-testid="stMainBlockContainer"] {
     padding-top: var(--host-header) !important;
-    /* Must clear the fixed input bar, and not much more: this padding is also
-     * how far the page can scroll past its last message, so every extra rem
-     * shows up as dead space under the newest answer. 11rem was 50px too many;
-     * 1.5rem (an older attempt) left the answer 131px *underneath* the input.
-     * tools/render_check.py now bounds the gap at both ends. */
-    padding-bottom: 10.25rem !important;
+    /* Exactly the bar plus one gap. This padding is also how far the page can
+     * scroll past its last message, so every extra pixel of it is dead space
+     * under the newest answer — and every missing pixel hides that answer under
+     * the input instead (1.5rem, an older attempt, buried it by 131px). The
+     * hardcoded 10.25rem this replaces was a guess at a bar whose height changes
+     * with the viewport; app.js measures the real thing.
+     * tools/render_check.py bounds the resulting gap at both ends. */
+    padding-bottom: calc(var(--bar-h) + var(--tail-gap)) !important;
     max-width: var(--content-max);
+}
+
+/* A short conversation belongs just above the composer, not marooned at the top
+ * of the window with half a screen of nothing between it and the input. The block
+ * is made at least a viewport tall and its content sits at the bottom of that;
+ * as soon as the conversation is taller, the block grows past the viewport and
+ * this stops having any effect, so scrolling is untouched.
+ *
+ * The padding above and below is what the header and the composer take, so this
+ * is centring and bottom-aligning within the space actually left for content. */
+.main .block-container:has(.chat-container),
+[data-testid="stMainBlockContainer"]:has(.chat-container) {
+    box-sizing: border-box;
+    min-height: 100vh;
+    min-height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+}
+
+/* The landing screen centres in that same space, for the same reason: a screen
+ * with a quarter of itself blank between the last thing you can click and the box
+ * you type in reads as unfinished. Tall windows only — flex centring overflows
+ * both ends equally and a scrollport cannot be scrolled back past its start, so
+ * on a short window this would put the hero out of reach instead of merely high.
+ * That is also why the short-viewport block below claws space back rather than
+ * centring. */
+@media (min-height: 721px) {
+    .main .block-container:not(:has(.chat-container)),
+    [data-testid="stMainBlockContainer"]:not(:has(.chat-container)) {
+        box-sizing: border-box;
+        min-height: 100vh;
+        min-height: 100dvh;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+    }
 }
 
 [data-testid="stVerticalBlock"] > div { margin-bottom: 0 !important; padding-bottom: 0 !important; }
@@ -145,40 +202,72 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
     overflow-x: hidden !important;
 }
 
-/* ===== TOP BAR (model picker + about + clear) ===== */
+/* ===== COMPOSER STRIP (model picker + about + clear + disclaimer) ===== */
 
-/* In flow, not fixed.
+/* Pinned under the chat input, at the opposite end of the page from Streamlit's
+ * header. Both earlier homes for these controls were above the conversation and
+ * both failed:
  *
- * `position: fixed; top: 8px` put this bar inside `[data-testid="stHeader"]` —
- * Streamlit's own full-width strip across the top of every app. That header is
- * transparent, so the bar was never hidden and every mock-up of it looked
- * right; it is also at a z-index no stylesheet can outrank in practice, so it
- * took every click aimed at the controls underneath. The bar was on screen and
- * completely dead, which is why three rounds of width fixes changed nothing.
+ * * `position: fixed; top: 8px` put the bar inside `[data-testid="stHeader"]` —
+ *   Streamlit's full-width strip across the top of every app. It is transparent,
+ *   so the bar was never hidden and every mock-up looked right; it is also at a
+ *   z-index no stylesheet can outrank, so it took every click aimed at the
+ *   controls underneath. The bar was on screen and completely dead.
+ * * In flow and sticky it was clickable, but the picker inside it did not render
+ *   on the landing screen — the one screen where a new user has to pick a model
+ *   before there is any conversation to pick one for.
  *
- * In flow it cannot be positioned into a dead zone. `sticky` keeps it reachable
- * once the conversation scrolls, and its failure mode is "stops following the
- * scroll", not "vanishes". `top` clears the header rather than fighting it. */
-.st-key-topbar {
-    position: sticky;
-    top: var(--host-header);
-    z-index: 100;
-    width: 100% !important;
-    margin-bottom: var(--space-sm) !important;
+ * Down here the header cannot reach it, and it is part of the composer rather
+ * than of the conversation, so it is on screen on every screen. `fixed` rather
+ * than `sticky` because it must never scroll away from the input it belongs to;
+ * the bar above reserves exactly `--strip-h` of room for it, so the two cannot
+ * overlap however many lines the disclaimer wraps to. */
+.st-key-composer-strip {
+    position: fixed;
+    /* Lifted off the window edge with `bottom`, not with padding: this element is
+     * a direct child of the main vertical block, and the
+     * `[data-testid="stVerticalBlock"] > div` reset above it is the more specific
+     * selector, so an `!important` padding here computes to 0. app.js measures the
+     * band this occupies from the bottom of the window, so the offset is part of
+     * what the bar reserves and cannot become an overlap. */
+    bottom: 0.4rem;
+    left: 50%;
+    transform: translateX(-50%);
+    /* Above Streamlit's own chrome, which is where `[data-testid="stHeader"]`
+     * lives at 999990 and where the pinned bottom bar plausibly lives too. A
+     * z-index that merely beats the page content is not enough: at 1000 the bar
+     * painted straight over these controls and the harness reported the picker
+     * unreachable at every width — the same failure as the old top bar, one end
+     * of the page down. Safe to outrank, because the strip only ever covers the
+     * band the bar reserves for it below the input. */
+    z-index: 999995;
+    width: var(--input-max) !important;
+    max-width: 100% !important;
 }
 
-.st-key-topbar [data-testid="stHorizontalBlock"] {
+/* Each control as wide as its own label, hard left, flush with the input above.
+ * A row rather than `st.columns`, whose children have no intrinsic width — that
+ * is how the picker managed to be in the DOM and invisible on screen, twice. */
+.st-key-controls [data-testid="stVerticalBlock"] {
+    flex-direction: row !important;
+    flex-wrap: wrap !important;
+    align-items: center !important;
+    justify-content: flex-start !important;
     gap: 0.4rem !important;
     width: auto !important;
-    justify-content: flex-start;
 }
-.st-key-topbar [data-testid="stColumn"] { width: auto !important; flex: 0 0 auto !important; min-width: 0 !important; }
+
+.st-key-controls [data-testid="stVerticalBlock"] > div,
+.st-key-controls .element-container,
+.st-key-controls [data-testid="stPopover"] {
+    width: auto !important;
+    flex: 0 0 auto !important;
+    min-width: 0 !important;
+}
 
 /* Model picker. A popover trigger, i.e. a button, so it is sized by its own
- * label. The selectbox this replaced was a block with no intrinsic width, and
- * in this `flex: 0 0 auto` bar that resolved to zero: the control was in the
- * DOM and invisible on screen. */
-.st-key-topbar [data-testid="stPopover"] button {
+ * label — with a ceiling, because a discovered model id can be long. */
+.st-key-controls [data-testid="stPopover"] button {
     width: auto !important;
     max-width: 15rem;
     white-space: nowrap;
@@ -186,7 +275,7 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
     text-overflow: ellipsis;
 }
 
-.st-key-topbar button {
+.st-key-controls button {
     background: var(--control-bg) !important;
     border: 1px solid var(--control-border) !important;
     border-radius: var(--radius-sm) !important;
@@ -197,16 +286,16 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
     transition: background var(--transition), border-color var(--transition);
 }
 
-.st-key-topbar button:hover {
+.st-key-controls button:hover {
     background: var(--control-bg-hover) !important;
     border-color: var(--brand-line) !important;
     color: var(--brand-text) !important;
 }
 
-.st-key-topbar button p { font-size: 0.78rem !important; margin: 0 !important; }
+.st-key-controls button p { font-size: 0.78rem !important; margin: 0 !important; }
 
 /* The model list lives inside a popover, and Streamlit renders popover panels in
- * a portal at the end of <body> — outside .st-key-topbar, so none of the rules
+ * a portal at the end of <body> — outside .st-key-controls, so none of the rules
  * above reach it. Hence its own container key. */
 .st-key-model-list { max-height: 45vh; overflow-y: auto; }
 
@@ -416,17 +505,30 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
 #paperclip-btn:hover { background: var(--code-inline-bg); color: var(--icon-hover); }
 
 /* ===== BOTTOM BAR + DISCLAIMER ===== */
-[data-testid="stBottomBlockContainer"] { padding-bottom: 1.5rem !important; }
 
-/* A real element (injected by app.js), not a ::after content string — generated
- * content is not reliably exposed to assistive tech and cannot be translated. */
+/* The bar paints the app background across this whole band, and the strip of
+ * controls is fixed inside the part of it reserved here. Reserving it on the bar
+ * — rather than giving the strip a background of its own — is what keeps the two
+ * looking like one bar without this stylesheet having to guess what colour
+ * Streamlit is painting the page. */
+[data-testid="stBottomBlockContainer"] {
+    padding-bottom: calc(var(--strip-h) + 0.35rem) !important;
+}
+
+/* Rendered by app.py, not injected: a real element in the document is exposed to
+ * assistive tech and translatable, and it is sized before the first paint rather
+ * than one frame after it. */
 .ai-disclaimer {
     display: block;
+    width: 100%;
     text-align: center;
     font-size: 0.75rem;
     line-height: 1.35;
     color: var(--text-muted);
-    margin: 0.6rem auto 0;
+    /* Explicit, including the zero: it is a <p>, so leaving it to inherit means
+     * inheriting Streamlit's 1rem paragraph margin and paying for a line of
+     * whitespace nobody chose in the band the page has to reserve. */
+    margin: 0 auto !important;
     max-width: var(--input-max);
 }
 
@@ -473,10 +575,15 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
 .user-message {
     display: flex;
     justify-content: flex-end;
-    /* The bottom margin is the gap between a question and its answer. It was
-     * tight enough that the two read as one block; the answer needs to start
-     * clearly after the question, not immediately under it. */
-    margin: clamp(1.25rem, 3vw, 2.25rem) 0 clamp(1.15rem, 2.4vw, 1.6rem) 0;
+    /* Two different gaps, and the reason they are not the same number:
+     *
+     * The top margin separates this question from the previous answer, so it is
+     * the break between turns and the larger of the two.
+     * The bottom margin is the gap between a question and its own answer, which
+     * belong together — but at 19–25px measured they read as one block, with the
+     * answer looking like a continuation of the question rather than a reply to
+     * it. Both ends are bounded by tools/render_check.py. */
+    margin: clamp(2.5rem, 5vw, 3.5rem) 0 clamp(2.25rem, 3.4vw, 2.75rem) 0;
     padding-right: clamp(0.25rem, 2vw, 1rem);
 }
 
@@ -504,8 +611,12 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
 }
 
 /* Assistant turns live in a keyed container; the old wrapper <div> never actually
- * wrapped anything because Streamlit closes each markdown block on its own. */
-[class*="st-key-answer-"] { margin: 0 0 clamp(1.25rem, 3.5vw, 2.5rem) 0; }
+ * wrapped anything because Streamlit closes each markdown block on its own.
+ *
+ * Small bottom margin on purpose: the gap to the next question is set by that
+ * question's top margin, and this one is also the gap under the *last* answer,
+ * where every pixel is space between the answer and the input box. */
+[class*="st-key-answer-"] { margin: 0 0 clamp(0.5rem, 1.2vw, 0.85rem) 0; }
 
 .stChatMessage {
     background: transparent !important;
@@ -771,7 +882,6 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
     .main .block-container, [data-testid="stMainBlockContainer"] {
         padding-top: var(--host-header) !important;
     }
-    .st-key-topbar { margin-bottom: var(--space-xs) !important; }
 }
 
 /* ===== MOBILE ===== */
@@ -785,15 +895,14 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
 
     .user-message { padding-right: 0 !important; }
     .user-bubble { max-width: 88%; }
-    /* At this width the host toolbar spans over half the screen. The bar is in
-     * flow below it, so there is nothing to dodge — it just needs to not try to
-     * share the line with the model name. */
-    .st-key-topbar [data-testid="stPopover"] button { max-width: 11rem; }
-    /* The disclaimer under the input wraps to more lines here, so the input bar
-     * is taller and the content needs to clear more of it. */
-    .main .block-container, [data-testid="stMainBlockContainer"] {
-        padding-bottom: 11rem !important;
-    }
+    /* Room for three controls on one line at 360px, model name included. */
+    .st-key-controls [data-testid="stPopover"] button { max-width: 9.5rem; }
+    /* The disclaimer wraps to more lines here, so the strip and the bar above it
+     * are both taller. app.js measures both; these are the fallbacks it starts
+     * from, and they only have to hold for the first frame — but they still have
+     * to hold, and to agree with each other, so --bar-h covers this --strip-h
+     * plus the input and the bar's padding. */
+    :root { --strip-h: 6rem; --bar-h: 13rem; }
     .welcome { margin-top: 4vh; }
 }
 
@@ -817,8 +926,15 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
 
 /* ===== PRINT ===== */
 @media print {
-    .st-key-topbar, .stChatInput, [data-testid="stBottomBlockContainer"],
+    .st-key-composer-strip, .stChatInput, [data-testid="stBottomBlockContainer"],
     .rcc-copy-btn, [class*="st-key-rate-"] { display: none !important; }
+
+    /* Nothing is pinned on paper, so the reserved band is dead white space. */
+    .main .block-container, [data-testid="stMainBlockContainer"] {
+        padding-bottom: 0 !important;
+        min-height: 0 !important;
+        display: block !important;
+    }
 
     .user-bubble { background: none !important; color: #000 !important; border: 1px solid #999; }
     .stChatMessage, .source-chip { color: #000 !important; }

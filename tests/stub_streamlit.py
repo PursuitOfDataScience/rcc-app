@@ -139,6 +139,9 @@ class StubStreamlit(ModuleType):
         return self._upload
 
     def chat_input(self, placeholder=None, **_kwargs):
+        # Recorded so a test can prove the controls under the box are rendered
+        # after it, rather than back in a bar at the top of the page.
+        self.events.append(("chat_input", placeholder))
         return self._chat_input
 
     def selectbox(self, label, options=None, index=0, key=None, **_kwargs):
