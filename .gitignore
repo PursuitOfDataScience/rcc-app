@@ -24,3 +24,8 @@ venv/
 # Screenshots produced by tools/render_check.py
 tools/*.png
 tools/*.html
+
+# Scratch git worktrees created for background agents. Transient by definition:
+# each is a checkout of this repo, so committing one would commit the repo into
+# itself. `.claude/` config that is meant to be shared can still be added by path.
+.claude/worktrees/
