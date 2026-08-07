@@ -745,6 +745,10 @@ def page(body: str, scheme: str, scroll: bool, generating: bool = False,
 
 _PROBE = ('<!doctype html><html><body><script>document.title='
           'JSON.stringify({w:innerWidth,h:innerHeight})</script></body></html>')
+# The phone this wants to render. Chromium will not open a headless window this
+# narrow — 500px is as far as it goes — so what `calibrate()` returns for it is the
+# narrowest real width available, and that is what goes in the width list.
+PHONE_W, PHONE_H = 414, 896
 
 
 def calibrate():
@@ -772,10 +776,31 @@ def calibrate():
                              f"{CHROME} produced no measurement")
         return json.loads(out[start + 7 : end])
     big = probe(1200, 1000)
-    floor = probe(1, 1)
+    # The narrowest the phone entry can be is found by asking for a phone and seeing
+    # what comes back — not by asking for 1x1, which read as the tidier way to find
+    # the floor and returned a width of 0 on CI's Chromium: a window that degenerate
+    # is one it declines to report rather than one it clamps, and every render then
+    # failed at "asked for a 0px viewport". Where a Chromium does honour PHONE_W, this
+    # gains the real phone width instead of settling for the floor.
+    chrome_w, chrome_h = 1200 - big["w"], 1000 - big["h"]
+    # Asked for twice on purpose. The first probe says what a phone request lands on;
+    # the second asks for *that*, the way `render()` will, and takes what comes back.
+    # Where the window has no borders the two agree and the second is a no-op, but
+    # `render()` adds `chrome_w` to whatever it is given, so on a platform where that
+    # is not zero the naive floor would be a width `render()` can never hit — and the
+    # assertion downstream would turn that into 300 failures rather than one.
+    phone = probe(PHONE_W + chrome_w, PHONE_H + chrome_h)
+    narrow = probe(phone["w"] + chrome_w, PHONE_H + chrome_h)["w"]
     os.remove(path)
-    return {"chrome_h": 1000 - big["h"], "chrome_w": 1200 - big["w"],
-            "min_w": floor["w"], "min_h": floor["h"]}
+    if not 1 <= narrow <= 640:
+        raise SystemExit(
+            f"render_check: asked for a {PHONE_W}px-wide window and got {narrow}px. "
+            "The narrow screen has to land under the 640px mobile breakpoint or the "
+            "mobile rules go unrendered — fix this rather than auditing four desktop "
+            "widths and calling one of them a phone."
+        )
+    return {"chrome_h": chrome_h, "chrome_w": chrome_w,
+            "min_w": narrow, "min_h": phone["h"]}
 
 
 VIEWPORT = None   # filled in by main(); {'chrome_h', 'chrome_w', 'min_w', 'min_h'}
@@ -1007,7 +1032,7 @@ def main() -> int:
     # still under the 640px mobile breakpoint, so the mobile rules are exercised — what
     # is not covered is a real 414px screen, and saying so is the point.
     widths = [(1440, 1080), (1263, 900), (966, 626), (768, 900),
-              (VIEWPORT["min_w"], 896)]
+              (VIEWPORT["min_w"], PHONE_H)]
     failures: list[str] = []
     checked = 0
 
