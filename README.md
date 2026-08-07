@@ -6,7 +6,7 @@ Built with [Streamlit](https://streamlit.io/). Answers come from [Mistral](https
 
 ## Features
 
-- 🔀 **Model picker** — the button under the chat input names the model in use; open it to switch between Mistral and OpenCode Zen's free models mid-conversation. A spent quota also fails over on its own, and the error card offers the switch in one click.
+- 🔀 **Model picker** — the button at the bottom right of the composer names the model in use; open it to switch between Mistral and OpenCode Zen's free models mid-conversation. A spent quota also fails over on its own, and the error card offers the switch in one click.
 - 🔎 **Grounded answers** — retrieves real RCC documentation; no invented commands, partitions or quotas.
 - 🔗 **Real citations** — a Sources strip under each answer deep-links to the section it came from, plus Related sections from the same page.
 - 💬 **Streaming replies** with conversation memory for follow-ups.
@@ -155,7 +155,8 @@ The bundled `docs/`/`web/` snapshot comes from the upstream [`user-guide`](https
 
 Paths default to repo-relative locations and can be overridden with `RCC_USER_GUIDE_REPO`, `RCC_WEB_MIRROR` and `RCC_WEB_SCRAPER`. The website scraper is **not** vendored here, so `--scrape` needs `RCC_WEB_SCRAPER` pointed at it.
 
-The sync date and upstream commit are recorded in `docs_snapshot.json` and shown in the app's ℹ️ panel.
+The sync date and upstream commit are recorded in `docs_snapshot.json` and shown
+in the note under the landing screen's starter cards.
 
 ## Layout
 

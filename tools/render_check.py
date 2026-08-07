@@ -224,16 +224,12 @@ def strip(clear: bool = True, wrapped: bool = True) -> str:
     """
     trash = ('<div class="element-container"><div class="stButton">'
              "<button><p>🗑️</p></button></div></div>") if clear else ""
-    # About is a popover too, so the picker's own rules reach its trigger — the
-    # ellipsis ceiling in particular. Modelled as a plain button, an ℹ️ that those
-    # rules had squashed would render fine here and be wrong in the app.
-    controls = f"""
+    # Clear first, picker last, in app.py's order: the row is right-aligned, so
+    # this is what decides which control ends up in the corner.
+    controls = f"""{trash}
     <div class="element-container"><div data-testid="stPopover"><div class="stPopover">
       <button><p>Zen · deepseek-v4-flash-free</p></button>
-    </div></div></div>
-    <div class="element-container"><div data-testid="stPopover"><div class="stPopover">
-      <button><p>ℹ️</p></button></div></div></div>
-    {trash}"""
+    </div></div></div>"""
     disclaimer = ('<div class="element-container"><div class="stMarkdown">'
                   f'<p class="ai-disclaimer">{DISCLAIMER}</p></div></div>')
     if wrapped:
@@ -311,7 +307,19 @@ LANDING = f"""
     <h1 class="welcome-title">What can I help you with?</h1>
     <p class="welcome-subtitle">{SUBTITLE}</p>
   </div></div></div>
-<div class="st-key-examples element-container">{_cards_html()}</div>"""
+<div class="st-key-examples element-container">{_cards_html()}</div>
+<div class="element-container"><div class="stMarkdown">
+  <div class="landing-note">
+    <p><strong>Read-only.</strong> Every answer is retrieved from the official
+    <a href="#">RCC</a> User Guide and website, and cites the sections it used. Sage
+    cannot run commands or read files on the cluster, and cannot see your account,
+    jobs, quotas or allocations.</p>
+    <p>Still stuck? Ask the <a href="#">RCC Help Desk</a>, email
+    <a href="#">help@rcc.uchicago.edu</a>, or drop into the walk-in lab in
+    Regenstein 216 during business hours.</p>
+    <p class="landing-meta">Documentation synced 2026-08-01 · user-guide
+    <code>a1b2c3d</code> · 412 sections from 2 sources</p>
+  </div></div></div>"""
 
 # The strip's container shape alternates across the screens, so both shapes are
 # audited at every width, in both themes, in every state.
@@ -481,6 +489,9 @@ SELECTORS = [
     ".welcome-title", ".welcome-subtitle", ".user-bubble", "last:.user-bubble",
     ".error-card", ".notice", ".st-key-error-actions",
     ".error-title", ".error-body", ".ai-disclaimer", ".sources-label",
+    # The note that replaced the ℹ️ popover, and its quietest line: small muted
+    # text on the landing screen is exactly where a contrast regression hides.
+    ".landing-note", ".landing-note .landing-meta",
     ".source-chip", ".st-key-answer-5", ".st-key-answer-0", ".stChatMessage pre",
     ".stChatMessage code", '[data-testid="stBottomBlockContainer"]',
     STRIP, INPUT,
@@ -505,7 +516,12 @@ INTERACTIVE = {
     *(f".st-key-example-card-{i} button p" for i in range(6)),
 }
 
-ELLIPSIS_OK = {PICKER, ".st-key-controls button"}
+# The picker ellipses a long model id on purpose, and it is now both the first
+# button in the row on the landing screen (no Clear to precede it) and the last one
+# everywhere, since the row is right-aligned and it belongs in the corner. So all
+# three selectors that can reach it are exempt from the overflow check; the emoji
+# button they also reach has nothing to ellipse.
+ELLIPSIS_OK = {PICKER, ".st-key-controls button", "last:.st-key-controls button"}
 
 # How far apart things should be, in px. Both ends matter: the first of these was
 # reported twice as "barely any spacing between the user and AI messages", at a

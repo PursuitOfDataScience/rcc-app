@@ -86,12 +86,26 @@ class TestWelcome:
     def test_renders_without_a_conversation(self, monkeypatch):
         stub, module = run_app(monkeypatch)
         assert module is not None
-        html = "\n".join(stub.markdown_html)
+        # Collapsed, because the markup is wrapped for the source file and a
+        # sentence in it is split across lines wherever that happened to land.
+        html = " ".join("\n".join(stub.markdown_html).split())
         assert "What can I help you with?" in html
         # The limits line was removed from the hero: it duplicated the disclaimer
-        # under the input. The About panel still states them.
+        # under the input. The note below the cards still states them, in place of
+        # the ℹ️ popover that used to hold them from the row under the input.
         assert "Sage reads the docs" not in html
-        assert "Run commands or read files on the cluster" in html
+        assert "cannot run commands or read files on the cluster" in html
+        assert "cannot see your account, jobs, quotas or allocations" in html
+        assert "RCC Help Desk" in html
+        assert "Documentation synced" in html
+
+    def test_the_landing_note_is_not_a_control_in_the_composer(self, monkeypatch):
+        """It was an ℹ️ popover in the row under the input. A button whose only job
+        is to explain the app is one more thing in the way on every screen, for
+        something you read once — and the screen you read it on is this one."""
+        stub, _module = run_app(monkeypatch)
+        assert ("popover", "ℹ️") not in stub.events
+        assert "clear" not in stub.button_labels
 
     def test_no_hover_tooltip_on_a_control_that_already_has_a_label(self, monkeypatch):
         """A tooltip repeating a card's own text is a black box chasing the
