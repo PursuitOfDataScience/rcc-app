@@ -110,18 +110,20 @@ python tools/render_check.py                 # measure and report
 python tools/render_check.py -v              # also print every measurement
 ```
 
-It renders seven screens (landing, landing again with the other container shape
-Streamlit emits, answer, short answer, long chat, a question mid-answer, error)
-in both colour schemes at five widths, in five states — the first frame, before
-`static/app.js` has measured how much room the input bar needs; at rest;
+It renders eight screens (landing, landing again with the other container shape
+Streamlit emits, answer, short answer, long chat, that same long chat with the
+scrollbar on the document instead of on the main block, a question mid-answer,
+error) in both colour schemes at five widths, in five states — the first frame,
+before `static/app.js` has measured how much room the input bar needs; at rest;
 scrolled; mid-generation; and just-finished, the last four with the real
-`static/app.js` driving the page — 250 renders. Four of the screens pin
+`static/app.js` driving the page — 300 renders. Five of the screens pin
 Streamlit's input bar with `position: fixed` and three with `position: sticky`,
 because Streamlit has shipped both and the difference decides whether the
 page must reserve room for it or already has. It fails on clipping, content
 hidden behind the input bar, horizontal overflow, unwanted wrapping, a control
 something else is painted on top of, the gap between a question and its answer,
-dead space above the input bar, or contrast below WCAG AA. CI runs it too.
+dead space above the input bar, slack added above a conversation that scrolls
+without it, or contrast below WCAG AA. CI runs it too.
 
 It catches what reading the CSS does not. So far: the newest answer sitting 131px
 underneath the chat input, the hero subtitle and all six starter cards wrapping to
@@ -140,6 +142,14 @@ a type, and it won here only because the replica had no paragraph size of its
 own to lose to — and that same slack being applied while an answer was still
 generating, which put the question halfway down the window with the answer
 arriving into the bottom of it. Both are modelled now.
+
+The document-scrolling screen is the newest, and worth being precise about what it
+bought: it caught `sync()` naming `[data-testid="stMain"]` as the scrollport while
+`autoScroll()`, ten lines away, asked which element actually scrolls — two functions
+in one file disagreeing. In the replica that inconsistency is worth 1px, not the
+screenful of slack that prompted the hunt, so the screen is here for the invariant
+it pins down (nothing may pad slack above a conversation that scrolls without it)
+rather than as a reproduction of that bug.
 
 What it cannot catch is a wrong assumption about Streamlit's own markup: it audits
 this stylesheet against a replica, so a rule that reaches nothing in the real DOM

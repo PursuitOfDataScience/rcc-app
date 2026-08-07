@@ -109,26 +109,29 @@
     // gap by tuning padding, alignment and scrolling never touched the padding that
     // was the gap. So this asks the browser instead of guessing.
     //
-    // The rule is `fixed` or `absolute` anywhere from the bar up, and nothing else:
-    // those are the two values that take a box out of the flow, and a `fixed`
-    // ancestor takes its whole subtree with it however the elements inside it are
-    // positioned. `sticky`, `relative` and `static` all keep their box in the flow,
-    // so the page already ends above the bar and reserving room for it again is the
-    // dead space this is here to stop.
+    // A `sticky` anywhere in the chain wins, and this is the one part of the file
+    // decided by the running app rather than by reasoning about CSS.
     //
-    // Hence the walk to the top rather than a verdict at the first positioned
-    // element it meets: returning "in flow" at the first `sticky` read a bar that is
-    // sticky inside something fixed as needing no room, which hid the newest answer
-    // 132px under the input in testing — the exact failure this function prevents, in
-    // the one shape the replica does not model. (A box pinned by `transform` would
-    // fool this, since a transform leaves the box in flow. Streamlit does not do
-    // that, and if it ever does, the symptom is the 131px this file already knows.)
+    // In the abstract the opposite is true: `fixed` takes a subtree out of the flow
+    // whatever is inside it, so a bar that is sticky inside something fixed is
+    // painted over the page and needs room reserved. That version shipped, and the
+    // gap at the end of the conversation came straight back — because Streamlit's own
+    // stylesheet already leaves room for its own bar. Reserving it again is additive,
+    // and additive is what a reader sees as 200px of nothing above the box they type
+    // in. The reservation here is for the case where nothing in the chain is sticky
+    // at all: then Streamlit is not pinning the bar and this has to.
+    //
+    // So the walk still goes to the top — it is how a fixed-only chain is told apart
+    // from a sticky one — but sticky is the answer when both are present.
     function overlays(bar) {
+        var streamlitPins = false;
+        var overlaid = false;
         for (var node = bar; node && node !== doc.body; node = node.parentElement) {
             var position = view.getComputedStyle(node).position;
-            if (position === 'fixed' || position === 'absolute') return true;
+            if (position === 'sticky') streamlitPins = true;
+            if (position === 'fixed' || position === 'absolute') overlaid = true;
         }
-        return false;
+        return overlaid && !streamlitPins;
     }
 
     function measureChrome() {
@@ -495,7 +498,18 @@
         // for it, the slack above a short conversation is measured against that
         // reservation, and autoScroll measures the gap the two of them leave.
         measureChrome();
-        var port = doc.querySelector('[data-testid="stMain"]') || doc.scrollingElement;
+        // `scroller()` first, because it is the one that asks which element actually
+        // scrolls instead of assuming. This line named stMain outright while
+        // `autoScroll()` two lines down asked `scroller()` — two functions in one file
+        // disagreeing about which element is the scrollport. On a page where the
+        // document scrolls and stMain does not, stMain reports
+        // scrollHeight == clientHeight however long the conversation is, so `fill()`
+        // read the page as short and padded slack above one that already scrolled:
+        // the reader's gap at the *top* of the page. The fallbacks are for when
+        // nothing scrolls, which is exactly when `fill()` has work to do and needs a
+        // viewport height to measure the slack against.
+        var port = scroller() || doc.querySelector('[data-testid="stMain"]')
+            || doc.scrollingElement;
         if (port) fill(port);
         autoScroll();
     }
