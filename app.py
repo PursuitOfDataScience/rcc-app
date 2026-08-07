@@ -514,9 +514,8 @@ if not has_messages:
                     ):
                         start_new_turn(question)
 else:
-    # Marker only: app.css keys the vertical rhythm off its presence — a short
-    # conversation sits at the bottom of the space between the header and the
-    # composer, where the landing screen centres in it.
+    # Marker only: app.js keys page-scroll behaviour off its presence — without it
+    # the screen is the landing screen, which always starts at the top.
     st.markdown('<div class="chat-container"></div>', unsafe_allow_html=True)
 
     rendered = st.session_state.messages

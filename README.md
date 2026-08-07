@@ -110,20 +110,31 @@ python tools/render_check.py                 # measure and report
 python tools/render_check.py "New subtitle"  # try alternative hero copy
 ```
 
-It renders five screens (landing, answer, short answer, long chat, error) in both
-colour schemes at five widths, in five states — the first frame, before
-`static/app.js` has measured how much room the input bar needs; at rest; scrolled;
-mid-generation; and just-finished, the last three with the real `static/app.js`
-driving the page — 220 renders. It fails on clipping, content hidden behind the
-input bar, horizontal overflow, unwanted wrapping, a control something else is
-painted on top of, the gap between a question and its answer, dead space above the
-input bar, or contrast below WCAG AA. CI runs it too.
+It renders six screens (landing, landing again with the other container shape
+Streamlit emits, answer, short answer, long chat, error) in both colour schemes at
+five widths, in five states — the first frame, before `static/app.js` has measured
+how much room the input bar needs; at rest; scrolled; mid-generation; and
+just-finished, the last four with the real `static/app.js` driving the page — 240
+renders. It fails on clipping, content hidden behind the input bar, horizontal
+overflow, unwanted wrapping, a control something else is painted on top of, the gap
+between a question and its answer, dead space above the input bar, or contrast
+below WCAG AA. CI runs it too.
 
 It catches what reading the CSS does not. So far: the newest answer sitting 131px
 underneath the chat input, the hero subtitle and all six starter cards wrapping to
 two lines, a focus ring at 1.73:1 on the dark background, the question being
-scrolled off the top of the screen while its answer streamed in, and the controls
-under the input being painted over by Streamlit's own pinned bar.
+scrolled off the top of the screen while its answer streamed in, the controls under
+the input being painted over by Streamlit's own pinned bar, and those same controls
+stacking into a column when the `st-key-…` class lands on the vertical block rather
+than on a wrapper around it.
+
+What it cannot catch is a wrong assumption about Streamlit's own markup: it audits
+this stylesheet against a replica, so a rule that reaches nothing in the real DOM
+passes here. Two habits keep that honest — model both shapes when Streamlit's is
+not known (the two landing screens differ only in that), and prefer a mechanism
+whose failure mode is visible over one that depends on how Streamlit lays out the
+page (`--fill` above the conversation, rather than flex alignment inside a block
+whose height comes from somewhere this cannot see).
 
 ### The retrieval eval
 

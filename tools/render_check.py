@@ -26,12 +26,14 @@ checks came out of that and are the ones worth keeping honest:
   * whatever the harness cannot see, it must not silently model away — a wrong
     model is worse than no model, because it reads as a pass.
 
-Four states per screen: at rest, scrolled to the end, mid-generation, and just
-finished. The real app.js runs in every one of them — the room the page leaves for
-the input bar is built from measurements it publishes, so a replica without it
-measures a layout the app never has — and the last two additionally exercise the
-per-turn scroll pin and the settle that closes the space it leaves behind. (The
-landing screen has no turn to be in the middle of, so it renders at rest only.)
+Five states per screen: the first frame with no app.js at all, at rest, scrolled to
+the end, mid-generation, and just finished. The first is the layout the stylesheet's
+own fallbacks produce, which is a frame every user sees and where CI once found an
+answer 2px under the input; in the other four the real app.js runs, because the room
+the page leaves for the bar and the slack above a short conversation are both
+measurements it publishes, and the last two additionally exercise the per-turn
+scroll pin and the settle that closes what it leaves behind. (The landing screen has
+no turn to be in the middle of, so it renders the first two only.)
 
 Usage:
     python tools/render_check.py            # audit; exits non-zero on failure
@@ -206,34 +208,45 @@ def _cards_html() -> str:
     return rows
 
 
-def strip(clear: bool = True) -> str:
+def strip(clear: bool = True, wrapped: bool = True) -> str:
     """The controls under the input, and the AI disclaimer under those.
 
-    Rendered last in the block, where app.py renders it, and as two nested keyed
-    containers, which is what `st.container(key=…)` inside another one produces —
-    the stylesheet turns the inner one into a row and that nesting is the thing
-    it has to reach through. `clear` is False on the landing screen, where there
-    is no conversation to throw away.
+    Rendered last in the block, where app.py renders it. `clear` is False on the
+    landing screen, where there is no conversation to throw away.
+
+    `wrapped` picks which of the two shapes `st.container(key=…)` produces: the
+    `st-key-…` class on a wrapper *around* the vertical block, or on the vertical
+    block itself. Which one Streamlit emits is an implementation detail that has
+    changed between versions, and modelling only the wrapped shape is how a
+    stylesheet that stacked the three controls in a column in the real app passed
+    170 renders here in a row. Both shapes are rendered now, so a rule that only
+    reaches one of them fails the audit.
     """
     trash = ('<div class="element-container"><div class="stButton">'
              "<button><p>🗑️</p></button></div></div>") if clear else ""
-    return f"""<div class="st-key-composer-strip" data-testid="stVerticalBlockBorderWrapper">
- <div data-testid="stVerticalBlock">
-  <div class="st-key-controls" data-testid="stVerticalBlockBorderWrapper">
-   <div data-testid="stVerticalBlock">
+    # About is a popover too, so the picker's own rules reach its trigger — the
+    # ellipsis ceiling in particular. Modelled as a plain button, an ℹ️ that those
+    # rules had squashed would render fine here and be wrong in the app.
+    controls = f"""
     <div class="element-container"><div data-testid="stPopover"><div class="stPopover">
       <button><p>Zen · deepseek-v4-flash-free</p></button>
     </div></div></div>
-    <!-- About is a popover too, so the picker's own rules reach its trigger. The
-         ellipsis ceiling in particular: modelled as a plain button, an ℹ️ that
-         those rules had squashed would render fine here and be wrong in the app. -->
     <div class="element-container"><div data-testid="stPopover"><div class="stPopover">
       <button><p>ℹ️</p></button></div></div></div>
-    {trash}
-   </div></div>
-  <div class="element-container"><div class="stMarkdown">
-    <p class="ai-disclaimer">{DISCLAIMER}</p></div></div>
+    {trash}"""
+    disclaimer = ('<div class="element-container"><div class="stMarkdown">'
+                  f'<p class="ai-disclaimer">{DISCLAIMER}</p></div></div>')
+    if wrapped:
+        return f"""<div class="st-key-composer-strip" data-testid="stVerticalBlockBorderWrapper">
+ <div data-testid="stVerticalBlock">
+  <div class="st-key-controls" data-testid="stVerticalBlockBorderWrapper">
+   <div data-testid="stVerticalBlock">{controls}</div></div>
+  {disclaimer}
  </div></div>"""
+    return f"""<div class="st-key-composer-strip" data-testid="stVerticalBlock">
+ <div class="st-key-controls" data-testid="stVerticalBlock">{controls}</div>
+ {disclaimer}
+</div>"""
 
 
 def answer_block(index: int) -> str:
@@ -292,20 +305,24 @@ SHORT_ANSWER = """
   deepseek-v4-flash-free answered instead. Pick a different one from the model button
   under the input box.</div></div></div>"""
 
-SCENARIOS = {
-    "landing": f"""
+LANDING = f"""
 <div class="element-container"><div class="stMarkdown">
   <div class="welcome">
     <h1 class="welcome-title">What can I help you with?</h1>
     <p class="welcome-subtitle">{SUBTITLE}</p>
   </div></div></div>
 <div class="st-key-examples element-container">{_cards_html()}</div>"""
-    + strip(clear=False),
-    "answer": CHAT_MARKER + answer_block(0) + strip(),
+
+# The strip's container shape alternates across the screens, so both shapes are
+# audited at every width, in both themes, in every state.
+SCENARIOS = {
+    "landing": LANDING + strip(clear=False, wrapped=True),
+    "landing-flat": LANDING + strip(clear=False, wrapped=False),
+    "answer": CHAT_MARKER + answer_block(0) + strip(wrapped=False),
     "short-answer": CHAT_MARKER + SHORT_ANSWER + strip(),
     "long-chat": CHAT_MARKER
     + "".join(answer_block(i) for i in range(6))
-    + strip(),
+    + strip(wrapped=False),
     "error": CHAT_MARKER
     + """
 <div class="element-container"><div class="stMarkdown">
@@ -671,11 +688,15 @@ def audit(data, scenario, scheme, width, state: str) -> list[str]:
             problems.append(
                 f"{where}: newest content is {-gap}px under the input bar ({room})"
             )
-        # At rest, just-finished, and on the first frame are the views a reader is
-        # actually left looking at, so they are the ones that must not be a third
-        # of a screen of nothing. A negative gap means the reply runs off the
-        # bottom, which is theirs to scroll; this is only ever about empty space.
-        if state in ("rest", "settled", "unmeasured") and gap > MAX_TAIL_GAP:
+        # At rest and just-finished are the views a reader is actually left looking
+        # at, so they are the ones that must not be a third of a screen of nothing.
+        # A negative gap means the reply runs off the bottom, which is theirs to
+        # scroll; this is only ever about empty space.
+        #
+        # Not the first frame: closing this space is app.js's job (it is measured
+        # slack, put above the conversation), and that frame's job is only to not
+        # hide anything, which the check above covers.
+        if state in ("rest", "settled") and gap > MAX_TAIL_GAP:
             problems.append(
                 f"{where}: {gap}px of dead space between the last message and the "
                 f"input bar (want at most {MAX_TAIL_GAP}; {room})"
@@ -696,7 +717,8 @@ def main() -> int:
                 # scrolled to the bottom, mid-generation (app.js pinning the
                 # question), and just-finished (app.js closing the dead space the
                 # pin left behind).
-                states = (["unmeasured", "rest"] if scenario == "landing"
+                states = (["unmeasured", "rest"]
+                          if scenario.startswith("landing")
                           else ["unmeasured", "rest", "scrolled", "generating",
                                 "settled"])
                 for state in states:

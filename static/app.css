@@ -144,7 +144,11 @@
  * sliced the first message in half at the viewport top. */
 .main .block-container,
 [data-testid="stMainBlockContainer"] {
-    padding-top: var(--host-header) !important;
+    /* `--fill` is how a conversation shorter than the window is sat just above
+     * the composer instead of being marooned at the top of it: app.js measures
+     * the space going spare and puts it here, above the first message. See the
+     * note below on why it is padding and not flex alignment. */
+    padding-top: calc(var(--host-header) + var(--fill, 0px)) !important;
     /* Exactly the bar plus one gap. This padding is also how far the page can
      * scroll past its last message, so every extra pixel of it is dead space
      * under the newest answer — and every missing pixel hides that answer under
@@ -156,42 +160,23 @@
     max-width: var(--content-max);
 }
 
-/* A short conversation belongs just above the composer, not marooned at the top
- * of the window with half a screen of nothing between it and the input. The block
- * is made at least a viewport tall and its content sits at the bottom of that;
- * as soon as the conversation is taller, the block grows past the viewport and
- * this stops having any effect, so scrolling is untouched.
+/* No `min-height: 100dvh` with `justify-content: center`/`flex-end` here, though
+ * it is the obvious way to sit a short conversation just above the composer and to
+ * centre the landing screen in what is left.
  *
- * The padding above and below is what the header and the composer take, so this
- * is centring and bottom-aligning within the space actually left for content. */
-.main .block-container:has(.chat-container),
-[data-testid="stMainBlockContainer"]:has(.chat-container) {
-    box-sizing: border-box;
-    min-height: 100vh;
-    min-height: 100dvh;
-    display: flex;
-    flex-direction: column;
-    justify-content: flex-end;
-}
-
-/* The landing screen centres in that same space, for the same reason: a screen
- * with a quarter of itself blank between the last thing you can click and the box
- * you type in reads as unfinished. Tall windows only — flex centring overflows
- * both ends equally and a scrollport cannot be scrolled back past its start, so
- * on a short window this would put the hero out of reach instead of merely high.
- * That is also why the short-viewport block below claws space back rather than
- * centring. */
-@media (min-height: 721px) {
-    .main .block-container:not(:has(.chat-container)),
-    [data-testid="stMainBlockContainer"]:not(:has(.chat-container)) {
-        box-sizing: border-box;
-        min-height: 100vh;
-        min-height: 100dvh;
-        display: flex;
-        flex-direction: column;
-        justify-content: center;
-    }
-}
+ * It shipped, and on the landing screen in the real app the hero ended up above
+ * the top of the window. Both parts of that pairing depend on how Streamlit lays
+ * out the page around this block — whether `stMain` is a flex column, whether the
+ * pinned bar is inside its flow — and when the guess is wrong, the free space goes
+ * to the wrong end and flex alignment overflows out of a scrollport that cannot be
+ * scrolled back past its start. The failure mode is content a reader cannot reach,
+ * which is worse than the dead space it was buying back, and no replica of
+ * Streamlit's DOM can be trusted to reproduce it.
+ *
+ * What closes that space instead is `--fill`, which app.js measures and puts into
+ * the padding *above* the conversation. Padding at the top can only push content
+ * down, so the worst a wrong measurement can do is leave the gap it was closing —
+ * never move a message somewhere a reader cannot scroll back to. */
 
 [data-testid="stVerticalBlock"] > div { margin-bottom: 0 !important; padding-bottom: 0 !important; }
 [data-testid="stVerticalBlock"] { gap: 0 !important; }
@@ -245,10 +230,37 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
     max-width: 100% !important;
 }
 
+/* The row of controls, then the disclaimer under it — stated rather than left to
+ * whichever element `st.container(key=…)` put the key on, for the same reason the
+ * row below says it twice.
+ *
+ * `:not(.st-key-controls)` matters: when the key lands on the vertical block
+ * itself, the controls *are* a direct child vertical block, so without it this
+ * rule turns the row back into a column — and at (0,1,1) it outranks the row rule
+ * below, which is (0,1,0). That is the collision, one level down, that put the
+ * picker and the ℹ️ on separate lines in the app. */
+.st-key-composer-strip,
+.st-key-composer-strip > [data-testid="stVerticalBlock"]:not(.st-key-controls) {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: stretch !important;
+}
+
 /* Each control as wide as its own label, hard left, flush with the input above.
  * A row rather than `st.columns`, whose children have no intrinsic width — that
- * is how the picker managed to be in the DOM and invisible on screen, twice. */
-.st-key-controls [data-testid="stVerticalBlock"] {
+ * is how the picker managed to be in the DOM and invisible on screen, twice.
+ *
+ * Both the keyed element and a vertical block inside it, because which of the two
+ * `st.container(key=…)` produces is a Streamlit implementation detail: the class
+ * can land on the vertical block itself or on a wrapper around one, and it has
+ * changed between versions. Styling only the descendant left the three controls
+ * stacked in a column in the real app while every render in the harness had them
+ * in a row — the shape the replica happened to model was the shape that worked.
+ * `display: flex` is set here too, so the rule works on a wrapper that is a
+ * plain block rather than a flex container. */
+.st-key-controls,
+.st-key-controls > [data-testid="stVerticalBlock"] {
+    display: flex !important;
     flex-direction: row !important;
     flex-wrap: wrap !important;
     align-items: center !important;
@@ -257,9 +269,14 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
     width: auto !important;
 }
 
-.st-key-controls [data-testid="stVerticalBlock"] > div,
+/* Every wrapper Streamlit puts between the row and a button, under either name it
+ * has used for them, so nothing in the chain stretches to the full width. */
+.st-key-controls > [data-testid="stVerticalBlock"] > div,
 .st-key-controls .element-container,
-.st-key-controls [data-testid="stPopover"] {
+.st-key-controls [data-testid="stElementContainer"],
+.st-key-controls [data-testid="stPopover"],
+.st-key-controls .stPopover,
+.st-key-controls .stButton {
     width: auto !important;
     flex: 0 0 auto !important;
     min-width: 0 !important;
@@ -525,10 +542,11 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
     font-size: 0.75rem;
     line-height: 1.35;
     color: var(--text-muted);
-    /* Explicit, including the zero: it is a <p>, so leaving it to inherit means
-     * inheriting Streamlit's 1rem paragraph margin and paying for a line of
-     * whitespace nobody chose in the band the page has to reserve. */
-    margin: 0 auto !important;
+    /* Explicit: it is a <p>, so leaving it to inherit means inheriting Streamlit's
+     * 1rem paragraph margin and paying for a line of whitespace nobody chose in
+     * the band the page has to reserve. The 0.3rem is the only gap wanted here,
+     * between this and the controls above it. */
+    margin: 0.3rem auto 0 !important;
     max-width: var(--input-max);
 }
 
