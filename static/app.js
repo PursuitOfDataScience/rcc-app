@@ -341,7 +341,11 @@
         btn.id = 'paperclip-btn';
         btn.type = 'button';
         btn.innerHTML = CLIP_SVG;
-        btn.title = 'Attach a file (PDF, TXT, MD, PY, JSON, CSV, YAML)';
+        // Deliberately not a list of extensions. It was one — "PDF, TXT, MD, PY,
+        // JSON, CSV, YAML" — and it went stale the moment uploads stopped being
+        // gated on a list at all: anything that reads as text is accepted now, and a
+        // tooltip enumerating seven of them reads as a refusal of the rest.
+        btn.title = 'Attach a PDF or text file — script, log, config, source';
         btn.setAttribute('aria-label', btn.title);
         btn.addEventListener('click', function (event) {
             event.preventDefault();

@@ -362,34 +362,14 @@ def start_new_turn(question: str, attachment=None) -> None:
 
 # --- composer strip --------------------------------------------------------
 
-# Under the input rather than injected by app.js: it is static text, and a real
-# element rendered by Streamlit is exposed to assistive tech and translatable in
-# a way that a JS-appended node in a container React owns is not.
-# Short enough for one line beside the model name at 768px, which is what keeps it
-# a caveat rather than a paragraph at the bottom of the window. "Verify commands
-# against the linked docs" was the casualty; the Sources strip under every answer is
-# already the link it was pointing at.
-DISCLAIMER = "Sage can make mistakes and cannot see your account or jobs."
-
-
-def disclaimer_html() -> str:
-    """The one line under the input, and everything that survived from the ℹ️ panel.
-
-    Both of its predecessors were too much. As a popover it was a control in the way
-    on every screen for something you read once; as three paragraphs under the
-    starter cards it was a wall of small print on the first thing a new user sees.
-    What is actually load-bearing is: this can be wrong, it cannot see your account,
-    and here is a human to ask. That fits on one line at 11px, next to the model
-    name, and nothing else earns a place at the bottom of the window.
-    """
-    # Escaped even though these are operator-set, not user-set: an env var landing
-    # unescaped inside an href is the kind of thing that stops being harmless later.
-    help_url = html.escape(config.HELP_DESK_URL, quote=True)
-    return (
-        f'<p class="ai-disclaimer">{DISCLAIMER} <a href="{help_url}" '
-        f'target="_blank" rel="noopener">RCC Help Desk</a></p>'
-    )
-
+# There is deliberately no caveat line under the input. It went from a popover, to
+# three paragraphs under the starter cards, to one 11px line beside the model name,
+# and each version was still a permanent fixture at the bottom of every screen for
+# something read once and then ignored. Neither half of it is lost: every answer
+# carries a Sources strip to the documentation it came from, so "this can be wrong,
+# here is what it read" is attached to the thing that might be wrong; and the system
+# prompt hands out the Help Desk address (`sage/prompts.py`, `sage/tools.py`) in the
+# answer to a question the documentation cannot settle, which is when it is wanted.
 
 has_messages = bool(st.session_state.messages)
 
@@ -430,7 +410,7 @@ def render_model_picker() -> None:
 
 
 def render_controls() -> None:
-    """One line under the input: the disclaimer left, Clear and the picker right.
+    """One line under the input: Clear and the model picker, in the right corner.
 
     This row used to be a bar above the conversation, which was wrong twice over.
     It sat in the band Streamlit's own full-width header takes the clicks for, so
@@ -439,11 +419,10 @@ def render_controls() -> None:
     inside it did not render at all. Under the input it is beside the thing it
     affects, on every screen, at the opposite end of the page from that header.
 
-    One line, in this order: the disclaimer takes the space on the left, then Clear,
-    then the picker in the corner — it names what will answer, next to the button
-    that sends. Two rows here (controls above, disclaimer below) is a fifth of a
-    phone screen spent on furniture, which is how the bottom of this app came to
-    look, in the words of the person using it, nasty.
+    Clear, then the picker in the corner — it names what will answer, next to the
+    button that sends. Nothing else: every extra row here is a slice of a phone
+    screen spent on furniture, which is how the bottom of this app came to look, in
+    the words of the person using it, nasty.
 
     One container, not a strip wrapping a row. Two of them meant two sets of layout
     rules for two elements whose identity depends on which one `st.container(key=…)`
@@ -456,7 +435,6 @@ def render_controls() -> None:
     as wide as its own label and the worst a broken stylesheet can do is stack them.
     """
     with st.container(key="composer-strip"):
-        st.markdown(disclaimer_html(), unsafe_allow_html=True)
         if has_messages and st.button(
             "🗑️", key="clear", help="Clear this conversation"
         ):
@@ -595,10 +573,16 @@ if st.session_state.attachment is not None:
             st.session_state.uploader_key += 1
             st.rerun()
 
-prompt = st.chat_input(
-    "Ask anything about RCC…",
-    max_chars=config.MAX_PROMPT_CHARS,
-)
+# No `max_chars`. That argument is the only thing that puts Streamlit's "15/8000"
+# counter inside the box, and a running character count is noise in a box you type a
+# question into — it reads as a form field with a quota. The limit itself is still
+# enforced, below, where it costs nothing to look at.
+#
+# Enforced here rather than hidden with CSS on purpose: the counter's own test id is
+# Streamlit's, unversioned, and not visible from this repo, so a rule naming it would
+# be a guess that fails silently the day it changes. Not asking for the counter
+# cannot fail that way.
+prompt = st.chat_input("Ask anything about RCC…")
 
 # Rendered here, before the turn below: that block ends in `st.rerun()`, so
 # anything after it is never reached while an answer is generating — which is
@@ -606,7 +590,18 @@ prompt = st.chat_input(
 render_controls()
 
 if prompt:
-    start_new_turn(prompt.strip(), st.session_state.attachment)
+    asked = prompt.strip()
+    if len(asked) > config.MAX_PROMPT_CHARS:
+        # The cap the counter used to advertise. Said once, at the moment it matters,
+        # instead of counted out on screen for every question that was never near it.
+        over = len(asked) - config.MAX_PROMPT_CHARS
+        st.warning(
+            f"⚠️ That question is {over:,} characters over the "
+            f"{config.MAX_PROMPT_CHARS:,}-character limit. Shorten it, or attach the "
+            "long part as a file."
+        )
+    else:
+        start_new_turn(asked, st.session_state.attachment)
 
 
 # --- the turn --------------------------------------------------------------

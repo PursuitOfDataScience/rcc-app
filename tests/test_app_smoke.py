@@ -90,17 +90,18 @@ class TestWelcome:
         # sentence in it is split across lines wherever that happened to land.
         html = " ".join("\n".join(stub.markdown_html).split())
         assert "What can I help you with?" in html
-        # The hero says what this is and the line under the input says what it
-        # cannot do. Nothing else: the limits used to be a third line in the hero,
-        # then an ℹ️ popover in the row under the input, then three paragraphs of
-        # small print under the starter cards. Each was one explanation too many
-        # in the way of the box you type in.
+        # The hero says what this is, and that is all the explaining the landing
+        # screen does. The limits were a third line in the hero, then an ℹ️ popover
+        # in the row under the input, then three paragraphs of small print under the
+        # starter cards, then one 11px caveat line beside the model name. Each was
+        # one explanation too many in the way of the box you type in, and the last
+        # of them is gone too.
         assert "Sage reads the docs" not in html
         assert "What Sage is" not in html
         assert "Documentation synced" not in html
         assert "drop into the walk-in lab" not in html
-        assert "Sage can make mistakes" in html
-        assert "RCC Help Desk" in html
+        assert "Sage can make mistakes" not in html
+        assert "RCC Help Desk" not in html
 
     def test_nothing_explains_the_app_with_a_control(self, monkeypatch):
         """A button whose only job is to explain the app is one more thing in the
@@ -392,15 +393,35 @@ class TestComposerStrip:
         assert stub.session_state["notice"] == ""
         assert stub.session_state["failed_over"] is False
 
-    def test_the_disclaimer_is_a_real_element_rendered_by_python(self, monkeypatch):
-        """It used to be appended by app.js into a container React owns. A real
-        element is exposed to assistive tech, translatable, and sized before the
-        first paint — which matters, because its line count is what decides how
-        much room the page reserves for the bar."""
-        stub, _m = self.two_providers(monkeypatch, {"messages": [], "processing": False})
-        assert any(
-            'class="ai-disclaimer"' in html and "Sage can make mistakes" in html
+    def test_nothing_under_the_input_but_controls(self, monkeypatch):
+        """The caveat line is gone, and nothing may quietly replace it.
+
+        It was a popover, then three paragraphs under the starter cards, then one
+        11px line beside the model name, and every version was a permanent fixture
+        for something read once. What is under the input now is Clear and the model
+        picker: two controls, no prose. This fails if any of it comes back.
+        """
+        stub, _m = self.two_providers(
+            monkeypatch,
+            {"messages": [{"role": "user", "text": "hi", "attachment": None}],
+             "processing": False},
+        )
+        assert not any(
+            "ai-disclaimer" in html or "can make mistakes" in html
             for html in stub.markdown_html
+        )
+
+    def test_the_input_asks_for_no_character_counter(self, monkeypatch):
+        """`max_chars` is the only thing that puts "15/8000" inside the box.
+
+        Asserted on the call rather than on CSS: hiding the counter would mean
+        naming a Streamlit test id this repo cannot see, and that rule would fail
+        silently the day it changed. Not asking for it cannot fail that way.
+        """
+        stub, _m = self.two_providers(monkeypatch, {"messages": [], "processing": False})
+        assert stub.chat_input_kwargs == {}, (
+            f"st.chat_input was passed {stub.chat_input_kwargs}; max_chars puts a "
+            "character counter in the box"
         )
 
 

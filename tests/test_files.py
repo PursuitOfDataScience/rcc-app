@@ -42,16 +42,60 @@ def test_empty_uploads_are_rejected():
     assert "empty" in error
 
 
-def test_unsupported_types_are_rejected():
-    attachment, error = files.process("archive.zip", b"PK\x03\x04")
+def test_binary_uploads_are_rejected_on_their_bytes():
+    attachment, error = files.process("archive.zip", b"PK\x03\x04\x00\x00nonsense")
     assert attachment is None
-    assert "Unsupported" in error
+    assert "does not look like text" in error
+
+
+def test_a_binary_named_like_text_is_still_rejected():
+    """The extension is not evidence. A PNG called .txt is not a text file."""
+    attachment, error = files.process("sneaky.txt", b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR")
+    assert attachment is None
+    assert "does not look like text" in error
+
+
+@pytest.mark.parametrize(
+    "filename",
+    [
+        "slurm-12345.out",          # what a job actually writes
+        "run.err",
+        "submit.sbatch",
+        "job.sh",
+        "Makefile",                 # no extension at all
+        "pyproject.toml",
+        ".bashrc",                  # nothing but an extension
+        "analysis.R",
+        "kernel.cu",
+        "results.tsv",
+    ],
+)
+def test_the_files_a_cluster_user_actually_has_are_accepted(filename):
+    """The old rule was a list of eight extensions, and these were the casualties.
+
+    Every one of them is the file someone would attach to ask why a job died, and
+    every one of them was refused with "Unsupported file type" until uploads stopped
+    being gated on the filename.
+    """
+    attachment, error = files.process(filename, b"#!/bin/bash\n#SBATCH -p caslake\n")
+    assert error is None, f"{filename} was refused: {error}"
+    assert attachment.kind == "text"
+    assert "SBATCH" in attachment.text
+
+
+def test_text_that_is_not_utf8_is_still_read():
+    """A single stray byte is a poor reason to refuse six thousand lines of output."""
+    attachment, error = files.process("legacy.log", "café — naïve".encode("cp1252"))
+    assert error is None
+    assert "caf" in attachment.text
 
 
 def test_undecodable_text_is_reported():
-    attachment, error = files.process("bad.txt", b"\xff\xfe\x00binary")
-    assert attachment is None
-    assert "UTF-8" in error
+    """Nothing in the fallback chain can fail, so this is the belt-and-braces path:
+    a byte string that gets past the binary sniff but decodes as nothing."""
+    attachment, error = files.process("bad.txt", b"plain")
+    assert error is None  # it decodes; the sniff and the chain agree
+    assert attachment.text == "plain"
 
 
 def test_long_text_is_truncated_and_flagged():

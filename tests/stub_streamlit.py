@@ -63,6 +63,10 @@ class StubStreamlit(ModuleType):
         # on not putting one on a control that already carries its own label.
         self.tooltips: dict[str, str] = {}
         self.markdown_html: list[str] = []
+        # Whatever `st.chat_input` was called with beyond its placeholder. Starts
+        # empty rather than None so a test can assert on it without the app having
+        # had to reach the call.
+        self.chat_input_kwargs: dict[str, object] = {}
         self.stream_chunks: list[int] = []
         self.errors: list[str] = []
         self.warnings: list[str] = []
@@ -138,10 +142,14 @@ class StubStreamlit(ModuleType):
         self.events.append(("file_uploader", key))
         return self._upload
 
-    def chat_input(self, placeholder=None, **_kwargs):
+    def chat_input(self, placeholder=None, **kwargs):
         # Recorded so a test can prove the controls under the box are rendered
         # after it, rather than back in a bar at the top of the page.
         self.events.append(("chat_input", placeholder))
+        # And the kwargs, because `max_chars` is the one that puts a character
+        # counter inside the box — the absence of an argument is the thing under
+        # test, and nothing else here can see an argument that was not passed.
+        self.chat_input_kwargs = dict(kwargs)
         return self._chat_input
 
     def selectbox(self, label, options=None, index=0, key=None, **_kwargs):

@@ -151,16 +151,38 @@ MAX_PROMPT_CHARS = _env_int("SAGE_MAX_PROMPT_CHARS", 8000)
 
 MAX_UPLOAD_BYTES = _env_int("SAGE_MAX_UPLOAD_BYTES", 10 * 1024 * 1024)
 MAX_FILE_TEXT_CHARS = _env_int("SAGE_MAX_FILE_TEXT_CHARS", 30000)
-UPLOAD_EXTENSIONS = ("pdf", "txt", "md", "py", "json", "csv", "yml", "yaml")
+
+# What the file picker offers. Only PDF needs a parser; everything else here is text,
+# and `files.process` decodes anything that is not a PDF rather than checking this
+# list again — so an extension missing here is a gap in the picker's filter, not a
+# refusal. It used to be eight entries, which meant the failing files were exactly
+# the ones a cluster user has: a job script, the `.out`/`.err` it wrote, a Makefile,
+# a `.toml`. Asking someone to rename `slurm-12345.out` to `.txt` to ask why their
+# job died is a worse answer than reading it.
+UPLOAD_EXTENSIONS = (
+    "pdf",
+    # prose and notes
+    "txt", "md", "markdown", "rst", "tex", "log", "out", "err",
+    # job scripts and shells
+    "sh", "bash", "zsh", "sbatch", "slurm", "job", "pbs",
+    # config and data
+    "json", "csv", "tsv", "yml", "yaml", "toml", "ini", "cfg", "conf", "env",
+    "xml", "html", "properties",
+    # source
+    "py", "ipynb", "r", "jl", "c", "h", "cpp", "cc", "hpp", "cu", "f", "f90",
+    "java", "go", "rs", "m", "pl", "lua", "sql", "js", "ts", "make", "mk",
+    "cmake", "dockerfile", "gitignore", "patch", "diff",
+)
 
 # --- links -----------------------------------------------------------------
 
 DOCS_BASE_URL = os.getenv(
     "RCC_DOCS_BASE_URL", "https://rcc-uchicago.github.io/user-guide/"
 )
-HELP_DESK_URL = (
-    "https://rcc.uchicago.edu/support-and-services/consulting-and-technical-support"
-)
+# The email, not a page: it is what the system prompt hands a user whose question the
+# documentation cannot answer, and it goes into the answer text. There was a
+# HELP_DESK_URL beside this for the caveat line under the input; that line is gone and
+# nothing else linked it, so it went too rather than sitting here unused.
 HELP_DESK_EMAIL = os.getenv("RCC_HELP_EMAIL", "help@rcc.uchicago.edu")
 
 # --- ops -------------------------------------------------------------------

@@ -66,8 +66,8 @@
 
     /* The fixed bottom bar (input + the strip of controls under it) and the
      * strip on its own. app.js measures both and republishes them here, because
-     * neither is a constant: the disclaimer wraps to two or three lines on a
-     * narrow window, and an attachment chip adds a row.
+     * neither is a constant: the controls are taller on a narrow window, and an
+     * attachment chip adds a row.
      *
      * These two are only the pre-measurement fallback, and they have to agree
      * with each other: `--strip-h` is what the bar reserves below the input, so
@@ -187,7 +187,7 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
     overflow-x: hidden !important;
 }
 
-/* ===== COMPOSER STRIP (model picker + about + clear + disclaimer) ===== */
+/* ===== COMPOSER STRIP (clear + model picker) ===== */
 
 /* Pinned under the chat input, at the opposite end of the page from Streamlit's
  * header. Both earlier homes for these controls were above the conversation and
@@ -206,7 +206,7 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
  * than of the conversation, so it is on screen on every screen. `fixed` rather
  * than `sticky` because it must never scroll away from the input it belongs to;
  * the bar above reserves exactly `--strip-h` of room for it, so the two cannot
- * overlap however many lines the disclaimer wraps to. */
+ * overlap however tall the row of controls gets. */
 .st-key-composer-strip {
     position: fixed;
     /* Lifted off the window edge with `bottom`, not with padding: this element is
@@ -216,10 +216,9 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
      * band this occupies from the bottom of the window, so the offset is part of
      * what the bar reserves and cannot become an overlap.
      *
-     * A whole 1rem of it. At 0.4rem the disclaimer sat flush against the bottom
-     * edge of the window with its descenders in the last row of pixels, which
-     * reads exactly like text being cut off — because at that size it is. This is
-     * the clearance Streamlit's own bar had before any of this moved. */
+     * A whole 1rem of it. At 0.4rem the row sat flush against the bottom edge of
+     * the window, which reads exactly like something being cut off. This is the
+     * clearance Streamlit's own bar had before any of this moved. */
     bottom: 1rem;
     left: 50%;
     transform: translateX(-50%);
@@ -235,8 +234,7 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
     max-width: 100% !important;
 }
 
-/* One line: the disclaimer takes the space on the left, then Clear, then the model
- * name hard right — the corner every other assistant puts it in, and the corner the
+/* One line: Clear, then the model name hard right — the corner every other assistant puts it in, and the corner the
  * send button is already in, so the two controls that decide "what happens when I
  * press this" line up.
  *
@@ -272,18 +270,6 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
     width: auto !important;
     flex: 0 0 auto !important;
     min-width: 0 !important;
-}
-
-/* …except the disclaimer, which takes the space the controls do not. It shares
- * their line: it had a row of its own under them, and two rows of furniture under
- * the input is a fifth of a phone screen. `:has()` outranks the rule above, and
- * where it is unsupported the disclaimer simply shrink-wraps beside the buttons
- * instead of filling the line. */
-.st-key-composer-strip .element-container:has(.ai-disclaimer),
-.st-key-composer-strip [data-testid="stElementContainer"]:has(.ai-disclaimer) {
-    flex: 1 1 8rem !important;
-    min-width: 0 !important;
-    text-align: center !important;
 }
 
 /* Model picker. A popover trigger, i.e. a button, so it is sized by its own
@@ -369,11 +355,12 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
 }
 
 .welcome-subtitle {
-    /* !important for the same reason the disclaimer needs it: this is the app's
-     * only other markdown paragraph, Streamlit sizes those at one class and one
-     * type, and a bare `.welcome-subtitle` is one class. The title next to it has
-     * carried !important since it was written; this one never did, which means it
-     * has probably never rendered at the clamp below. */
+    /* !important because Streamlit sizes markdown paragraphs itself at one class
+     * and one type, and a bare `.welcome-subtitle` is one class — it loses, and the
+     * clamp below never applies. The caveat line under the input lost the same fight
+     * for the same reason, and wrapped onto a second line in the app while every
+     * render here passed. The title next to this has carried !important since it was
+     * written; this one never did. */
     font-size: clamp(0.95rem, 2.1vw, 1.12rem) !important;
     line-height: 1.55 !important;
     color: var(--text-secondary);
@@ -509,6 +496,30 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
     align-items: center !important;
 }
 
+/* The send button, out of the flow and parked in the corner.
+ *
+ * In the flow it is a flex item beside the text, and once the text grows past one
+ * line it ends up on a row of its own underneath — which is a band of nothing
+ * between the last line typed and the bottom of the box, reported as "an empty space
+ * between the bottom of the text and the bottom of the input text box. it's very
+ * weird". Taking it out of the flow means the box's height is the text's height and
+ * nothing else, however many lines get typed.
+ *
+ * `:not(#paperclip-btn)` because app.js injects the paperclip as a button inside this
+ * same container and it is already parked on the left; without the exception this
+ * rule would stack the two of them in the same corner. */
+.stChatInput button:not(#paperclip-btn) {
+    position: absolute !important;
+    right: 10px !important;
+    bottom: 10px !important;
+    z-index: 102 !important;
+}
+
+/* Room for it, so a long line of text does not run underneath. Matches the button's
+ * 36px plus its 10px inset and a little air. */
+.stChatInput > div { padding-right: 56px !important; }
+.stChatInput textarea { padding-right: 0 !important; }
+
 /* Paperclip injected by app.js — styled here so it follows the theme. */
 #paperclip-btn {
     position: absolute;
@@ -540,36 +551,6 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
 [data-testid="stBottomBlockContainer"] {
     padding-bottom: calc(var(--strip-h) + 0.35rem) !important;
 }
-
-/* Rendered by app.py, not injected: a real element in the document is exposed to
- * assistive tech and translatable, and it is sized before the first paint rather
- * than one frame after it.
- *
- * Small on purpose, and smaller than it was: it is a standing caveat, not a
- * message, and at 0.75rem centred on its own line it read as the app's parting
- * word. 11px beside the model name is enough to be found and little enough to be
- * ignored, which is the whole job. */
-.ai-disclaimer {
-    display: block;
-    /* Centred in the space the controls leave, not hard left against the edge of the
-     * input box: left-aligned it read as a stray label rather than a caption, and it
-     * lined up with nothing. */
-    text-align: center;
-    /* All three !important, because Streamlit styles markdown paragraphs itself at
-     * (0,1,1) — one class, one type — and a bare `.ai-disclaimer` is (0,1,0). It
-     * lost: the line rendered at Streamlit's size and wrapped onto a second line,
-     * which is a paragraph at the bottom of the window rather than a caveat beside
-     * the model name. The replica had no paragraph size of its own, so it never saw
-     * the fight; it models one now. */
-    font-size: 0.66rem !important;
-    line-height: 1.35 !important;
-    /* Also explicit: leaving the margin to inherit means inheriting Streamlit's 1rem
-     * paragraph margin and paying for a line of whitespace nobody chose. */
-    margin: 0 !important;
-    color: var(--text-muted);
-}
-
-.ai-disclaimer a { color: inherit; text-decoration: underline; }
 
 /* ===== FILE UPLOADER (visually hidden, still reachable) ===== */
 [data-testid="stFileUploader"] {
@@ -938,7 +919,7 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
     .user-bubble { max-width: 88%; }
     /* Room for three controls on one line at 360px, model name included. */
     .st-key-composer-strip [data-testid="stPopover"] button { max-width: 9.5rem; }
-    /* The disclaimer wraps to more lines here, so the strip and the bar above it
+    /* The controls take more room at this width, so the strip and the bar above it
      * are both taller. app.js measures both; these are the fallbacks it starts
      * from, and they only have to hold for the first frame — but they still have
      * to hold, and to agree with each other, so --bar-h covers this --strip-h

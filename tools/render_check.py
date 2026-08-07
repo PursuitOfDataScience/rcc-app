@@ -17,19 +17,19 @@ It has already caught what reading the CSS did not:
     between the last message and the input box;
   * the slack above a short conversation growing by 42px a frame, because a media
     query was quietly overriding the padding it was being applied to;
-  * the caveat line under the input rendering at Streamlit's own paragraph size and
-    wrapping onto a second line, because a bare `.ai-disclaimer` is one class where
-    the rule it was losing to is a class and a type — and this replica had no
-    paragraph size of its own for it to lose to;
-  * that same slack being applied while an answer was still generating, which put
-    the question halfway down the window with the reply arriving into the bottom of
-    it. Both of those needed a model added here before they could be caught.
+  * that slack being applied while an answer was still generating, which put the
+    question halfway down the window with the reply arriving into the bottom of it —
+    which needed a model added here before it could be caught;
+  * 46px of nothing between the last line typed and the bottom of the input box,
+    which is the send button taking a row of its own once the text passes one line.
+    The replica had no send button at all, so the box was always exactly as tall as
+    its text and the bug was not expressible here.
 
 The dead space at the end of a conversation outlived three rounds of fixes because
 of a line in this file: the bar was modelled `position: fixed`, the stylesheet
 reserved a bar's worth of room at the end of the page on the strength of it, and
 that reservation *was* the dead space. Streamlit also ships it `sticky`, in the
-flow, where it needs no room reserved at all. Four of the screens here are
+flow, where it needs no room reserved at all. Five of the screens here are
 rendered the first way and three the second, and app.js asks the browser which one
 it is looking at rather than trusting either.
 
@@ -132,35 +132,14 @@ def _card_labels() -> list[str]:
     ]
 
 
-def _disclaimer() -> str:
-    """The line under the input, read from app.py so the two cannot drift apart.
-
-    Loud on failure rather than falling back to a placeholder. It used to return
-    "(missing)" when the regex missed, and when `DISCLAIMER` was shortened from a
-    parenthesised pair of strings to one literal, that is what every render
-    measured: nine characters where the app has sixty. The line-count check passed
-    on text the app does not contain, which is the harness's own cardinal sin —
-    a wrong model reads as a pass.
-    """
-    # Flags per pattern: `re.S` belongs to the parenthesised form only. Shared, it
-    # let `.*` in the single-literal form run to the end of the file, and the
-    # "disclaimer" became app.py itself.
-    for pattern, flags in (
-        (r"^DISCLAIMER = \((.*?)\n\)", re.S | re.M),
-        (r'^DISCLAIMER = ("[^"]*")\s*$', re.M),
-    ):
-        match = re.search(pattern, APP, flags)
-        if match:
-            return "".join(re.findall(r'"([^"]*)"', match.group(1)))
-    raise SystemExit(
-        "render_check: could not find DISCLAIMER in app.py. Fix this parser rather "
-        "than letting every render measure a placeholder."
-    )
-
+# There was a `_disclaimer()` here that read the caveat line out of app.py so the two
+# could not drift apart. The caveat line is gone from the app, so it is gone from here
+# — not left pointing at nothing, which is how a check comes to pass on a placeholder.
+# The lesson it taught is kept in `_subtitle()`'s neighbours: read the real string, or
+# do not claim to be measuring it.
 
 SUBTITLE = _subtitle()
 CARDS = _card_labels()
-DISCLAIMER = _disclaimer()
 # Read from app.js so the two can never drift apart.
 TOP_GAP = int(re.search(r"var TOP_GAP = (\d+)", JS).group(1))
 
@@ -213,11 +192,12 @@ body {{ margin: 0; background: {BACKGROUNDS[scheme]}; color: {FOREGROUNDS[scheme
 .stMarkdown h1 {{ font-size: 2.75rem; font-weight: 600; line-height: 1.2;
                  padding: 1.25rem 0 1rem; margin: 0; }}
 .stMarkdown h2 {{ font-size: 1.75rem; line-height: 1.3; margin: 0 0 .5rem; }}
-/* Streamlit sizes markdown paragraphs itself, at a specificity of (0,1,1) — one
-   class and one type. A bare `.ai-disclaimer` rule is (0,1,0) and loses to it, so
-   the line under the input rendered at Streamlit's size rather than the one the
-   stylesheet asked for, and wrapped onto a second line. Modelled here because the
-   replica had no paragraph size at all, which let that rule win by default. */
+/* Streamlit sizes markdown paragraphs itself, at a specificity of (0,1,1) — one class
+   and one type. A bare one-class rule loses to it, which is how the caveat line that
+   used to sit under the input rendered at Streamlit's size and wrapped onto a second
+   line while every render here passed: the replica had no paragraph size at all, so
+   the app's rule won by default. Kept because `.welcome-subtitle` is still in that
+   fight. */
 .stMarkdown p {{ margin: 0 0 1rem; font-size: 1rem; line-height: 1.6; }}
 .stMarkdown pre {{ background: {'#262730' if scheme == 'dark' else '#f0f2f6'};
                   padding: 1rem; border-radius: 8px; overflow-x: auto; margin: 0 0 1rem; }}
@@ -254,6 +234,22 @@ body {{ margin: 0; background: {BACKGROUNDS[scheme]}; color: {FOREGROUNDS[scheme
 .stChatInput > div {{ background: {'#262730' if scheme == 'dark' else '#f0f2f6'}; }}
 .stChatInput textarea {{ width: 100%; background: transparent; border: 0;
                         color: inherit; font: inherit; resize: none; }}
+/* Streamlit's send button: its own size, in the flow, and a flex item of the box
+   alongside the textarea. Modelled at its real size because the height of the box is
+   what it decides — an unstyled button is small enough to hide the row it takes. */
+.stChatInput button {{ width: 36px; height: 36px; flex: 0 0 auto; border-radius: 8px;
+   background: {'#3a3b46' if scheme == 'dark' else '#e6e6e9'}; color: inherit;
+   border: 0; font: inherit; cursor: pointer; }}
+.stChatInput button p {{ margin: 0; }}
+/* The other way Streamlit stacks the inside of that box: the button in a row of its
+   own *under* the textarea rather than beside it. Which one it is decides whether a
+   box with a paragraph in it has a band of nothing under the last line — 46px of it
+   in this shape, 2px in the row shape — and it is not visible from this repo, so both
+   are rendered. See `page(column_input=…)`. */
+.input-column .stChatInput > div {{ flex-direction: column !important;
+   align-items: stretch !important; }}
+.input-column .chat-actions {{ display: flex; justify-content: flex-end;
+   align-items: center; padding: 4px 8px; }}
 .stChatMessage {{ display: flex; }}
 /* A popover trigger is a button, and Streamlit gives it the same base styling as
    st.button. Modelled explicitly because the markup is not `.stButton`, so the
@@ -286,7 +282,7 @@ def _cards_html() -> str:
 
 
 def strip(clear: bool = True, wrapped: bool = True) -> str:
-    """The controls under the input, and the AI disclaimer under those.
+    """The controls under the input: Clear, then the model picker.
 
     Rendered last in the block, where app.py renders it. `clear` is False on the
     landing screen, where there is no conversation to throw away.
@@ -301,14 +297,11 @@ def strip(clear: bool = True, wrapped: bool = True) -> str:
     """
     trash = ('<div class="element-container"><div class="stButton">'
              "<button><p>🗑️</p></button></div></div>") if clear else ""
-    # Disclaimer, Clear, picker — app.py's order, and the order that decides the
-    # line: the disclaimer takes the space on the left and the picker ends up in
-    # the corner. All three are one row now; the disclaimer had a second row to
-    # itself until two rows of furniture under the input were one too many.
+    # Clear, then the picker — app.py's order, and the order that puts the picker in
+    # the corner next to the button that sends. There was a caveat line on the left of
+    # this row too; it is gone, and with it the last thing under the input that was
+    # not a control.
     controls = f"""
-    <div class="element-container"><div class="stMarkdown">
-      <p class="ai-disclaimer">{DISCLAIMER} <a href="#">RCC Help Desk</a></p>
-    </div></div>
     {trash}
     <div class="element-container"><div data-testid="stPopover"><div class="stPopover">
       <button><p>Zen · deepseek-v4-flash-free</p></button>
@@ -416,6 +409,20 @@ STICKY_BAR = {"landing-flat", "answer", "long-chat"}
 # every state and width still passes through the shape.
 DOC_SCROLL = {"doc-scroll"}
 
+# Which screens render the input with something in it rather than on its placeholder.
+TYPED_INPUT = {"composing", "composing-column"}
+# …and which of those stack the send button under the textarea rather than beside it.
+COLUMN_INPUT = {"composing-column"}
+
+# What was actually pasted in when the dead space got reported: a dictionary entry,
+# several lines of it, in two scripts. Long enough to grow the box past one line at
+# every width, which is the condition the bug needs.
+TYPED = (
+    "spurt — a sudden short burst of liquid, speed or activity — My son had a "
+    "growth spurt over the summer. 喷出；一阵突发的活动或速度 — and a second line so "
+    "the box is unambiguously taller than one row at every width this renders."
+)
+
 # What is actually on screen while an answer is being generated: the question, and
 # a status row where the answer will go. The other screens render a *finished*
 # answer with the processing marker set, which is a much taller page — so the slack
@@ -453,6 +460,13 @@ SCENARIOS = {
     "doc-scroll": CHAT_MARKER
     + "".join(answer_block(i) for i in range(6))
     + strip(wrapped=False),
+    # A conversation with a half-written question still in the box. The only screen
+    # where the input is not one line tall, and so the only one that can see what the
+    # send button does to the height of the box it sits in.
+    "composing": CHAT_MARKER + SHORT_ANSWER + strip(),
+    # The same half-written question with the send button stacked under the text. This
+    # is the shape the dead space appears in; the one above is the shape it does not.
+    "composing-column": CHAT_MARKER + SHORT_ANSWER + strip(),
     "in-flight": CHAT_MARKER + IN_FLIGHT + strip(wrapped=False),
     "error": CHAT_MARKER
     + """
@@ -483,20 +497,17 @@ LINE_LIMITS = {
     # Two lines is fine for an error action; three means the label no longer fits
     # its column and should be shortened rather than allowed to sprawl.
     ".st-key-retry button p": 1, ".st-key-switch-model button p": 2,
-    # One line, sharing it with the controls. It is a standing caveat that should
-    # be findable and ignorable; at two lines it is a paragraph at the bottom of
-    # the window, which is what it looked like when Streamlit's own paragraph size
-    # won over this stylesheet's.
-    ".ai-disclaimer": 1,
-    # NB: the loop below gates line limits on width >= 641, because at phone widths
-    # nearly everything wraps and a limit there would be noise. That gate made this
-    # entry dead at 414px — the one width where this line does wrap — so the narrow
-    # budget is stated separately in NARROW_LINE_LIMITS rather than left unenforced.
+    # NB: the loop below gates these on width >= 641, because at phone widths nearly
+    # everything wraps and a limit there would be noise. Anything that must hold at a
+    # phone width belongs in NARROW_LINE_LIMITS instead, where the gate does not
+    # apply — a budget listed only here is silently unenforced below 641px.
     **{f".st-key-example-card-{i} button p": 1 for i in range(6)},
 }
 
-# Line budgets that apply BELOW 641px too, where the general gate does not.
-NARROW_LINE_LIMITS = {".ai-disclaimer": 2}
+# Line budgets that apply BELOW 641px too, where the general gate does not. Empty
+# since the caveat line — the one element that had to hold at a phone width — was
+# removed from under the input.
+NARROW_LINE_LIMITS: dict[str, int] = {}
 
 MEASURE = """
 <script>
@@ -652,14 +663,20 @@ PICKER = '.st-key-composer-strip [data-testid="stPopover"] button'
 # The strip the controls sit in, and the input it must never cover.
 STRIP = ".st-key-composer-strip"
 INPUT = ".stChatInput textarea"
+# The bordered box around the textarea, and the button that sends. Both measured so
+# the space between the end of the text and the bottom of the box can be: in the flow
+# the button takes a row of its own once the text passes one line, and that row is a
+# band of nothing under what was typed.
+INPUT_BOX = ".stChatInput > div"
+SEND = '.stChatInput button:not(#paperclip-btn)'
 
 SELECTORS = [
     ".welcome-title", ".welcome-subtitle", ".user-bubble", "last:.user-bubble",
     ".error-card", ".notice", ".st-key-error-actions",
-    ".error-title", ".error-body", ".ai-disclaimer", ".sources-label",
+    ".error-title", ".error-body", ".sources-label",
     ".source-chip", ".st-key-answer-5", ".st-key-answer-0", ".stChatMessage pre",
     ".stChatMessage code", '[data-testid="stBottomBlockContainer"]',
-    STRIP, INPUT,
+    STRIP, INPUT, INPUT_BOX, SEND,
     ".st-key-composer-strip button",
     # The rightmost control in the strip, so the row is measured end to end: with
     # a model name in it, it is the widest thing under the input.
@@ -677,6 +694,7 @@ SELECTORS = [
 # textarea, and "the box will not take a click" is the worst bug in the app.
 INTERACTIVE = {
     PICKER, ".st-key-composer-strip button", "last:.st-key-composer-strip button", INPUT,
+    SEND,
     ".st-key-retry button p", ".st-key-switch-model button p",
     *(f".st-key-example-card-{i} button p" for i in range(6)),
 }
@@ -696,11 +714,17 @@ GAP_QUESTION_TO_ANSWER = (30, 60)
 # Only an upper bound: a reply taller than the window runs off the bottom, and
 # that is the reader's to scroll, not dead space.
 MAX_TAIL_GAP = 64
+# Room allowed between the last line of text in the input and the bottom of the box.
+# The textarea carries 16px of its own bottom padding, so this is that plus a little
+# rounding — anything more is a row of furniture, which is what the send button was
+# taking once the text grew past one line.
+MAX_INPUT_DEAD_SPACE = 20
 
 
 def page(body: str, scheme: str, scroll: bool, generating: bool = False,
          pin: bool = False, script: bool = True, sticky: bool = False,
-         doc_scroll: bool = False) -> str:
+         doc_scroll: bool = False, typed: bool = False,
+         column_input: bool = False) -> str:
     """The replica, with or without app.js, and with the bar pinned either way.
 
     `script=False` is the app's first frame: the stylesheet's own fallback for how
@@ -720,15 +744,37 @@ def page(body: str, scheme: str, scroll: bool, generating: bool = False,
     about the stylesheet changes; what changes is which element can answer "does
     this conversation scroll?", and a wrong answer there is how a page that
     scrolled got a screenful of slack padded on top of it.
+
+    `typed` fills the input with a paragraph instead of leaving it on its placeholder.
+    An empty box is one line tall and hides everything about how a full one behaves.
+
+    `column_input` stacks the send button under the textarea instead of beside it. In
+    the row shape a full box has 2px under its last line; in the column shape it has
+    46px, and 46px under what you just typed is what got reported as "an empty space
+    between the bottom of the text and the bottom of the input text box". Both are
+    rendered because which one Streamlit builds is not visible from this repo — and a
+    fix tested only in the shape that cannot show the bug is not a tested fix.
     """
+    # The send button is modelled because it is what decides the height of the box.
+    # Left in the flow it is a sibling of the textarea, and once the text runs past one
+    # line it lands on a row of its own underneath — a band of nothing between the last
+    # line typed and the bottom of the box. The replica had no button at all, so the
+    # box was always exactly as tall as its text and the bug could not appear here.
+    #
+    # `rows` stands in for Streamlit's auto-grow: a textarea does not grow to fit its
+    # own value, so `typed` is what a box with a paragraph in it actually looks like.
+    send = ('<button data-testid="stChatInputSubmitButton" aria-label="Send">'
+            "<p>↑</p></button>")
     bar = ('<div data-testid="stBottom">'
            '<div data-testid="stBottomBlockContainer">'
            '<div class="stChatInput"><div>'
-           '<textarea placeholder="Ask anything about RCC…"></textarea>'
-           "</div></div></div></div>")
+           + ('<textarea rows="6">' + TYPED + "</textarea>" if typed else
+              '<textarea rows="1" placeholder="Ask anything about RCC…"></textarea>')
+           + (f'<div class="chat-actions">{send}</div>' if column_input else send)
+           + "</div></div></div></div>")
     return f"""<!doctype html><html><head><meta charset="utf-8">
 <style>{base_css(scheme)}</style><style>{theme_css(scheme)}</style></head>
-<body class="{'bar-sticky' if sticky else 'bar-fixed'}{' doc-scroll' if doc_scroll else ''}">
+<body class="{'bar-sticky' if sticky else 'bar-fixed'}{' doc-scroll' if doc_scroll else ''}{' input-column' if column_input else ''}">
 <div data-testid="stHeader"></div><div id="host-bar"></div>
 <div data-testid="stAppViewContainer">
   <div data-testid="stMain" class="main">
@@ -899,6 +945,28 @@ def audit(data, scenario, scheme, width, state: str) -> list[str]:
     if band and picker and picker["top"] < band["top"] - 1:
         problems.append(f"{where}: the model picker is outside the strip pinned for it")
 
+    # Inside the box: how much of it is neither text nor the room the text sits in.
+    # With the send button in the flow it is a flex item beside the textarea, and once
+    # the text passes one line it wraps onto a row of its own — leaving a band of
+    # nothing between the last line typed and the bottom of the box. Out of the flow,
+    # the box is as tall as its text and this is the padding, nothing more.
+    box, area = els.get(INPUT_BOX), els.get(INPUT)
+    if box and area:
+        under = box["bottom"] - area["bottom"]
+        if under > MAX_INPUT_DEAD_SPACE:
+            problems.append(
+                f"{where}: {under}px of nothing between the end of the text and the "
+                f"bottom of the input box (want at most {MAX_INPUT_DEAD_SPACE})"
+            )
+    # And the button has to stay off the text it sits over now that it is out of the
+    # flow: an absolute corner is only right if the text stops before it.
+    send = els.get(SEND)
+    if send and area and send["left"] < area["right"] - 1 and area["lines"] > 0:
+        problems.append(
+            f"{where}: the send button overlaps the text by "
+            f"{area['right'] - send['left']}px"
+        )
+
     if generating:
         # The question must stay on screen while its answer streams in. Pinning to
         # the document bottom used to scroll it clean off the top.
@@ -1045,6 +1113,12 @@ def main() -> int:
                 # pin left behind).
                 if scenario.startswith("landing"):
                     states = ["unmeasured", "rest"]   # no turn to be in the middle of
+                elif scenario.startswith("composing"):
+                    # What these two are for is the inside of the input box, and that
+                    # is the same whether the page is scrolled or an answer is in
+                    # flight. Three more states each would be 60 renders and a minute
+                    # of CI to re-measure an identical box.
+                    states = ["unmeasured", "rest"]
                 elif scenario == "in-flight":
                     states = ["generating"]           # it *is* the mid-turn screen
                 else:
@@ -1058,7 +1132,9 @@ def main() -> int:
                                 pin=state == "settled",
                                 script=state != "unmeasured",
                                 sticky=scenario in STICKY_BAR,
-                                doc_scroll=scenario in DOC_SCROLL)
+                                doc_scroll=scenario in DOC_SCROLL,
+                                typed=scenario in TYPED_INPUT,
+                                column_input=scenario in COLUMN_INPUT)
                     data = render(name, html, width, height,
                                   shot=(scheme == "dark" and width == 1263
                                         and state == "rest"))
