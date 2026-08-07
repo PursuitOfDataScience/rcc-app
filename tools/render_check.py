@@ -12,6 +12,20 @@ It has already caught what reading the CSS did not:
   * the hero subtitle and all six starter cards wrapping to two lines;
   * a maroon focus ring at 1.73:1 on the dark background.
 
+It also, for a while, cheerfully passed a top bar that was completely unusable,
+because the replica modelled Streamlit's header as a small right-aligned box
+when it is really a full-width strip that takes every click underneath it. Two
+checks came out of that and are the ones worth keeping honest:
+
+  * every control is hit-tested with `elementFromPoint`, so "in the DOM with a
+    sensible rectangle" is no longer mistaken for "a user can click it";
+  * whatever the harness cannot see, it must not silently model away — a wrong
+    model is worse than no model, because it reads as a pass.
+
+Four states per screen: at rest, scrolled to the end, mid-generation, and just
+finished — the last one running app.js so the post-turn scroll is measured
+rather than assumed.
+
 Usage:
     python tools/render_check.py            # audit; exits non-zero on failure
     python tools/render_check.py -v         # also print every measurement
@@ -35,9 +49,17 @@ CHROME = os.environ.get(
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
 
-# Streamlit Community Cloud overlays an opaque toolbar over the top of the page.
-HOST_BAR = 46
-# ...and it is a right-aligned cluster (Share / star / edit / GitHub), not full width.
+# Streamlit's own header (`[data-testid="stHeader"]`) is a FULL-WIDTH fixed strip
+# across the top of every app at a z-index far above anything a stylesheet sets.
+# It is usually transparent, so it hides nothing — but it is on top, so it takes
+# the clicks for everything underneath it. Anything interactive placed in this
+# band is unreachable, however good it looks.
+#
+# This used to be modelled as a 220px right-aligned box, on the reasoning that
+# Community Cloud's visible controls are right-aligned. That was wrong, and it
+# is why the top bar passed 100 renders while being unusable in the real app.
+HOST_BAR = 60
+# The part that also paints: the Community Cloud control cluster, right-aligned.
 HOST_BAR_W = 220
 
 
@@ -68,6 +90,8 @@ def _card_labels() -> list[str]:
 
 SUBTITLE = _subtitle()
 CARDS = _card_labels()
+# Read from app.js so the two can never drift apart.
+TOP_GAP = int(re.search(r"var TOP_GAP = (\d+)", JS).group(1))
 
 
 def theme_css(scheme: str) -> str:
@@ -140,8 +164,12 @@ body {{ margin: 0; background: {BACKGROUNDS[scheme]}; color: {FOREGROUNDS[scheme
    color: inherit; border: 1px solid {'#3a3b46' if scheme == 'dark' else '#d5d6d8'};
    font: inherit; cursor: pointer; }}
 [data-testid="stPopover"] button p {{ margin: 0; }}
+/* Streamlit's header: full width, transparent, and above everything. */
+[data-testid="stHeader"] {{ position: fixed; top: 0; left: 0; right: 0;
+   height: {HOST_BAR}px; background: transparent; z-index: 999990; }}
+/* The host's own control cluster, which additionally paints. */
 #host-bar {{ position: fixed; top: 0; right: 0; width: {HOST_BAR_W}px;
-            height: {HOST_BAR}px; background: {BACKGROUNDS[scheme]}; z-index: 9999; }}
+            height: {HOST_BAR}px; background: {BACKGROUNDS[scheme]}; z-index: 999991; }}
 """
 
 
@@ -198,12 +226,8 @@ python train.py --epochs 100 --batch-size 64 --output /scratch/midway3/$USER/run
 </div>"""
 
 
-# app.py injects this on the welcome screen only (see the comment there).
-LANDING_OVERRIDE = ("<style>[data-testid='stMainBlockContainer'], "
-                    ".main .block-container{padding-bottom: 10rem !important;}</style>")
-
 SCENARIOS = {
-    "landing": LANDING_OVERRIDE + TOPBAR + f"""
+    "landing": TOPBAR + f"""
 <div class="element-container"><div class="stMarkdown">
   <div class="welcome">
     <h1 class="welcome-title">What can I help you with?</h1>
@@ -308,11 +332,36 @@ function box(sel) {
     lines: Math.max(1, Math.round(r.height / lh)),
     fontPx: Math.round(parseFloat(cs.fontSize) * 10) / 10,
     overflowX: el.scrollWidth - el.clientWidth,
-    contrast: ratio(cs.color, solidBg(el))
+    contrast: ratio(cs.color, solidBg(el)),
+    hit: hitTest(el, r)
   };
+}
+// Is this element the thing a user's click would actually land on? Geometry
+// alone cannot tell you: the top bar had a perfectly good rectangle for 100
+// renders while sitting underneath Streamlit's full-width header, which is
+// transparent (so it looked fine) and on top (so it took every click).
+// '' means yes; anything else names what is in the way.
+function hitTest(el, r) {
+  if (r.width < 1 || r.height < 1) return 'zero-sized';
+  var x = r.left + r.width / 2, y = r.top + r.height / 2;
+  if (x < 0 || y < 0 || x > innerWidth || y > innerHeight) return 'offscreen';
+  var top = document.elementFromPoint(x, y);
+  if (!top) return 'nothing painted there';
+  if (el.contains(top) || top.contains(el)) return '';
+  return (top.getAttribute('data-testid') || top.id ||
+          top.className || top.tagName || 'something').toString().slice(0, 60);
 }
 var main = document.querySelector('[data-testid="stMain"]');
 if (window.__scrollBottom && main) main.scrollTop = main.scrollHeight;
+// Leave the view where app.js's per-turn pin would have left it, so the settle
+// that runs once the answer lands has something to actually close.
+if (window.__pinLast && main) {
+  var asked = document.querySelectorAll('.user-message');
+  var lastAsked = asked[asked.length - 1];
+  if (lastAsked) main.scrollTop = Math.max(0, Math.min(
+    lastAsked.getBoundingClientRect().top + main.scrollTop - TOPGAP,
+    main.scrollHeight - main.clientHeight));
+}
 function snapshot() {
   var out = {viewport: {w: innerWidth, h: innerHeight}, hostBar: HOSTBAR,
            scrolled: main ? Math.round(main.scrollTop) : 0,
@@ -345,24 +394,43 @@ SELECTORS = [
     ".st-key-retry button p", ".st-key-switch-model button p",
 ] + [f".st-key-example-card-{i} button p" for i in range(6)]
 
+# Controls a user has to be able to click. For these, occupying a sensible
+# rectangle is not enough — something else must not be on top of them.
+INTERACTIVE = {
+    PICKER, ".st-key-topbar button", "last:.st-key-topbar button",
+    ".st-key-retry button p", ".st-key-switch-model button p",
+    *(f".st-key-example-card-{i} button p" for i in range(6)),
+}
 
-def page(body: str, scheme: str, scroll: bool, generating: bool = False) -> str:
+ELLIPSIS_OK = {PICKER, ".st-key-topbar button"}
+
+# How far apart things should be, in px. Both ends matter: the first of these
+# was reported as "too close between user message and the top of the response",
+# the second as "big empty space between the bottom of the message and the input".
+GAP_QUESTION_TO_ANSWER = (14, 48)
+# Only an upper bound: a reply taller than the window runs off the bottom, and
+# that is the reader's to scroll, not dead space.
+MAX_TAIL_GAP = 96
+
+
+def page(body: str, scheme: str, scroll: bool, generating: bool = False,
+         pin: bool = False) -> str:
     return f"""<!doctype html><html><head><meta charset="utf-8">
 <style>{base_css(scheme)}</style><style>{theme_css(scheme)}</style></head><body>
-<div id="host-bar"></div>
+<div data-testid="stHeader"></div><div id="host-bar"></div>
 <div data-testid="stAppViewContainer">
   <div data-testid="stMain" class="main">
     <div data-testid="stMainBlockContainer" class="block-container">
       <div data-testid="stVerticalBlock">{body}</div></div></div>
   <div data-testid="stBottomBlockContainer">
     <div class="stChatInput"><div><textarea placeholder="Ask anything about RCC…"></textarea></div></div>
-    <p class="ai-disclaimer">Sage can make mistakes and cannot see your account or jobs.
-       Verify commands against the linked docs.</p>
+    <p class="ai-disclaimer" id="ai-disclaimer">Sage can make mistakes and cannot see your
+       account or jobs. Verify commands against the linked docs.</p>
   </div></div>
 {'<div id="processing-signal" hidden></div>' if generating else ''}
-<script>window.__scrollBottom = {str(scroll).lower()};</script>
-{'<script>' + JS + '</script>' if generating else ''}
-{MEASURE.replace("HOSTBAR", str(HOST_BAR)).replace("SELECTORS", json.dumps(SELECTORS))}
+<script>window.__scrollBottom = {str(scroll).lower()}; window.__pinLast = {str(pin).lower()};</script>
+<script>{JS}</script>
+{MEASURE.replace("HOSTBAR", str(HOST_BAR)).replace("TOPGAP", str(TOP_GAP)).replace("SELECTORS", json.dumps(SELECTORS))}
 </body></html>"""
 
 
@@ -386,9 +454,11 @@ def render(name, html, width, height, shot=False):
     return json.loads(_html.unescape(out[start + 7 : end]))
 
 
-def audit(data, scenario, scheme, width, scrolled: bool, generating=False) -> list[str]:
+def audit(data, scenario, scheme, width, state: str) -> list[str]:
     problems, els = [], data["els"]
     where = f"{scenario}/{scheme}/{width}px"
+    generating = state == "generating"
+    scrolled = state != "rest"
 
     if data["docOverflowX"] > 0:
         problems.append(f"{where}: page scrolls sideways by {data['docOverflowX']}px")
@@ -408,7 +478,9 @@ def audit(data, scenario, scheme, width, scrolled: bool, generating=False) -> li
                 f"({data['hostBar'] - b['top']}px under it)"
             )
         # The picker ellipsing a long model id is intended, and <pre> scrolls.
-        if b["overflowX"] > 1 and "pre" not in sel and sel != PICKER:
+        # (Both selectors that reach the picker trigger are exempt; the trash
+        # button, matched by `last:`, is not — it has nothing to ellipse.)
+        if b["overflowX"] > 1 and "pre" not in sel and sel not in ELLIPSIS_OK:
             problems.append(f"{where}: {sel} overflows horizontally by {b['overflowX']}px")
         limit = LINE_LIMITS.get(sel)
         if limit and b["lines"] > limit and width >= 641:
@@ -441,11 +513,44 @@ def audit(data, scenario, scheme, width, scrolled: bool, generating=False) -> li
                 "the fold while its answer generates"
             )
 
+    for sel in INTERACTIVE:
+        b = els.get(sel)
+        # 'offscreen' is covered by the geometry checks above and is expected for
+        # in-flow content once the page is scrolled. What this is here to catch is
+        # a control that is on screen with something painted over it.
+        if b and b["hit"] and b["hit"] != "offscreen":
+            problems.append(f"{where}: {sel} is not clickable — {b['hit']} is on top")
+
+    # The picker is the one control with no second home on the landing screen, so
+    # it has to be reachable in every scenario and every scroll state.
+    if picker and picker["hit"]:
+        problems.append(f"{where}: the model picker is unreachable ({picker['hit']})")
+
+    asked, answered = els.get(".user-bubble"), els.get(".st-key-answer-0")
+    if asked and answered:
+        gap = answered["top"] - asked["bottom"]
+        low, high = GAP_QUESTION_TO_ANSWER
+        if not low <= gap <= high:
+            problems.append(
+                f"{where}: {gap}px between the question and its answer "
+                f"(want {low}–{high})"
+            )
+
     newest = els.get(".st-key-answer-5") or els.get(".st-key-answer-0") or els.get(".error-card")
-    if scrolled and not generating and newest and bar and newest["bottom"] > bar["top"]:
-        problems.append(
-            f"{where}: newest content is {newest['bottom'] - bar['top']}px under the input bar"
-        )
+    if newest and bar:
+        gap = bar["top"] - newest["bottom"]
+        # Scrolled to the very end, nothing may hide under the fixed input.
+        if state == "scrolled" and gap < 0:
+            problems.append(f"{where}: newest content is {-gap}px under the input bar")
+        # Just finished: this is the view the reader is actually left looking at,
+        # so it is the one that must not be a third of a screen of nothing. Only
+        # meaningful if the page could scroll at all — a conversation shorter than
+        # the window leaves a gap because there is nothing to fill it.
+        if state == "settled" and data["scrolled"] > 0 and gap > MAX_TAIL_GAP:
+            problems.append(
+                f"{where}: {gap}px of dead space between the last message and the "
+                f"input bar (want at most {MAX_TAIL_GAP})"
+            )
     return problems
 
 
@@ -458,25 +563,25 @@ def main() -> int:
     for scenario, body in SCENARIOS.items():
         for scheme in ("dark", "light"):
             for width, height in widths:
-                # Every screen is checked twice: as the user lands on it, and
-                # scrolled to the bottom the way app.js leaves it after a reply.
-                # at rest / user-scrolled / generating (app.js driving the scroll)
-                states = ([(False, False)] if scenario == "landing"
-                          else [(False, False), (True, False), (False, True)])
-                for scroll, generating in states:
-                    suffix = "-scrolled" if scroll else ("-generating" if generating else "")
+                # at rest, scrolled to the bottom, mid-generation (app.js
+                # pinning the question), and just-finished (app.js closing the
+                # dead space the pin left behind).
+                states = (["rest"] if scenario == "landing"
+                          else ["rest", "scrolled", "generating", "settled"])
+                for state in states:
+                    suffix = "" if state == "rest" else f"-{state}"
                     name = f"{scenario}-{scheme}-{width}{suffix}"
-                    data = render(name, page(body, scheme, scroll, generating), width, height,
-                                  shot=(scheme == "dark" and width == 1263 and not scroll
-                                        and not generating))
+                    html = page(body, scheme, scroll=state == "scrolled",
+                                generating=state == "generating",
+                                pin=state == "settled")
+                    data = render(name, html, width, height,
+                                  shot=(scheme == "dark" and width == 1263
+                                        and state == "rest"))
                     if data is None:
                         failures.append(f"{name}: render failed")
                         continue
                     checked += 1
-                    failures.extend(
-                        audit(data, scenario, scheme, width,
-                              scroll or generating, generating)
-                    )
+                    failures.extend(audit(data, scenario, scheme, width, state))
                     if verbose:
                         print(f"\n--- {name} (usable {data['viewport']['h']}px, "
                               f"scrollTop {data['scrolled']}) ---")

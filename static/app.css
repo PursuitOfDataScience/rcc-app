@@ -60,6 +60,11 @@
     --space-md: 1rem;
     --space-lg: 1.5rem;
 
+    /* Streamlit's own header strip: full width, transparent, and on top of
+     * everything. Nothing clickable may sit inside it. Content and the top bar
+     * both clear it by this much. */
+    --host-header: 3.75rem;
+
     --content-max: min(820px, 92vw);
     --input-max: min(780px, 88vw);
     --user-bubble-max: 78%;
@@ -115,17 +120,19 @@
 [data-testid="stSidebar"], [data-testid="stSidebarCollapsedControl"] { display: none !important; }
 [data-testid="manage-app-button"] { display: none !important; }
 
-/* Top padding must clear the fixed top bar AND any host chrome (Streamlit
- * Community Cloud overlays its own toolbar). The previous stylesheet got this
- * spacing by accident, from padding on an empty .chat-container marker div;
- * setting it to 0 here sliced the first message in half at the viewport top. */
+/* Top padding clears Streamlit's header strip, so nothing lands in the band it
+ * takes the clicks for. The previous stylesheet got this spacing by accident,
+ * from padding on an empty .chat-container marker div; setting it to 0 here
+ * sliced the first message in half at the viewport top. */
 .main .block-container,
 [data-testid="stMainBlockContainer"] {
-    padding-top: 2.75rem !important;
-    /* Must clear the fixed input bar. Streamlit's own default is 10rem for exactly
-     * this reason; overriding it to 1.5rem left the newest answer 131px underneath
-     * the input (measured — see tools/render_check.py). */
-    padding-bottom: 11rem !important;
+    padding-top: var(--host-header) !important;
+    /* Must clear the fixed input bar, and not much more: this padding is also
+     * how far the page can scroll past its last message, so every extra rem
+     * shows up as dead space under the newest answer. 11rem was 50px too many;
+     * 1.5rem (an older attempt) left the answer 131px *underneath* the input.
+     * tools/render_check.py now bounds the gap at both ends. */
+    padding-bottom: 10.25rem !important;
     max-width: var(--content-max);
 }
 
@@ -138,18 +145,33 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
     overflow-x: hidden !important;
 }
 
-/* ===== TOP BAR (about + clear) ===== */
+/* ===== TOP BAR (model picker + about + clear) ===== */
+
+/* In flow, not fixed.
+ *
+ * `position: fixed; top: 8px` put this bar inside `[data-testid="stHeader"]` —
+ * Streamlit's own full-width strip across the top of every app. That header is
+ * transparent, so the bar was never hidden and every mock-up of it looked
+ * right; it is also at a z-index no stylesheet can outrank in practice, so it
+ * took every click aimed at the controls underneath. The bar was on screen and
+ * completely dead, which is why three rounds of width fixes changed nothing.
+ *
+ * In flow it cannot be positioned into a dead zone. `sticky` keeps it reachable
+ * once the conversation scrolls, and its failure mode is "stops following the
+ * scroll", not "vanishes". `top` clears the header rather than fighting it. */
 .st-key-topbar {
-    position: fixed;
-    top: 8px;
-    /* Left, not right: hosts (Streamlit Community Cloud) overlay their own
-     * toolbar at the top right and it sits on top of these controls. */
-    left: 16px;
-    z-index: 1000;
-    width: auto !important;
+    position: sticky;
+    top: var(--host-header);
+    z-index: 100;
+    width: 100% !important;
+    margin-bottom: var(--space-sm) !important;
 }
 
-.st-key-topbar [data-testid="stHorizontalBlock"] { gap: 0.4rem !important; width: auto !important; }
+.st-key-topbar [data-testid="stHorizontalBlock"] {
+    gap: 0.4rem !important;
+    width: auto !important;
+    justify-content: flex-start;
+}
 .st-key-topbar [data-testid="stColumn"] { width: auto !important; flex: 0 0 auto !important; min-width: 0 !important; }
 
 /* Model picker. A popover trigger, i.e. a button, so it is sized by its own
@@ -451,7 +473,10 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
 .user-message {
     display: flex;
     justify-content: flex-end;
-    margin: clamp(1.25rem, 3vw, 2.25rem) 0 clamp(0.75rem, 2vw, 1.25rem) 0;
+    /* The bottom margin is the gap between a question and its answer. It was
+     * tight enough that the two read as one block; the answer needs to start
+     * clearly after the question, not immediately under it. */
+    margin: clamp(1.25rem, 3vw, 2.25rem) 0 clamp(1.15rem, 2.4vw, 1.6rem) 0;
     padding-right: clamp(0.25rem, 2vw, 1rem);
 }
 
@@ -741,9 +766,12 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
     .welcome-subtitle { margin-bottom: 0.35rem; }
     [class*="st-key-example-card-"] button { height: 48px !important; min-height: 48px !important; }
     .st-key-examples [data-testid="stHorizontalBlock"] { margin-bottom: 0.45rem !important; }
-    /* Still has to clear the host toolbar (~46px); the space is clawed back from
-     * the card heights and the welcome margins above, not from this. */
-    .main .block-container, [data-testid="stMainBlockContainer"] { padding-top: 3.5rem !important; }
+    /* Still has to clear Streamlit's header; the space is clawed back from the
+     * card heights and the welcome margins above, never from this. */
+    .main .block-container, [data-testid="stMainBlockContainer"] {
+        padding-top: var(--host-header) !important;
+    }
+    .st-key-topbar { margin-bottom: var(--space-xs) !important; }
 }
 
 /* ===== MOBILE ===== */
@@ -757,16 +785,15 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
 
     .user-message { padding-right: 0 !important; }
     .user-bubble { max-width: 88%; }
-    /* At this width the host toolbar spans over half the screen, so the controls
-     * cannot sit beside it — drop them below it instead, and give the content
-     * enough top padding to clear both. */
-    .st-key-topbar { top: 52px; left: 8px; right: 8px; }
-    .st-key-topbar [data-testid="stSelectbox"] { width: auto !important; min-width: 0; flex: 1; }
-    .st-key-topbar [data-testid="stColumn"]:has([data-testid="stSelectbox"]) {
-        flex: 1 1 auto !important;
-        width: auto !important;
+    /* At this width the host toolbar spans over half the screen. The bar is in
+     * flow below it, so there is nothing to dodge — it just needs to not try to
+     * share the line with the model name. */
+    .st-key-topbar [data-testid="stPopover"] button { max-width: 11rem; }
+    /* The disclaimer under the input wraps to more lines here, so the input bar
+     * is taller and the content needs to clear more of it. */
+    .main .block-container, [data-testid="stMainBlockContainer"] {
+        padding-bottom: 11rem !important;
     }
-    .main .block-container, [data-testid="stMainBlockContainer"] { padding-top: 6rem !important; }
     .welcome { margin-top: 4vh; }
 }
 
