@@ -577,6 +577,9 @@ function snapshot() {
            // that reservation is wrong it lands under the input with no scroll
            // available to reveal it.
            canScroll: !!main && main.scrollHeight - main.clientHeight > 1,
+           // Already as far down as the page goes. The scroll pin clamps to this,
+           // so a question that looks low here is as high as it can be put.
+           atEnd: !main || main.scrollHeight - main.clientHeight - main.scrollTop <= 2,
            docOverflowX: Math.max(0, document.documentElement.scrollWidth - innerWidth),
            reserved: {bar: root.getPropertyValue('--bar-h').trim(),
                       strip: root.getPropertyValue('--strip-h').trim()},
@@ -778,8 +781,17 @@ def audit(data, scenario, scheme, width, state: str) -> list[str]:
         # a "Reading…" row under it, which put the question halfway down the window
         # with the answer arriving into the bottom of it and the top half empty.
         # Reported as "way below the top of the page, which looks very off".
-        ceiling = round(data["viewport"]["h"] * 0.4)
-        if asked and asked["top"] > ceiling:
+        # 0.35 rather than 0.4 of the window. At 0.4 this cleared the failure it
+        # exists to catch by two pixels at 966×626 — a guard that passes by 2px is
+        # one font metric away from not passing at all. With the slack suppressed
+        # mid-turn the question sits ~100px down at every width, so the tighter
+        # ceiling costs nothing and buys ~30px of margin at the narrowest window.
+        ceiling = round(data["viewport"]["h"] * 0.35)
+        # Not when the page is scrolled as far as it goes: the pin clamps to max
+        # scroll, so on a conversation whose last turn is near the end of the
+        # document the question cannot be lifted any higher and this would be
+        # asking the layout for something the geometry forbids.
+        if asked and asked["top"] > ceiling and not data.get("atEnd", False):
             problems.append(
                 f"{where}: the question is {asked['top']}px down the window while "
                 f"its answer generates (want no lower than {ceiling})"
