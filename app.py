@@ -365,10 +365,11 @@ def start_new_turn(question: str, attachment=None) -> None:
 # Under the input rather than injected by app.js: it is static text, and a real
 # element rendered by Streamlit is exposed to assistive tech and translatable in
 # a way that a JS-appended node in a container React owns is not.
-DISCLAIMER = (
-    "Sage can make mistakes and cannot see your account or jobs. "
-    "Verify commands against the linked docs."
-)
+# Short enough for one line beside the model name at 768px, which is what keeps it
+# a caveat rather than a paragraph at the bottom of the window. "Verify commands
+# against the linked docs" was the casualty; the Sources strip under every answer is
+# already the link it was pointing at.
+DISCLAIMER = "Sage can make mistakes and cannot see your account or jobs."
 
 
 def disclaimer_html() -> str:

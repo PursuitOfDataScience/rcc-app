@@ -189,7 +189,13 @@
     // instead of doing damage.
     function fill(port) {
         var bar = doc.querySelector('[data-testid="stBottomBlockContainer"]');
-        if (!bar || !doc.querySelector('.chat-container')) {
+        // Not while an answer is coming. A question and a "Reading…" row are short,
+        // so this would sit them just above the composer and stream the answer into
+        // the bottom of the window with most of the page empty above it — which is
+        // where a question goes to be read, not where it goes to be answered. The
+        // pin puts it at the top for the duration; this takes over once the answer
+        // has landed and its real height is known.
+        if (!bar || isProcessing() || !doc.querySelector('.chat-container')) {
             publish('--fill', 0);
             return;
         }
