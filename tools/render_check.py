@@ -14,7 +14,16 @@ It has already caught what reading the CSS did not:
   * a maroon focus ring at 1.73:1 on the dark background;
   * the controls under the input painted over by Streamlit's own pinned bar;
   * 19–25px between a question and its answer, and up to 566px of nothing
-    between the last message and the input box.
+    between the last message and the input box;
+  * the slack above a short conversation growing by 42px a frame, because a media
+    query was quietly overriding the padding it was being applied to.
+
+The dead space at the end of a conversation outlived three rounds of fixes because
+of a line in this file: the bar was modelled `position: fixed`, the stylesheet
+reserved a bar's worth of room at the end of the page on the strength of it, and
+that reservation *was* the dead space. Streamlit also ships it `sticky`, in the
+flow, where it needs no room reserved at all. Half the screens here are rendered
+each way now, and app.js asks the browser which one it is looking at.
 
 It also, for a while, cheerfully passed a top bar that was completely unusable,
 because the replica modelled Streamlit's header as a small right-aligned box
@@ -172,8 +181,26 @@ body {{ margin: 0; background: {BACKGROUNDS[scheme]}; color: {FOREGROUNDS[scheme
    color: inherit; border: 1px solid {'#3a3b46' if scheme == 'dark' else '#d5d6d8'};
    font: inherit; cursor: pointer; }}
 .stButton button p {{ margin: 0; }}
-[data-testid="stBottomBlockContainer"] {{ position: fixed; bottom: 0; left: 0; right: 0;
+/* The pinned input bar, modelled BOTH ways — see `page(sticky=…)`. `fixed` paints
+   it over the conversation, so the page must leave a bar's worth of room at the end
+   or the newest answer hides underneath; `sticky` puts it in the flow at the end of
+   the scrolling area, where it takes its own space and reserving that room again is
+   dead space. Streamlit has shipped both, this harness asserted the first for a
+   year, and app.js now asks the browser which one it is looking at. */
+[data-testid="stBottomBlockContainer"] {{
    background: {BACKGROUNDS[scheme]}; padding: 1rem; z-index: {HOST_Z}; }}
+.bar-fixed [data-testid="stBottomBlockContainer"] {{ position: fixed; bottom: 0;
+   left: 0; right: 0; }}
+.bar-sticky [data-testid="stBottom"] {{ position: sticky; bottom: 0;
+   z-index: {HOST_Z}; }}
+/* Sticky alone would leave the input floating mid-page whenever the conversation
+   is short — `bottom: 0` only offsets an element that would otherwise scroll out
+   of view. So the in-flow version has to come with a column that fills the height
+   and a block that grows into it, which is what puts the bar at the bottom of a
+   short page and, incidentally, what makes any padding this stylesheet reserves
+   for the bar pure dead space above it. */
+.bar-sticky [data-testid="stMain"] {{ display: flex; flex-direction: column; }}
+.bar-sticky .block-container {{ flex: 1 0 auto; }}
 .stChatInput > div {{ background: {'#262730' if scheme == 'dark' else '#f0f2f6'}; }}
 .stChatInput textarea {{ width: 100%; background: transparent; border: 0;
                         color: inherit; font: inherit; resize: none; }}
@@ -224,25 +251,23 @@ def strip(clear: bool = True, wrapped: bool = True) -> str:
     """
     trash = ('<div class="element-container"><div class="stButton">'
              "<button><p>🗑️</p></button></div></div>") if clear else ""
-    # Clear first, picker last, in app.py's order: the row is right-aligned, so
-    # this is what decides which control ends up in the corner.
-    controls = f"""{trash}
+    # Disclaimer, Clear, picker — app.py's order, and the order that decides the
+    # line: the disclaimer takes the space on the left and the picker ends up in
+    # the corner. All three are one row now; the disclaimer had a second row to
+    # itself until two rows of furniture under the input were one too many.
+    controls = f"""
+    <div class="element-container"><div class="stMarkdown">
+      <p class="ai-disclaimer">{DISCLAIMER} <a href="#">RCC Help Desk</a></p>
+    </div></div>
+    {trash}
     <div class="element-container"><div data-testid="stPopover"><div class="stPopover">
       <button><p>Zen · deepseek-v4-flash-free</p></button>
     </div></div></div>"""
-    disclaimer = ('<div class="element-container"><div class="stMarkdown">'
-                  f'<p class="ai-disclaimer">{DISCLAIMER}</p></div></div>')
     if wrapped:
         return f"""<div class="st-key-composer-strip" data-testid="stVerticalBlockBorderWrapper">
- <div data-testid="stVerticalBlock">
-  <div class="st-key-controls" data-testid="stVerticalBlockBorderWrapper">
-   <div data-testid="stVerticalBlock">{controls}</div></div>
-  {disclaimer}
- </div></div>"""
+ <div data-testid="stVerticalBlock">{controls}</div></div>"""
     return f"""<div class="st-key-composer-strip" data-testid="stVerticalBlock">
- <div class="st-key-controls" data-testid="stVerticalBlock">{controls}</div>
- {disclaimer}
-</div>"""
+ {controls}</div>"""
 
 
 def answer_block(index: int) -> str:
@@ -307,19 +332,13 @@ LANDING = f"""
     <h1 class="welcome-title">What can I help you with?</h1>
     <p class="welcome-subtitle">{SUBTITLE}</p>
   </div></div></div>
-<div class="st-key-examples element-container">{_cards_html()}</div>
-<div class="element-container"><div class="stMarkdown">
-  <div class="landing-note">
-    <p><strong>Read-only.</strong> Every answer is retrieved from the official
-    <a href="#">RCC</a> User Guide and website, and cites the sections it used. Sage
-    cannot run commands or read files on the cluster, and cannot see your account,
-    jobs, quotas or allocations.</p>
-    <p>Still stuck? Ask the <a href="#">RCC Help Desk</a>, email
-    <a href="#">help@rcc.uchicago.edu</a>, or drop into the walk-in lab in
-    Regenstein 216 during business hours.</p>
-    <p class="landing-meta">Documentation synced 2026-08-01 · user-guide
-    <code>a1b2c3d</code> · 412 sections from 2 sources</p>
-  </div></div></div>"""
+<div class="st-key-examples element-container">{_cards_html()}</div>"""
+
+# Which screens render the bar in the flow rather than fixed over the page. Split
+# across the scenarios rather than doubling every render: both ways of pinning it
+# are then audited at every width, in both themes, in every state. Whichever
+# Streamlit is doing, one of these six is looking at it.
+STICKY_BAR = {"landing-flat", "answer", "long-chat"}
 
 # The strip's container shape alternates across the screens, so both shapes are
 # audited at every width, in both themes, in every state.
@@ -480,7 +499,7 @@ setTimeout(snapshot, 700);
 
 # The model picker's trigger. Named because three checks below treat it specially:
 # collapsed width, whether it is inside the strip pinned for it, and reachability.
-PICKER = '.st-key-controls [data-testid="stPopover"] button'
+PICKER = '.st-key-composer-strip [data-testid="stPopover"] button'
 # The strip the controls sit in, and the input it must never cover.
 STRIP = ".st-key-composer-strip"
 INPUT = ".stChatInput textarea"
@@ -489,16 +508,13 @@ SELECTORS = [
     ".welcome-title", ".welcome-subtitle", ".user-bubble", "last:.user-bubble",
     ".error-card", ".notice", ".st-key-error-actions",
     ".error-title", ".error-body", ".ai-disclaimer", ".sources-label",
-    # The note that replaced the ℹ️ popover, and its quietest line: small muted
-    # text on the landing screen is exactly where a contrast regression hides.
-    ".landing-note", ".landing-note .landing-meta",
     ".source-chip", ".st-key-answer-5", ".st-key-answer-0", ".stChatMessage pre",
     ".stChatMessage code", '[data-testid="stBottomBlockContainer"]',
     STRIP, INPUT,
-    ".st-key-controls button",
+    ".st-key-composer-strip button",
     # The rightmost control in the strip, so the row is measured end to end: with
     # a model name in it, it is the widest thing under the input.
-    "last:.st-key-controls button",
+    "last:.st-key-composer-strip button",
     PICKER,
     # The error card's actions. The switch one carries a whole model name, so it
     # is the widest button in the app and the first thing to overflow at 360px.
@@ -511,7 +527,7 @@ SELECTORS = [
 # it reserves: if the two measurements ever disagree, the strip lands on the
 # textarea, and "the box will not take a click" is the worst bug in the app.
 INTERACTIVE = {
-    PICKER, ".st-key-controls button", "last:.st-key-controls button", INPUT,
+    PICKER, ".st-key-composer-strip button", "last:.st-key-composer-strip button", INPUT,
     ".st-key-retry button p", ".st-key-switch-model button p",
     *(f".st-key-example-card-{i} button p" for i in range(6)),
 }
@@ -521,7 +537,7 @@ INTERACTIVE = {
 # everywhere, since the row is right-aligned and it belongs in the corner. So all
 # three selectors that can reach it are exempt from the overflow check; the emoji
 # button they also reach has nothing to ellipse.
-ELLIPSIS_OK = {PICKER, ".st-key-controls button", "last:.st-key-controls button"}
+ELLIPSIS_OK = {PICKER, ".st-key-composer-strip button", "last:.st-key-composer-strip button"}
 
 # How far apart things should be, in px. Both ends matter: the first of these was
 # reported twice as "barely any spacing between the user and AI messages", at a
@@ -534,25 +550,37 @@ MAX_TAIL_GAP = 64
 
 
 def page(body: str, scheme: str, scroll: bool, generating: bool = False,
-         pin: bool = False, script: bool = True) -> str:
-    """The replica, with or without app.js.
+         pin: bool = False, script: bool = True, sticky: bool = False) -> str:
+    """The replica, with or without app.js, and with the bar pinned either way.
 
     `script=False` is the app's first frame: the stylesheet's own fallback for how
     much room the bar takes, before app.js has measured the real thing. It is a
     state a user sees, and it is the one CI caught an answer 2px underneath the
     input in — the two fallbacks disagreed with each other by 26px and every
     render that ran app.js papered over it.
+
+    `sticky` is the other thing Streamlit does with its bottom container: put it in
+    the flow at the end of the scrolling area rather than fixed over the page. This
+    replica asserted `fixed` from the day it was written, the stylesheet reserved a
+    bar's worth of room at the end of every conversation on the strength of it, and
+    that reservation was the dead space three rounds of fixes could not find.
+    Nothing here is allowed to model only one of them again.
     """
+    bar = ('<div data-testid="stBottom">'
+           '<div data-testid="stBottomBlockContainer">'
+           '<div class="stChatInput"><div>'
+           '<textarea placeholder="Ask anything about RCC…"></textarea>'
+           "</div></div></div></div>")
     return f"""<!doctype html><html><head><meta charset="utf-8">
-<style>{base_css(scheme)}</style><style>{theme_css(scheme)}</style></head><body>
+<style>{base_css(scheme)}</style><style>{theme_css(scheme)}</style></head>
+<body class="{'bar-sticky' if sticky else 'bar-fixed'}">
 <div data-testid="stHeader"></div><div id="host-bar"></div>
 <div data-testid="stAppViewContainer">
   <div data-testid="stMain" class="main">
     <div data-testid="stMainBlockContainer" class="block-container">
-      <div data-testid="stVerticalBlock">{body}</div></div></div>
-  <div data-testid="stBottomBlockContainer">
-    <div class="stChatInput"><div><textarea placeholder="Ask anything about RCC…"></textarea></div></div>
-  </div></div>
+      <div data-testid="stVerticalBlock">{body}</div></div>
+    {bar if sticky else ''}</div>
+  {'' if sticky else bar}</div>
 {'<div id="processing-signal" hidden></div>' if generating else ''}
 <script>window.__scrollBottom = {str(scroll).lower()}; window.__pinLast = {str(pin).lower()};</script>
 {'<script>' + JS + '</script>' if script else ''}
@@ -754,7 +782,8 @@ def main() -> int:
                     html = page(body, scheme, scroll=state == "scrolled",
                                 generating=state == "generating",
                                 pin=state == "settled",
-                                script=state != "unmeasured")
+                                script=state != "unmeasured",
+                                sticky=scenario in STICKY_BAR)
                     data = render(name, html, width, height,
                                   shot=(scheme == "dark" and width == 1263
                                         and state == "rest"))

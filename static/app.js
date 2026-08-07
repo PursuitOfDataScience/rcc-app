@@ -93,6 +93,32 @@
         return Math.max(0, Math.min(raw, Math.round(view.innerHeight * 0.4)));
     }
 
+    // Does the input bar sit ON the page, or IN it?
+    //
+    // This is the question the whole bottom of the layout turns on, and it was
+    // answered wrong for as long as this file has existed. If the bar is `fixed`
+    // it is painted over the conversation, and the page has to leave a bar's worth
+    // of room at the end or the newest answer hides underneath it. If it is
+    // `sticky` it is *in the flow* at the end of the scrolling area — it already
+    // occupies its own space, and reserving that much again is dead space at the
+    // end of every conversation. Streamlit has done both across versions.
+    //
+    // tools/render_check.py modelled it as fixed, which is where the famous "the
+    // newest answer is 131px underneath the input" measurement came from: a replica
+    // asserting a layout the app may not have. Three rounds of trying to close a
+    // gap by tuning padding, alignment and scrolling never touched the padding that
+    // was the gap. So this asks the browser instead of guessing.
+    function overlays(bar) {
+        for (var node = bar; node && node !== doc.body; node = node.parentElement) {
+            var position = view.getComputedStyle(node).position;
+            if (position === 'fixed') return true;
+            if (position === 'sticky') return false;
+        }
+        // Unknown: reserve the room. A little dead space is a blemish; an answer
+        // hidden under the input is unreadable.
+        return true;
+    }
+
     function measureChrome() {
         var strip = doc.querySelector('.st-key-composer-strip');
         var bar = doc.querySelector('[data-testid="stBottomBlockContainer"]');
@@ -100,7 +126,7 @@
         // gives the bar its final height. Reading the bar's rect afterwards
         // flushes that change, so both values come from the same layout.
         if (strip) publish('--strip-h', band(strip));
-        if (bar) publish('--bar-h', band(bar));
+        if (bar) publish('--bar-h', overlays(bar) ? band(bar) : 0);
         watch(strip, bar);
     }
 
@@ -151,26 +177,30 @@
     // guess is wrong the overflow goes out of the end of a scrollport that cannot
     // be scrolled back. Padding at the top can only push content down.
     //
-    // Two things keep it from fighting itself. It is measured with its own last
-    // value subtracted, so what it computes never depends on what it computed
-    // before; and it is only applied to a page that would not scroll without it,
-    // measured the same way, so a long conversation scrolled up to the top cannot
-    // be read as a screenful of slack.
+    // It measures from the layout with no fill at all — set to zero, read, decide —
+    // rather than subtracting its own last value from what it sees. Those are the
+    // same number only while the padding is actually moving the conversation, and
+    // the first version assumed that: a `padding-top` override in a media query
+    // quietly won on every window under 720px, so the content never moved, "what is
+    // left after the padding I applied" grew by the same 42px every frame, and the
+    // fill ran away to the height of the window. Measuring the real thing costs one
+    // extra reflow and cannot diverge, because nothing it reads depends on its own
+    // previous output. If something is ignoring the padding, this now does nothing
+    // instead of doing damage.
     function fill(port) {
-        var applied = parseFloat(
-            doc.documentElement.style.getPropertyValue('--fill')
-        ) || 0;
         var bar = doc.querySelector('[data-testid="stBottomBlockContainer"]');
-        var end = tail();
-        if (!bar || end === null || !doc.querySelector('.chat-container')) {
+        if (!bar || !doc.querySelector('.chat-container')) {
             publish('--fill', 0);
             return;
         }
-        if (port.scrollHeight - applied > port.clientHeight + 1) {
-            publish('--fill', 0);   // long enough to scroll; there is no slack
-            return;
+        publish('--fill', 0);
+        // Reads below force the reflow that makes that zero real.
+        if (port.scrollHeight > port.clientHeight + 1) {
+            return;   // long enough to scroll on its own; there is no slack
         }
-        var slack = bar.getBoundingClientRect().top - (end - applied) - TAIL_GAP;
+        var end = tail();
+        if (end === null) return;
+        var slack = bar.getBoundingClientRect().top - end - TAIL_GAP;
         publish('--fill', Math.max(0, Math.min(Math.round(slack), port.clientHeight)));
     }
 
