@@ -113,7 +113,9 @@ python tools/render_check.py -v              # also print every measurement
 It renders eight screens (landing, landing again with the other container shape
 Streamlit emits, answer, short answer, long chat, that same long chat with the
 scrollbar on the document instead of on the main block, a question mid-answer,
-error) in both colour schemes at five widths, in five states — the first frame,
+error) in both colour schemes at five widths — 1440, 1263, 966, 768 and 500, the
+last being Chromium's own floor for a headless window rather than a phone's width,
+because it will not open one narrower — in five states — the first frame,
 before `static/app.js` has measured how much room the input bar needs; at rest;
 scrolled; mid-generation; and just-finished, the last four with the real
 `static/app.js` driving the page — 300 renders. Five of the screens pin
@@ -142,6 +144,13 @@ a type, and it won here only because the replica had no paragraph size of its
 own to lose to — and that same slack being applied while an answer was still
 generating, which put the question halfway down the window with the answer
 arriving into the bottom of it. Both are modelled now.
+
+The same rule caught the harness itself: `--window-size` is the outer window, so
+every height was rendering 87px shorter than the number in the list, and the 414px
+phone was rendering at 500px because Chromium will not open a headless window
+narrower than that. Both are measured at startup now, and a render whose viewport is
+not the one asked for is a failure rather than a quiet substitution — what is still
+not covered is a real 414px screen, and the list says so instead of implying it is.
 
 The document-scrolling screen is the newest, and worth being precise about what it
 bought: it caught `sync()` naming `[data-testid="stMain"]` as the scrollport while

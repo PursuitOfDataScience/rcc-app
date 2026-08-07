@@ -43,6 +43,15 @@ checks came out of that and are the ones worth keeping honest:
   * whatever the harness cannot see, it must not silently model away — a wrong
     model is worse than no model, because it reads as a pass.
 
+The second of those caught this file itself. `--window-size` is the *outer* window,
+so every height came back 87px short of the number asked for, and Chromium will not
+open a headless window narrower than 500px however small a number it is given: the
+414px phone in the width list was rendered at 500px for as long as the list existed,
+and every failure it reported named a size it was not looking at. Both numbers are
+measured at startup by `calibrate()` now, the window is asked for the chrome on top
+of the viewport wanted, and any render whose viewport is not the one requested is
+reported as a failure instead of being quietly measured.
+
 Five states per screen — the first frame with no app.js at all, at rest, scrolled to
 the end, mid-generation, and just finished — except the two landing screens, which
 have no turn to be in the middle of and render the first two, and the mid-answer
@@ -734,12 +743,55 @@ def page(body: str, scheme: str, scroll: bool, generating: bool = False,
 </body></html>"""
 
 
+_PROBE = ('<!doctype html><html><body><script>document.title='
+          'JSON.stringify({w:innerWidth,h:innerHeight})</script></body></html>')
+
+
+def calibrate():
+    """What viewport does `--window-size` actually produce?
+
+    Not the one it asks for. `--window-size` is the *outer* window, so every height
+    comes back short by the browser's own chrome, and Chromium will not open a window
+    narrower than a floor of its own however small a number it is given. This harness
+    asked for 414x896 for a year and rendered 500x809: the phone width it claimed to
+    cover did not exist, and every failure it reported named a size it was not looking
+    at. Measured here rather than hardcoded, because both numbers belong to whichever
+    Chromium is installed.
+    """
+    path = os.path.join(HERE, "_calibrate.html")
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(_PROBE)
+    def probe(w, h):
+        out = subprocess.run(
+            [CHROME, "--headless", "--no-sandbox", "--disable-gpu", "--hide-scrollbars",
+             f"--window-size={w},{h}", "--virtual-time-budget=300", "--dump-dom",
+             f"file://{path}"], capture_output=True, text=True, timeout=120).stdout
+        start, end = out.find("<title>"), out.find("</title>")
+        if start == -1:
+            raise SystemExit("render_check: could not calibrate the viewport — "
+                             f"{CHROME} produced no measurement")
+        return json.loads(out[start + 7 : end])
+    big = probe(1200, 1000)
+    floor = probe(1, 1)
+    os.remove(path)
+    return {"chrome_h": 1000 - big["h"], "chrome_w": 1200 - big["w"],
+            "min_w": floor["w"], "min_h": floor["h"]}
+
+
+VIEWPORT = None   # filled in by main(); {'chrome_h', 'chrome_w', 'min_w', 'min_h'}
+
+
 def render(name, html, width, height, shot=False):
     path = os.path.join(HERE, f"{name}.html")
     with open(path, "w", encoding="utf-8") as fh:
         fh.write(html)
+    # `width`/`height` are the CSS viewport wanted, so the window has to be asked for
+    # the chrome on top of it. Whether that landed is checked per render in main().
+    pad_w = VIEWPORT["chrome_w"] if VIEWPORT else 0
+    pad_h = VIEWPORT["chrome_h"] if VIEWPORT else 0
     cmd = [CHROME, "--headless", "--no-sandbox", "--disable-gpu", "--hide-scrollbars",
-           f"--window-size={width},{height}", "--virtual-time-budget=1500"]
+           f"--window-size={width + pad_w},{height + pad_h}",
+           "--virtual-time-budget=1500"]
     if shot:
         cmd.append(f"--screenshot={os.path.join(HERE, name + '.png')}")
     cmd += ["--dump-dom", f"file://{path}"]
@@ -946,8 +998,16 @@ def audit(data, scenario, scheme, width, state: str) -> list[str]:
 
 
 def main() -> int:
+    global VIEWPORT
     verbose = "-v" in sys.argv
-    widths = [(1440, 1080), (1263, 900), (966, 626), (768, 900), (414, 896)]
+    VIEWPORT = calibrate()
+    # The narrowest entry is Chromium's own floor rather than a phone's width, because
+    # a headless window will not go below it and a number it silently ignores is worse
+    # than an honest one: this list said 414px for a year and rendered 500px. 500 is
+    # still under the 640px mobile breakpoint, so the mobile rules are exercised — what
+    # is not covered is a real 414px screen, and saying so is the point.
+    widths = [(1440, 1080), (1263, 900), (966, 626), (768, 900),
+              (VIEWPORT["min_w"], 896)]
     failures: list[str] = []
     checked = 0
 
@@ -981,6 +1041,17 @@ def main() -> int:
                         failures.append(f"{name}: render failed")
                         continue
                     checked += 1
+                    # Every measurement below is only about the viewport it was taken
+                    # in, so a viewport that is not the one asked for invalidates the
+                    # render rather than failing a check inside it.
+                    got = (data["viewport"]["w"], data["viewport"]["h"])
+                    if got != (width, height):
+                        failures.append(
+                            f"{name}: asked for a {width}x{height} viewport and got "
+                            f"{got[0]}x{got[1]} — nothing measured here is about the "
+                            f"size it claims"
+                        )
+                        continue
                     failures.extend(audit(data, scenario, scheme, width, state))
                     if verbose:
                         print(f"\n--- {name} (usable {data['viewport']['h']}px, "
