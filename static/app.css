@@ -369,14 +369,19 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
 }
 
 .welcome-subtitle {
-    font-size: clamp(0.95rem, 2.1vw, 1.12rem);
+    /* !important for the same reason the disclaimer needs it: this is the app's
+     * only other markdown paragraph, Streamlit sizes those at one class and one
+     * type, and a bare `.welcome-subtitle` is one class. The title next to it has
+     * carried !important since it was written; this one never did, which means it
+     * has probably never rendered at the clamp below. */
+    font-size: clamp(0.95rem, 2.1vw, 1.12rem) !important;
+    line-height: 1.55 !important;
     color: var(--text-secondary);
     /* Wide enough to keep the one-line subtitle on one line; it still wraps
      * gracefully on narrow screens. */
     max-width: min(40rem, 92vw);
     text-wrap: pretty;
     margin: 0 auto 0.6rem;
-    line-height: 1.55;
     animation: fadeInUp 0.6s ease-out 0.25s both;
 }
 

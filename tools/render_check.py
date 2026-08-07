@@ -369,6 +369,27 @@ LANDING = f"""
   </div></div></div>
 <div class="st-key-examples element-container">{_cards_html()}</div>"""
 
+def _check_balanced(scenarios: dict) -> None:
+    """Every fixture must close every div it opens.
+
+    One missing `</div>` in the mid-answer screen re-parented everything after it:
+    Streamlit's bottom container was parsed *inside* the block that holds the
+    conversation instead of beside it, so the in-flow bar landed mid-window with
+    553px of empty page below it. Nothing failed — the checks that would have
+    noticed only run in states that screen does not render — so the screen added to
+    catch a bug was structurally unable to see it. A replica that is not the shape
+    it claims to be is the one failure mode this harness cannot afford.
+    """
+    for name, body in scenarios.items():
+        opened = len(re.findall(r"<div\b", body))
+        closed = len(re.findall(r"</div\s*>", body))
+        if opened != closed:
+            raise SystemExit(
+                f"render_check: the {name!r} fixture opens {opened} divs and closes "
+                f"{closed}. Every render of it measures a DOM the app never has."
+            )
+
+
 # Which screens render the bar in the flow rather than fixed over the page. Split
 # across the scenarios rather than doubling every render: both ways of pinning it
 # are then audited at every width, in both themes, in every state. Whichever
@@ -394,7 +415,7 @@ IN_FLIGHT = """
     <span class="status-text">Reading SSH (Secure Shell)</span>
     <span class="status-dots" aria-hidden="true"><span></span><span></span><span></span></span>
   </div>
- </div></div>"""
+ </div></div></div>"""
 
 # The strip's container shape alternates across the screens, so both shapes are
 # audited at every width, in both themes, in every state.
@@ -429,6 +450,8 @@ SCENARIOS = {
 }
 
 # Elements every scenario should keep clear of the chrome, and their line budgets.
+_check_balanced(SCENARIOS)
+
 LINE_LIMITS = {
     ".welcome-subtitle": 1,
     # Two lines is fine for an error action; three means the label no longer fits
@@ -439,8 +462,15 @@ LINE_LIMITS = {
     # the window, which is what it looked like when Streamlit's own paragraph size
     # won over this stylesheet's.
     ".ai-disclaimer": 1,
+    # NB: the loop below gates line limits on width >= 641, because at phone widths
+    # nearly everything wraps and a limit there would be noise. That gate made this
+    # entry dead at 414px — the one width where this line does wrap — so the narrow
+    # budget is stated separately in NARROW_LINE_LIMITS rather than left unenforced.
     **{f".st-key-example-card-{i} button p": 1 for i in range(6)},
 }
+
+# Line budgets that apply BELOW 641px too, where the general gate does not.
+NARROW_LINE_LIMITS = {".ai-disclaimer": 2}
 
 MEASURE = """
 <script>
@@ -700,8 +730,9 @@ def audit(data, scenario, scheme, width, state: str) -> list[str]:
         # button, matched by `last:`, is not — it has nothing to ellipse.)
         if b["overflowX"] > 1 and "pre" not in sel and sel not in ELLIPSIS_OK:
             problems.append(f"{where}: {sel} overflows horizontally by {b['overflowX']}px")
-        limit = LINE_LIMITS.get(sel)
-        if limit and b["lines"] > limit and width >= 641:
+        limit = (LINE_LIMITS.get(sel) if width >= 641
+                 else NARROW_LINE_LIMITS.get(sel))
+        if limit and b["lines"] > limit:
             problems.append(f"{where}: {sel} wraps to {b['lines']} lines (want {limit})")
         # Small text needs 4.5:1; >=18.66px counts as large text at 3:1.
         if b["contrast"] and "chip" not in sel:
