@@ -1,9 +1,16 @@
 """Uploaded-file handling.
 
-Two behaviours changed here. The size limit is now checked *before* the bytes are
-parsed (a 200 MB PDF used to be read and fully parsed to produce 30 KB of text),
-and PDF extraction catches every exception instead of only `ImportError` — with
-PyMuPDF installed, a corrupt PDF previously raised straight through the handler.
+PDFs get a parser; everything else is text, and whether it *is* text is decided by
+reading the bytes rather than by matching the filename against a list. The list came
+first and turned away precisely the files this app exists to answer questions about —
+a job script, the `.out` it wrote, a Makefile, a config with no extension. Telling
+someone to rename `slurm-12345.out` to `.txt` before asking why their job died is a
+worse answer than reading it.
+
+Two older fixes live here too. The size limit is checked *before* the bytes are
+parsed (a 200 MB PDF used to be read and fully parsed to produce 30 KB of text), and
+PDF extraction catches every exception instead of only `ImportError` — with PyMuPDF
+installed, a corrupt PDF previously raised straight through the handler.
 """
 
 from __future__ import annotations
@@ -17,18 +24,30 @@ from . import config
 
 logger = logging.getLogger(__name__)
 
-_TEXT_EXTENSIONS = (".txt", ".md", ".py", ".json", ".csv", ".yml", ".yaml")
-
 _ICONS = {
     "pdf": "📄",
-    "txt": "📝",
-    "md": "📝",
-    "py": "🐍",
-    "json": "📋",
-    "csv": "📊",
-    "yml": "⚙️",
-    "yaml": "⚙️",
+    "txt": "📝", "md": "📝", "markdown": "📝", "rst": "📝", "tex": "📝",
+    "log": "🪵", "out": "🪵", "err": "🪵",
+    "sh": "🐚", "bash": "🐚", "zsh": "🐚",
+    "sbatch": "🧾", "slurm": "🧾", "job": "🧾", "pbs": "🧾",
+    "json": "📋", "toml": "⚙️", "ini": "⚙️", "cfg": "⚙️", "conf": "⚙️",
+    "yml": "⚙️", "yaml": "⚙️", "env": "⚙️", "properties": "⚙️",
+    "csv": "📊", "tsv": "📊",
+    "py": "🐍", "ipynb": "🐍",
+    "r": "📈", "jl": "📈", "m": "📈",
 }
+
+# Bytes that do not appear in text a person wrote. NUL is the giveaway on every
+# binary format worth naming; the C0 controls other than tab/newline/carriage
+# return/form feed are the rest. Used because the extension is not evidence: the
+# picker's list is a convenience, and a `.log` can be a core dump.
+_BINARY_BYTES = bytes(range(0, 9)) + bytes(range(11, 13)) + bytes(range(14, 32))
+
+# Tried in order. utf-8 first because it is what everything modern writes, then its
+# BOM'd form, then the two single-byte encodings a cluster's older tooling emits.
+# Without the fallbacks a log with one stray 0x92 in it was rejected outright, which
+# is a poor reason not to read six thousand lines of Slurm output.
+_ENCODINGS = ("utf-8", "utf-8-sig", "cp1252", "latin-1")
 
 
 @dataclass
@@ -72,6 +91,28 @@ def _extract_pdf(data: bytes) -> tuple[str, int]:
     return "\n".join(pages), len(reader.pages)
 
 
+def _looks_binary(data: bytes) -> bool:
+    """Is this something a person could read? Judged on the bytes, not the name.
+
+    Only the first 8 KB is sampled: enough for the header of every format that would
+    fail, and it keeps a 10 MB upload from being scanned twice.
+    """
+    sample = data[:8192]
+    if b"\x00" in sample:
+        return True
+    control = sum(byte in _BINARY_BYTES for byte in sample)
+    return control > len(sample) * 0.02
+
+
+def _decode(data: bytes) -> str | None:
+    for encoding in _ENCODINGS:
+        try:
+            return data.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+    return None
+
+
 def _truncate(text: str, label: str) -> tuple[str, bool]:
     if len(text) <= config.MAX_FILE_TEXT_CHARS:
         return text, False
@@ -104,20 +145,28 @@ def process(filename: str, data: bytes) -> tuple[Attachment | None, str | None]:
         text, truncated = _truncate(text, "Document")
         return Attachment(filename, "pdf", text, pages, truncated), None
 
-    if lowered.endswith(_TEXT_EXTENSIONS):
-        try:
-            text = data.decode("utf-8")
-        except UnicodeDecodeError:
-            return None, f"Could not decode {filename} as UTF-8 text."
-        if lowered.endswith(".json"):
-            try:
-                text = json.dumps(json.loads(text), indent=2)
-            except ValueError:
-                pass  # not valid JSON; send it through as-is
-        text, truncated = _truncate(text, "File")
-        return Attachment(filename, "text", text, 0, truncated), None
+    # Everything that is not a PDF is text, and whether it is text is decided by
+    # reading it. Checking the extension against a list was the old rule, and the
+    # files it turned away were the ones this app exists to answer questions about: a
+    # job script, the .out it wrote, a Makefile, a config with no extension at all.
+    if _looks_binary(data):
+        return None, (
+            f"{filename} does not look like text. Attach a PDF or a text file — a "
+            "script, log, config or source file."
+        )
 
-    return None, f"Unsupported file type: {filename}"
+    text = _decode(data)
+    if text is None:
+        return None, f"Could not decode {filename} as text."
+
+    if lowered.endswith((".json", ".ipynb")):
+        try:
+            text = json.dumps(json.loads(text), indent=2)
+        except ValueError:
+            pass  # not valid JSON; send it through as-is
+
+    text, truncated = _truncate(text, "File")
+    return Attachment(filename, "text", text, 0, truncated), None
 
 
 def as_context(attachment: Attachment) -> str:

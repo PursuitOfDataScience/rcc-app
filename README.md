@@ -10,7 +10,7 @@ Built with [Streamlit](https://streamlit.io/), answered by [Mistral](https://mis
 - 🔎 **Grounded answers** — no invented commands, partitions or quotas.
 - 🔗 **Real citations** — a Sources strip deep-links to the exact section, plus Related sections from the same page.
 - 💬 **Streaming replies** with memory for follow-ups.
-- 📎 **File uploads** — drop in a PDF or text file and ask about it.
+- 📎 **File uploads** — a PDF, or anything that reads as text: a job script, the `.out` it wrote, a config, source. Judged on the bytes, not the extension.
 - 🗂️ **Self-updating docs** — one command refreshes the bundled guide.
 - ♿ **Light and dark themes**, keyboard focus, reduced motion, print stylesheet.
 
