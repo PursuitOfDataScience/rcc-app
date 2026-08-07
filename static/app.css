@@ -55,7 +55,6 @@
     --shadow-md: 0 4px 15px rgba(0, 0, 0, 0.06);
     --shadow-lg: 0 8px 25px rgba(128, 0, 0, 0.18);
 
-    --space-xs: 0.25rem;
     --space-sm: 0.5rem;
     --space-md: 1rem;
     --space-lg: 1.5rem;
@@ -68,11 +67,18 @@
     /* The fixed bottom bar (input + the strip of controls under it) and the
      * strip on its own. app.js measures both and republishes them here, because
      * neither is a constant: the disclaimer wraps to two or three lines on a
-     * narrow window, and an attachment chip adds a row. These values are only
-     * the pre-measurement fallback — deliberately a shade generous, since too
-     * little reserved space hides the newest answer under the bar. */
-    --bar-h: 9.5rem;
+     * narrow window, and an attachment chip adds a row.
+     *
+     * These two are only the pre-measurement fallback, and they have to agree
+     * with each other: `--strip-h` is what the bar reserves below the input, so
+     * `--bar-h` must be at least that plus the input and the bar's own padding.
+     * A --bar-h of 9.5rem alongside a --strip-h of 4.5rem was under-counting the
+     * bar it described by 26px, and CI caught the newest answer 2px underneath
+     * the input on the one screen where the measurement had not landed yet.
+     * Generous on purpose: over-reserving is dead space app.js takes back on the
+     * first frame, under-reserving hides an answer. */
     --strip-h: 4.5rem;
+    --bar-h: 12rem;
     /* What is left between the last message and the bar. Also how far the page
      * can scroll past its last message, so it is dead space, one gap's worth. */
     --tail-gap: 1.75rem;
@@ -893,8 +899,10 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
     .st-key-controls [data-testid="stPopover"] button { max-width: 9.5rem; }
     /* The disclaimer wraps to more lines here, so the strip and the bar above it
      * are both taller. app.js measures both; these are the fallbacks it starts
-     * from, and they only have to hold for the first frame. */
-    :root { --strip-h: 6rem; --bar-h: 11.5rem; }
+     * from, and they only have to hold for the first frame — but they still have
+     * to hold, and to agree with each other, so --bar-h covers this --strip-h
+     * plus the input and the bar's padding. */
+    :root { --strip-h: 6rem; --bar-h: 13rem; }
     .welcome { margin-top: 4vh; }
 }
 

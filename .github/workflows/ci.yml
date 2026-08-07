@@ -34,8 +34,11 @@ jobs:
 
       # Renders static/app.css against a replica of Streamlit's DOM in the Chrome
       # already present on the runner, and fails on clipping, content hidden behind
-      # the input bar, horizontal overflow, unwanted wrapping or low contrast.
-      # Every UI bug that has shipped from this repo was pure CSS.
+      # the input bar, horizontal overflow, unwanted wrapping, a control something
+      # else is painted on top of, the gap between a question and its answer, dead
+      # space above the input bar, or low contrast — see the docstring in
+      # tools/render_check.py. Every UI bug that has shipped from this repo was
+      # pure CSS, and this runner's Chrome has caught one this sandbox's did not.
       - name: Check the layout renders correctly
         env:
           SAGE_CHROME: /usr/bin/google-chrome

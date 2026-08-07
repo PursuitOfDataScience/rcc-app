@@ -52,10 +52,11 @@
         return null;
     }
 
-    // Clearance for Streamlit's header strip: 3.75rem, full width, and on top of
-    // the page. Pinning tighter than this puts the question underneath it. (It
-    // used to be 112px, for the header plus a sticky bar of controls that has
-    // since moved under the input, taking 36px of it with it.)
+    // Streamlit's header strip is 3.75rem — 60px, full width, and on top of the
+    // page — plus 16px so the question does not sit flush against it. Pinning
+    // tighter puts the question underneath the header. (It was 112px while a
+    // sticky bar of controls parked below that header; those have moved under the
+    // input, and took their 36px of clearance with them.)
     var TOP_GAP = 76;
     // What should be left between the end of an answer and the input bar. Same
     // value as `--tail-gap` in app.css, which is how much room the page reserves
@@ -95,8 +96,29 @@
     function measureChrome() {
         var strip = doc.querySelector('.st-key-composer-strip');
         var bar = doc.querySelector('[data-testid="stBottomBlockContainer"]');
+        // Strip first: the bar reserves room for it, so publishing it is what
+        // gives the bar its final height. Reading the bar's rect afterwards
+        // flushes that change, so both values come from the same layout.
         if (strip) publish('--strip-h', band(strip));
         if (bar) publish('--bar-h', band(bar));
+        watch(strip, bar);
+    }
+
+    // Re-measure whenever either one changes size, rather than only when the
+    // MutationObserver below happens to fire. Both are sized by their text, so
+    // they resize with no DOM change at all — a rewrapped disclaimer, a font
+    // arriving late — and a published height that has gone stale is a stale
+    // reservation: too small, and the newest answer sits under the input.
+    var watcher = null;
+    function watch(strip, bar) {
+        if (typeof ResizeObserver === 'undefined') return;
+        try {
+            if (!watcher) watcher = new ResizeObserver(measureChrome);
+            // observe() on an element already observed is a no-op, so this can
+            // run every sync and pick up the elements Streamlit just rebuilt.
+            if (strip) watcher.observe(strip);
+            if (bar) watcher.observe(bar);
+        } catch (err) { /* the sync pass still measures */ }
     }
 
     // The bottom edge of the conversation, whatever ended it. Measuring only the
@@ -159,9 +181,10 @@
         //
         // This used to pin to the document's absolute bottom on every frame. On
         // anything but a tall window that scrolls the question clean off the top —
-        // and because the container reserves ~11rem below the last message to clear
-        // the fixed input, the bottom of the document is mostly empty padding, so
-        // pinning there wasted a third of the viewport on blank space.
+        // and because the container reserves the measured bar height plus
+        // `--tail-gap` below the last message to clear the fixed input, the bottom
+        // of the document is mostly empty padding, so pinning there wasted a
+        // third of the viewport on blank space.
         var messages = doc.querySelectorAll('.user-message');
         var latest = messages[messages.length - 1];
         if (!latest) return;

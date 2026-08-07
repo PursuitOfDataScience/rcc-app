@@ -111,12 +111,13 @@ python tools/render_check.py "New subtitle"  # try alternative hero copy
 ```
 
 It renders five screens (landing, answer, short answer, long chat, error) in both
-colour schemes at five widths, in four states — at rest, scrolled, mid-generation,
-and just-finished, the last two with the real `static/app.js` driving the page —
-170 renders. It fails on clipping, content hidden behind the input bar, horizontal
-overflow, unwanted wrapping, a control something else is painted on top of, the
-gap between a question and its answer, dead space above the input bar, or contrast
-below WCAG AA. CI runs it too.
+colour schemes at five widths, in five states — the first frame, before
+`static/app.js` has measured how much room the input bar needs; at rest; scrolled;
+mid-generation; and just-finished, the last three with the real `static/app.js`
+driving the page — 220 renders. It fails on clipping, content hidden behind the
+input bar, horizontal overflow, unwanted wrapping, a control something else is
+painted on top of, the gap between a question and its answer, dead space above the
+input bar, or contrast below WCAG AA. CI runs it too.
 
 It catches what reading the CSS does not. So far: the newest answer sitting 131px
 underneath the chat input, the hero subtitle and all six starter cards wrapping to

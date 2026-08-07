@@ -514,7 +514,9 @@ if not has_messages:
                     ):
                         start_new_turn(question)
 else:
-    # Marker only: app.js keys page-scroll behaviour off its presence.
+    # Marker only: app.css keys the vertical rhythm off its presence — a short
+    # conversation sits at the bottom of the space between the header and the
+    # composer, where the landing screen centres in it.
     st.markdown('<div class="chat-container"></div>', unsafe_allow_html=True)
 
     rendered = st.session_state.messages
@@ -547,8 +549,8 @@ else:
             with st.expander("Technical details"):
                 st.code(st.session_state.error_detail, language="text")
         # "Switch to another model" is only useful if switching is one click away
-        # from where the advice appears. Sending the user hunting for a control at
-        # the other end of the page is how a spent quota became a dead end.
+        # from where the advice appears. Sending the user hunting for a control
+        # elsewhere on the page is how a spent quota became a dead end.
         alternative = fallback_model()
         with st.container(key="error-actions"):
             # Half-width each, flush with the error card above: narrower columns

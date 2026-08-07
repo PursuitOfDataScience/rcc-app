@@ -5,12 +5,16 @@ Streamlit often cannot be installed where this repo is worked on, and every UI b
 that has actually shipped here was pure CSS. This renders the stylesheet against a
 replica of Streamlit's DOM in headless Chromium and asserts that nothing is
 clipped, hidden behind the fixed input bar, overflowing horizontally, wrapping
-onto an unwanted extra line, or failing contrast.
+onto an unwanted extra line, painted on top of a control, too close to the message
+above it, adrift above the input bar, or failing contrast.
 
 It has already caught what reading the CSS did not:
   * the newest answer sitting 131px underneath the fixed chat input;
   * the hero subtitle and all six starter cards wrapping to two lines;
-  * a maroon focus ring at 1.73:1 on the dark background.
+  * a maroon focus ring at 1.73:1 on the dark background;
+  * the controls under the input painted over by Streamlit's own pinned bar;
+  * 19–25px between a question and its answer, and up to 566px of nothing
+    between the last message and the input box.
 
 It also, for a while, cheerfully passed a top bar that was completely unusable,
 because the replica modelled Streamlit's header as a small right-aligned box
@@ -23,8 +27,11 @@ checks came out of that and are the ones worth keeping honest:
     model is worse than no model, because it reads as a pass.
 
 Four states per screen: at rest, scrolled to the end, mid-generation, and just
-finished — the last one running app.js so the post-turn scroll is measured
-rather than assumed.
+finished. The real app.js runs in every one of them — the room the page leaves for
+the input bar is built from measurements it publishes, so a replica without it
+measures a layout the app never has — and the last two additionally exercise the
+per-turn scroll pin and the settle that closes the space it leaves behind. (The
+landing screen has no turn to be in the middle of, so it renders at rest only.)
 
 Usage:
     python tools/render_check.py            # audit; exits non-zero on failure
@@ -57,7 +64,7 @@ REPO = os.path.dirname(HERE)
 #
 # This used to be modelled as a 220px right-aligned box, on the reasoning that
 # Community Cloud's visible controls are right-aligned. That was wrong, and it
-# is why the top bar passed 100 renders while being unusable in the real app.
+# is why the top bar passed every render while being unusable in the real app.
 HOST_BAR = 60
 # The part that also paints: the Community Cloud control cluster, right-aligned.
 HOST_BAR_W = 220
@@ -217,7 +224,11 @@ def strip(clear: bool = True) -> str:
     <div class="element-container"><div data-testid="stPopover"><div class="stPopover">
       <button><p>Zen · deepseek-v4-flash-free</p></button>
     </div></div></div>
-    <div class="element-container"><div class="stButton"><button><p>ℹ️</p></button></div></div>
+    <!-- About is a popover too, so the picker's own rules reach its trigger. The
+         ellipsis ceiling in particular: modelled as a plain button, an ℹ️ that
+         those rules had squashed would render fine here and be wrong in the app. -->
+    <div class="element-container"><div data-testid="stPopover"><div class="stPopover">
+      <button><p>ℹ️</p></button></div></div></div>
     {trash}
    </div></div>
   <div class="element-container"><div class="stMarkdown">
@@ -419,9 +430,20 @@ if (window.__pinLast && main) {
     main.scrollHeight - main.clientHeight));
 }
 function snapshot() {
+  // The two custom properties app.js publishes. Reported so a failed gap check
+  // says whether the reservation was measured or still on the CSS fallback —
+  // "2px under the input bar" with no numbers took a while to place.
+  var root = getComputedStyle(document.documentElement);
   var out = {viewport: {w: innerWidth, h: innerHeight}, hostBar: HOSTBAR,
            scrolled: main ? Math.round(main.scrollTop) : 0,
+           // Whether there is anywhere to scroll to. A conversation shorter than
+           // the window sits at the bottom of the space reserved for it, so if
+           // that reservation is wrong it lands under the input with no scroll
+           // available to reveal it.
+           canScroll: !!main && main.scrollHeight - main.clientHeight > 1,
            docOverflowX: Math.max(0, document.documentElement.scrollWidth - innerWidth),
+           reserved: {bar: root.getPropertyValue('--bar-h').trim(),
+                      strip: root.getPropertyValue('--strip-h').trim()},
            els: {}};
   SELECTORS.forEach(function (s) { out.els[s] = box(s); });
   document.title = JSON.stringify(out);
@@ -431,7 +453,8 @@ setTimeout(snapshot, 700);
 </script>
 """
 
-# The model picker's trigger. Named because two checks below treat it specially.
+# The model picker's trigger. Named because three checks below treat it specially:
+# collapsed width, whether it is inside the strip pinned for it, and reachability.
 PICKER = '.st-key-controls [data-testid="stPopover"] button'
 # The strip the controls sit in, and the input it must never cover.
 STRIP = ".st-key-composer-strip"
@@ -478,7 +501,15 @@ MAX_TAIL_GAP = 64
 
 
 def page(body: str, scheme: str, scroll: bool, generating: bool = False,
-         pin: bool = False) -> str:
+         pin: bool = False, script: bool = True) -> str:
+    """The replica, with or without app.js.
+
+    `script=False` is the app's first frame: the stylesheet's own fallback for how
+    much room the bar takes, before app.js has measured the real thing. It is a
+    state a user sees, and it is the one CI caught an answer 2px underneath the
+    input in — the two fallbacks disagreed with each other by 26px and every
+    render that ran app.js papered over it.
+    """
     return f"""<!doctype html><html><head><meta charset="utf-8">
 <style>{base_css(scheme)}</style><style>{theme_css(scheme)}</style></head><body>
 <div data-testid="stHeader"></div><div id="host-bar"></div>
@@ -491,7 +522,7 @@ def page(body: str, scheme: str, scroll: bool, generating: bool = False,
   </div></div>
 {'<div id="processing-signal" hidden></div>' if generating else ''}
 <script>window.__scrollBottom = {str(scroll).lower()}; window.__pinLast = {str(pin).lower()};</script>
-<script>{JS}</script>
+{'<script>' + JS + '</script>' if script else ''}
 {MEASURE.replace("HOSTBAR", str(HOST_BAR)).replace("TOPGAP", str(TOP_GAP)).replace("SELECTORS", json.dumps(SELECTORS))}
 </body></html>"""
 
@@ -520,7 +551,9 @@ def audit(data, scenario, scheme, width, state: str) -> list[str]:
     problems, els = [], data["els"]
     where = f"{scenario}/{scheme}/{width}px"
     generating = state == "generating"
-    scrolled = state != "rest"
+    # "unmeasured" is the first frame, so it is at the top of the page like "rest":
+    # the host-toolbar collision check below is meaningful in both.
+    scrolled = state not in ("rest", "unmeasured")
 
     if data["docOverflowX"] > 0:
         problems.append(f"{where}: page scrolls sideways by {data['docOverflowX']}px")
@@ -621,17 +654,31 @@ def audit(data, scenario, scheme, width, state: str) -> list[str]:
     )
     if newest and bar:
         gap = bar["top"] - newest["bottom"]
-        # Scrolled to the very end, nothing may hide under the fixed input.
-        if state == "scrolled" and gap < 0:
-            problems.append(f"{where}: newest content is {-gap}px under the input bar")
-        # At rest and just-finished are the two views a reader is actually left
-        # looking at, so they are the ones that must not be a third of a screen of
-        # nothing. A negative gap means the reply runs off the bottom, which is
-        # theirs to scroll; this is only ever about empty space above the bar.
-        if state in ("rest", "settled") and gap > MAX_TAIL_GAP:
+        reserved = data.get("reserved", {})
+        # What the page reserved, versus what the bar actually takes. When these
+        # disagree the gap checks below are measuring a stale reservation, which
+        # is a different bug from a stylesheet that reserved the wrong amount.
+        room = (f"reserved --bar-h {reserved.get('bar', '?')} / --strip-h "
+                f"{reserved.get('strip', '?')}, bar is really "
+                f"{data['viewport']['h'] - bar['top']}px")
+        # Scrolled to the very end, nothing may hide under the fixed input — and
+        # on a page with nowhere to scroll, nothing may hide under it at all,
+        # because the conversation is pinned to the bottom of what was reserved
+        # and there is no scroll left to bring it back out.
+        if gap < 0 and (state == "scrolled"
+                        or (state in ("rest", "unmeasured")
+                            and not data.get("canScroll", True))):
+            problems.append(
+                f"{where}: newest content is {-gap}px under the input bar ({room})"
+            )
+        # At rest, just-finished, and on the first frame are the views a reader is
+        # actually left looking at, so they are the ones that must not be a third
+        # of a screen of nothing. A negative gap means the reply runs off the
+        # bottom, which is theirs to scroll; this is only ever about empty space.
+        if state in ("rest", "settled", "unmeasured") and gap > MAX_TAIL_GAP:
             problems.append(
                 f"{where}: {gap}px of dead space between the last message and the "
-                f"input bar (want at most {MAX_TAIL_GAP})"
+                f"input bar (want at most {MAX_TAIL_GAP}; {room})"
             )
     return problems
 
@@ -645,17 +692,20 @@ def main() -> int:
     for scenario, body in SCENARIOS.items():
         for scheme in ("dark", "light"):
             for width, height in widths:
-                # at rest, scrolled to the bottom, mid-generation (app.js
-                # pinning the question), and just-finished (app.js closing the
-                # dead space the pin left behind).
-                states = (["rest"] if scenario == "landing"
-                          else ["rest", "scrolled", "generating", "settled"])
+                # the first frame before app.js has measured the bar, at rest,
+                # scrolled to the bottom, mid-generation (app.js pinning the
+                # question), and just-finished (app.js closing the dead space the
+                # pin left behind).
+                states = (["unmeasured", "rest"] if scenario == "landing"
+                          else ["unmeasured", "rest", "scrolled", "generating",
+                                "settled"])
                 for state in states:
                     suffix = "" if state == "rest" else f"-{state}"
                     name = f"{scenario}-{scheme}-{width}{suffix}"
                     html = page(body, scheme, scroll=state == "scrolled",
                                 generating=state == "generating",
-                                pin=state == "settled")
+                                pin=state == "settled",
+                                script=state != "unmeasured")
                     data = render(name, html, width, height,
                                   shot=(scheme == "dark" and width == 1263
                                         and state == "rest"))
