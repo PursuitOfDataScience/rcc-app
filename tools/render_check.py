@@ -43,6 +43,15 @@ checks came out of that and are the ones worth keeping honest:
   * whatever the harness cannot see, it must not silently model away — a wrong
     model is worse than no model, because it reads as a pass.
 
+The second of those caught this file itself. `--window-size` is the *outer* window,
+so every height came back 87px short of the number asked for, and Chromium will not
+open a headless window narrower than 500px however small a number it is given: the
+414px phone in the width list was rendered at 500px for as long as the list existed,
+and every failure it reported named a size it was not looking at. Both numbers are
+measured at startup by `calibrate()` now, the window is asked for the chrome on top
+of the viewport wanted, and any render whose viewport is not the one requested is
+reported as a failure instead of being quietly measured.
+
 Five states per screen — the first frame with no app.js at all, at rest, scrolled to
 the end, mid-generation, and just finished — except the two landing screens, which
 have no turn to be in the middle of and render the first two, and the mid-answer
@@ -734,12 +743,80 @@ def page(body: str, scheme: str, scroll: bool, generating: bool = False,
 </body></html>"""
 
 
+_PROBE = ('<!doctype html><html><body><script>document.title='
+          'JSON.stringify({w:innerWidth,h:innerHeight})</script></body></html>')
+# The phone this wants to render. Chromium will not open a headless window this
+# narrow — 500px is as far as it goes — so what `calibrate()` returns for it is the
+# narrowest real width available, and that is what goes in the width list.
+PHONE_W, PHONE_H = 414, 896
+
+
+def calibrate():
+    """What viewport does `--window-size` actually produce?
+
+    Not the one it asks for. `--window-size` is the *outer* window, so every height
+    comes back short by the browser's own chrome, and Chromium will not open a window
+    narrower than a floor of its own however small a number it is given. This harness
+    asked for 414x896 for a year and rendered 500x809: the phone width it claimed to
+    cover did not exist, and every failure it reported named a size it was not looking
+    at. Measured here rather than hardcoded, because both numbers belong to whichever
+    Chromium is installed.
+    """
+    path = os.path.join(HERE, "_calibrate.html")
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(_PROBE)
+    def probe(w, h):
+        out = subprocess.run(
+            [CHROME, "--headless", "--no-sandbox", "--disable-gpu", "--hide-scrollbars",
+             f"--window-size={w},{h}", "--virtual-time-budget=300", "--dump-dom",
+             f"file://{path}"], capture_output=True, text=True, timeout=120).stdout
+        start, end = out.find("<title>"), out.find("</title>")
+        if start == -1:
+            raise SystemExit("render_check: could not calibrate the viewport — "
+                             f"{CHROME} produced no measurement")
+        return json.loads(out[start + 7 : end])
+    big = probe(1200, 1000)
+    # The narrowest the phone entry can be is found by asking for a phone and seeing
+    # what comes back — not by asking for 1x1, which read as the tidier way to find
+    # the floor and returned a width of 0 on CI's Chromium: a window that degenerate
+    # is one it declines to report rather than one it clamps, and every render then
+    # failed at "asked for a 0px viewport". Where a Chromium does honour PHONE_W, this
+    # gains the real phone width instead of settling for the floor.
+    chrome_w, chrome_h = 1200 - big["w"], 1000 - big["h"]
+    # Asked for twice on purpose. The first probe says what a phone request lands on;
+    # the second asks for *that*, the way `render()` will, and takes what comes back.
+    # Where the window has no borders the two agree and the second is a no-op, but
+    # `render()` adds `chrome_w` to whatever it is given, so on a platform where that
+    # is not zero the naive floor would be a width `render()` can never hit — and the
+    # assertion downstream would turn that into 300 failures rather than one.
+    phone = probe(PHONE_W + chrome_w, PHONE_H + chrome_h)
+    narrow = probe(phone["w"] + chrome_w, PHONE_H + chrome_h)["w"]
+    os.remove(path)
+    if not 1 <= narrow <= 640:
+        raise SystemExit(
+            f"render_check: asked for a {PHONE_W}px-wide window and got {narrow}px. "
+            "The narrow screen has to land under the 640px mobile breakpoint or the "
+            "mobile rules go unrendered — fix this rather than auditing four desktop "
+            "widths and calling one of them a phone."
+        )
+    return {"chrome_h": chrome_h, "chrome_w": chrome_w,
+            "min_w": narrow, "min_h": phone["h"]}
+
+
+VIEWPORT = None   # filled in by main(); {'chrome_h', 'chrome_w', 'min_w', 'min_h'}
+
+
 def render(name, html, width, height, shot=False):
     path = os.path.join(HERE, f"{name}.html")
     with open(path, "w", encoding="utf-8") as fh:
         fh.write(html)
+    # `width`/`height` are the CSS viewport wanted, so the window has to be asked for
+    # the chrome on top of it. Whether that landed is checked per render in main().
+    pad_w = VIEWPORT["chrome_w"] if VIEWPORT else 0
+    pad_h = VIEWPORT["chrome_h"] if VIEWPORT else 0
     cmd = [CHROME, "--headless", "--no-sandbox", "--disable-gpu", "--hide-scrollbars",
-           f"--window-size={width},{height}", "--virtual-time-budget=1500"]
+           f"--window-size={width + pad_w},{height + pad_h}",
+           "--virtual-time-budget=1500"]
     if shot:
         cmd.append(f"--screenshot={os.path.join(HERE, name + '.png')}")
     cmd += ["--dump-dom", f"file://{path}"]
@@ -946,8 +1023,16 @@ def audit(data, scenario, scheme, width, state: str) -> list[str]:
 
 
 def main() -> int:
+    global VIEWPORT
     verbose = "-v" in sys.argv
-    widths = [(1440, 1080), (1263, 900), (966, 626), (768, 900), (414, 896)]
+    VIEWPORT = calibrate()
+    # The narrowest entry is Chromium's own floor rather than a phone's width, because
+    # a headless window will not go below it and a number it silently ignores is worse
+    # than an honest one: this list said 414px for a year and rendered 500px. 500 is
+    # still under the 640px mobile breakpoint, so the mobile rules are exercised — what
+    # is not covered is a real 414px screen, and saying so is the point.
+    widths = [(1440, 1080), (1263, 900), (966, 626), (768, 900),
+              (VIEWPORT["min_w"], PHONE_H)]
     failures: list[str] = []
     checked = 0
 
@@ -981,6 +1066,17 @@ def main() -> int:
                         failures.append(f"{name}: render failed")
                         continue
                     checked += 1
+                    # Every measurement below is only about the viewport it was taken
+                    # in, so a viewport that is not the one asked for invalidates the
+                    # render rather than failing a check inside it.
+                    got = (data["viewport"]["w"], data["viewport"]["h"])
+                    if got != (width, height):
+                        failures.append(
+                            f"{name}: asked for a {width}x{height} viewport and got "
+                            f"{got[0]}x{got[1]} — nothing measured here is about the "
+                            f"size it claims"
+                        )
+                        continue
                     failures.extend(audit(data, scenario, scheme, width, state))
                     if verbose:
                         print(f"\n--- {name} (usable {data['viewport']['h']}px, "
