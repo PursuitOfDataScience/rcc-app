@@ -243,8 +243,9 @@ class TestModelPicker:
 
     def test_it_is_not_a_selectbox(self, monkeypatch):
         """A selectbox kept its own value and clobbered an automatic failover on
-        the very next rerun; it also had no intrinsic width, so it rendered
-        invisible in the flex top bar. Buttons have neither problem."""
+        the very next rerun; it also had no intrinsic width, so in a row that
+        sizes its children to their labels it rendered invisible. Buttons have
+        neither problem."""
         mistral = ScriptedProvider([], name="mistral", models=("m1",))
         zen = ScriptedProvider([], name="opencode", models=("z1",))
         stub, _m = run_app(monkeypatch, client=mistral, extra={"opencode": zen},
@@ -290,6 +291,97 @@ class TestModelPicker:
         stub, _m = run_app(monkeypatch, client=provider, session=session)
         assert stub.session_state["model"] == "mistral:m1"
         assert stub.session_state["error"] is None
+
+
+class TestComposerStrip:
+    """The controls belong under the input box, and on every screen.
+
+    They used to be a bar across the top of the page, which failed twice: it sat
+    in the band Streamlit's own full-width header takes the clicks for, and on
+    the landing screen the picker inside it did not appear at all — so the one
+    screen where a new user has to choose a model was the one screen without a
+    way to choose one. tools/render_check.py holds the geometry; these hold the
+    structure that geometry depends on.
+    """
+
+    @staticmethod
+    def _containers(stub):
+        return [key for name, key in stub.events if name == "container"]
+
+    @staticmethod
+    def _index(stub, name, key=None):
+        return next(
+            position for position, event in enumerate(stub.events)
+            if event[0] == name and (key is None or event[1] == key)
+        )
+
+    def two_providers(self, monkeypatch, session, **kwargs):
+        mistral = ScriptedProvider([], name="mistral", models=("mistral-small-latest",))
+        zen = ScriptedProvider([], name="opencode",
+                               models=("deepseek-v4-flash-free", "big-pickle"))
+        return run_app(monkeypatch, client=mistral, extra={"opencode": zen},
+                       session=session, opencode=True, **kwargs)
+
+    def test_the_controls_live_in_the_strip_under_the_input(self, monkeypatch):
+        stub, _m = self.two_providers(monkeypatch, {"messages": [], "processing": False})
+        assert "composer-strip" in self._containers(stub)
+        assert "controls" in self._containers(stub)
+        assert "topbar" not in self._containers(stub)
+
+    def test_the_strip_is_rendered_after_the_input(self, monkeypatch):
+        """Order is the whole point: rendered before it, this is a top bar again."""
+        stub, _m = self.two_providers(monkeypatch, {"messages": [], "processing": False})
+        assert (self._index(stub, "container", "composer-strip")
+                > self._index(stub, "chat_input"))
+
+    def test_the_picker_is_there_before_the_first_question(self, monkeypatch):
+        """Reported from the running app: the picker did not show up on the
+        landing page at all — not until a prompt had been entered."""
+        stub, _m = self.two_providers(monkeypatch, {"messages": [], "processing": False})
+        assert ("popover", "Mistral · small-latest") in stub.events
+        assert [key for key in stub.button_labels if str(key).startswith("pick-")]
+
+    def test_the_picker_is_still_there_mid_conversation(self, monkeypatch):
+        session = {
+            "messages": [{"role": "user", "text": "hi", "attachment": None}],
+            "processing": False,
+        }
+        stub, _m = self.two_providers(monkeypatch, session)
+        assert ("popover", "Mistral · small-latest") in stub.events
+
+    def test_clear_appears_only_once_there_is_something_to_clear(self, monkeypatch):
+        stub, _m = self.two_providers(monkeypatch, {"messages": [], "processing": False})
+        assert "clear" not in stub.button_labels
+
+        session = {
+            "messages": [{"role": "user", "text": "hi", "attachment": None}],
+            "processing": False,
+        }
+        stub, _m = self.two_providers(monkeypatch, session)
+        assert "clear" in stub.button_labels
+
+    def test_clear_empties_the_conversation(self, monkeypatch):
+        session = {
+            "messages": [{"role": "user", "text": "hi", "attachment": None}],
+            "processing": False,
+            "notice": "stale",
+            "failed_over": True,
+        }
+        stub, _m = self.two_providers(monkeypatch, session, buttons={"clear": True})
+        assert stub.session_state["messages"] == []
+        assert stub.session_state["notice"] == ""
+        assert stub.session_state["failed_over"] is False
+
+    def test_the_disclaimer_is_a_real_element_rendered_by_python(self, monkeypatch):
+        """It used to be appended by app.js into a container React owns. A real
+        element is exposed to assistive tech, translatable, and sized before the
+        first paint — which matters, because its line count is what decides how
+        much room the page reserves for the bar."""
+        stub, _m = self.two_providers(monkeypatch, {"messages": [], "processing": False})
+        assert any(
+            'class="ai-disclaimer"' in html and "Sage can make mistakes" in html
+            for html in stub.markdown_html
+        )
 
 
 class TestToollessModels:
@@ -411,6 +503,10 @@ class TestQuotaFailover:
         notice = stub.session_state["notice"]
         assert "was unavailable (out of credit)" in notice
         assert "Zen · z1 answered instead" in notice
+        # And it points at where the picker actually is. It said "the button at
+        # the top left" for as long as there was a top left to point at.
+        assert "under the input box" in notice
+        assert "top left" not in notice
         assert stub.session_state["switched_from"] is None
         assert stub.session_state["error"] is None
 

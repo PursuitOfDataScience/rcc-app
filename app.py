@@ -360,7 +360,15 @@ def start_new_turn(question: str, attachment=None) -> None:
     st.rerun()
 
 
-# --- top bar ---------------------------------------------------------------
+# --- composer strip --------------------------------------------------------
+
+# Under the input rather than injected by app.js: it is static text, and a real
+# element rendered by Streamlit is exposed to assistive tech and translatable in
+# a way that a JS-appended node in a container React owns is not.
+DISCLAIMER = (
+    "Sage can make mistakes and cannot see your account or jobs. "
+    "Verify commands against the linked docs."
+)
 
 
 def render_about() -> None:
@@ -401,6 +409,7 @@ def render_about() -> None:
 
 has_messages = bool(st.session_state.messages)
 
+
 def render_model_picker() -> None:
     """Switch provider/model mid-session — the way round a spent API quota.
 
@@ -411,9 +420,9 @@ def render_model_picker() -> None:
       *previous* value on that run and switched straight back to the provider
       that had just refused. Buttons hold no state, so a programmatic switch
       survives.
-    * A selectbox is a block with no intrinsic width. In this `flex: 0 0 auto`
-      top bar that resolved to zero and the control was invisible. A button is
-      sized by its label, exactly like the ℹ️ and 🗑️ controls beside it.
+    * A selectbox is a block with no intrinsic width, so in a row that sizes its
+      children to their content it resolved to zero and the control was invisible.
+      A button is sized by its label, exactly like the ℹ️ and 🗑️ beside it.
     """
     if len(MODELS) < 2:
         return
@@ -436,15 +445,29 @@ def render_model_picker() -> None:
                     st.rerun()
 
 
-with st.container(key="topbar"):
-    slots = st.columns([1, 1, 1] if has_messages else [1, 1], gap="small")
-    with slots[0]:
-        render_model_picker()
-    with slots[1], st.popover("ℹ️", help="About Sage"):
-        render_about()
-    if has_messages:
-        with slots[2]:
-            if st.button("🗑️", key="clear", help="Clear this conversation"):
+def render_controls() -> None:
+    """The model picker, About and Clear — under the input box, not over the page.
+
+    This row used to be a bar above the conversation, which was wrong twice over.
+    It sat in the band Streamlit's own full-width header takes the clicks for, so
+    it looked right and did nothing; and on the landing screen — the one screen
+    where a new user has to choose a model before asking anything — the picker
+    inside it did not render at all. Under the input it is beside the thing it
+    affects, on every screen, at the opposite end of the page from that header.
+
+    No `st.columns`: a column has no intrinsic width, which is how the picker
+    came to be invisible twice. The strip is laid out by CSS instead, so each
+    control is as wide as its own label and the worst a broken stylesheet can do
+    is stack the three of them.
+    """
+    with st.container(key="composer-strip"):
+        with st.container(key="controls"):
+            render_model_picker()
+            with st.popover("ℹ️", help="About Sage"):
+                render_about()
+            if has_messages and st.button(
+                "🗑️", key="clear", help="Clear this conversation"
+            ):
                 st.session_state.messages = []
                 st.session_state.processing = False
                 st.session_state.attachment = None
@@ -454,6 +477,9 @@ with st.container(key="topbar"):
                 st.session_state.switched_from = None
                 st.session_state.uploader_key += 1
                 st.rerun()
+        st.markdown(
+            f'<p class="ai-disclaimer">{DISCLAIMER}</p>', unsafe_allow_html=True
+        )
 
 
 # --- body ------------------------------------------------------------------
@@ -583,6 +609,11 @@ prompt = st.chat_input(
     max_chars=config.MAX_PROMPT_CHARS,
 )
 
+# Rendered here, before the turn below: that block ends in `st.rerun()`, so
+# anything after it is never reached while an answer is generating — which is
+# exactly when a user whose model just ran out of credit reaches for the picker.
+render_controls()
+
 if prompt:
     start_new_turn(prompt.strip(), st.session_state.attachment)
 
@@ -709,7 +740,7 @@ if st.session_state.processing:
         st.session_state.notice = (
             f"{switched[0]} was unavailable ({REASONS.get(switched[1], switched[1])}), "
             f"so {MODEL.label} answered instead. Pick a different one from the "
-            f"button at the top left."
+            f"model button under the input box."
             if switched
             else ""
         )

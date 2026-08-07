@@ -5,13 +5,20 @@
  * hooks. They used to find elements by matching visible English text and then
  * wrote hardcoded dark-mode colours as inline styles, which beat the light-mode
  * stylesheet — so on a light theme every hovered card stayed broken until rerun.
+ * A third, the AI disclaimer, is now rendered by app.py: static text belongs in
+ * the document rather than being appended into a container React owns.
  *
- * What is left injects elements and lets app.css style them.
+ * What is left injects the two controls Streamlit has no element for, scrolls the
+ * page the way a chat is read, and measures the pinned bottom bar so app.css can
+ * reserve exactly as much room for it as it actually takes.
  */
 (function () {
     'use strict';
 
-    var doc = window.parent.document;
+    // This script is served inside a components.html iframe, so `window` is the
+    // iframe (0×0) and every measurement has to come from the page around it.
+    var view = window.parent;
+    var doc = view.document;
 
     var COPY_SVG = '<svg aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>';
     var CHECK_SVG = '<svg aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>';
@@ -45,13 +52,67 @@
         return null;
     }
 
-    // Clearance for Streamlit's header strip (3.75rem, full width, and on top of
-    // the page) plus the sticky top bar that parks just below it. Pinning tighter
-    // than this puts the question underneath both.
-    var TOP_GAP = 112;
-    // What should be left between the end of an answer and the input bar.
+    // Clearance for Streamlit's header strip: 3.75rem, full width, and on top of
+    // the page. Pinning tighter than this puts the question underneath it. (It
+    // used to be 112px, for the header plus a sticky bar of controls that has
+    // since moved under the input, taking 36px of it with it.)
+    var TOP_GAP = 76;
+    // What should be left between the end of an answer and the input bar. Same
+    // value as `--tail-gap` in app.css, which is how much room the page reserves
+    // past its last message; this is the scroll that lands on it.
     var TAIL_GAP = 28;
     var pinnedTurn = false;
+
+    /* --- chrome measurement ---------------------------------------------- */
+
+    // The page has to leave room for the fixed input bar, and the bar has to
+    // leave room for the strip of controls under it. Neither height is a
+    // constant — the disclaimer wraps to two or three lines on a narrow window —
+    // so app.css takes both from here. A guess in the stylesheet is what left
+    // either 50px of dead space under the newest answer or the answer 131px
+    // underneath the input, depending on the viewport.
+    function publish(name, px) {
+        var root = doc.documentElement;
+        var current = parseFloat(root.style.getPropertyValue(name));
+        if (Math.abs(current - px) < 1) return;   // NaN on the first pass, so it sets
+        root.style.setProperty(name, px + 'px');
+    }
+
+    // Both measured from the bottom of the window rather than as heights: what
+    // has to be cleared is the band each one covers, and both are pinned to that
+    // edge. Measuring the strip as a plain height would miss the gap it is lifted
+    // off the edge by, and the bar would reserve too little by exactly that much.
+    // Capped at a share of the window: a measurement that comes back as most of
+    // the page means something upstream is wrong — an element that is not pinned
+    // where the stylesheet thinks it is, or a rect read mid-rebuild — and
+    // reserving that much space would push the conversation off screen. The cap
+    // turns that into slightly-wrong spacing rather than an empty page.
+    function band(element) {
+        var raw = Math.ceil(view.innerHeight - element.getBoundingClientRect().top);
+        return Math.max(0, Math.min(raw, Math.round(view.innerHeight * 0.4)));
+    }
+
+    function measureChrome() {
+        var strip = doc.querySelector('.st-key-composer-strip');
+        var bar = doc.querySelector('[data-testid="stBottomBlockContainer"]');
+        if (strip) publish('--strip-h', band(strip));
+        if (bar) publish('--bar-h', band(bar));
+    }
+
+    // The bottom edge of the conversation, whatever ended it. Measuring only the
+    // last answer left the space under a trailing failover notice or error card
+    // exactly as dead as before — and a failover notice is precisely when the
+    // reader is looking at the bottom of the page.
+    function tail() {
+        var edge = null;
+        var nodes = doc.querySelectorAll('[class*="st-key-answer-"], .user-message,' +
+            '.notice, .error-card, [class*="st-key-error-actions"]');
+        nodes.forEach(function (node) {
+            var bottom = node.getBoundingClientRect().bottom;
+            if (edge === null || bottom > edge) edge = bottom;
+        });
+        return edge;
+    }
 
     // Close the dead space the pin leaves behind once an answer has landed.
     //
@@ -70,12 +131,11 @@
 
         var messages = doc.querySelectorAll('.user-message');
         var latest = messages[messages.length - 1];
-        var last = answers[answers.length - 1];
+        var end = tail();
         var bar = doc.querySelector('[data-testid="stBottomBlockContainer"]');
-        if (!latest || !last || !bar) return;
+        if (!latest || end === null || !bar) return;
 
-        var excess = bar.getBoundingClientRect().top -
-                     last.getBoundingClientRect().bottom - TAIL_GAP;
+        var excess = bar.getBoundingClientRect().top - end - TAIL_GAP;
         if (excess <= 4) return;
 
         // Never buy that space by pushing a still-visible question off the top.
@@ -143,16 +203,6 @@
 
         input.style.position = 'relative';
         input.insertBefore(btn, input.firstChild);
-    }
-
-    function addDisclaimer() {
-        var bottom = doc.querySelector('[data-testid="stBottomBlockContainer"]');
-        if (!bottom || doc.getElementById('ai-disclaimer')) return;
-        var note = doc.createElement('p');
-        note.id = 'ai-disclaimer';
-        note.className = 'ai-disclaimer';
-        note.textContent = 'Sage can make mistakes and cannot see your account or jobs. Verify commands against the linked docs.';
-        bottom.appendChild(note);
     }
 
     function copyText(text) {
@@ -292,10 +342,12 @@
 
     function sync() {
         addPaperclip();
-        addDisclaimer();
         addCodeCopyButtons();
         addAnswerCopyButtons();
         blockSendWhileProcessing();
+        // Before autoScroll: it measures the gap to the input bar, and the bar's
+        // own height is what this settles.
+        measureChrome();
         autoScroll();
     }
 
@@ -316,4 +368,17 @@
     new MutationObserver(schedule).observe(doc.body, { childList: true, subtree: true });
     // Streaming appends text nodes that sometimes do not trigger the observer.
     setInterval(function () { if (isProcessing()) schedule(); }, 250);
+
+    // A resize changes what the page has to reserve for the input bar — the
+    // disclaimer under it rewraps — and mutates nothing, so the observer above
+    // never sees it. One listener on the page, retargeted to whichever copy of
+    // this script is current: Streamlit rebuilds the iframe on every rerun, so
+    // registering one per copy would pile up hundreds over a long session.
+    view.__sageSync = schedule;
+    if (!doc.body.dataset.sageResizeHook) {
+        doc.body.dataset.sageResizeHook = 'true';
+        view.addEventListener('resize', function () {
+            if (view.__sageSync) view.__sageSync();
+        });
+    }
 })();
