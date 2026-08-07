@@ -434,20 +434,38 @@
         autoScroll();
     }
 
+    function safeSync() {
+        try { sync(); } catch (err) { /* never break the page */ }
+    }
+
     // Streaming mutates the DOM once per token. Running the full sync on every
     // mutation meant a document-wide querySelectorAll sweep per token; coalescing
-    // into one animation frame keeps it O(frames) instead of O(tokens).
+    // keeps it O(frames) instead of O(tokens).
+    //
+    // A frame callback *and* a timer, whichever arrives first. Coalescing on rAF
+    // alone assumes the page is painting: in a browser that is producing no
+    // frames — headless Chrome under a virtual clock, a backgrounded tab — the
+    // callback never ran, `queued` stayed true for ever, and every later mutation
+    // was dropped on the floor. CI found that as a page still sized by the
+    // stylesheet's fallbacks, several renders deep.
     var queued = false;
+    function flush() {
+        if (!queued) return;
+        queued = false;
+        safeSync();
+    }
+
     function schedule() {
         if (queued) return;
         queued = true;
-        window.requestAnimationFrame(function () {
-            queued = false;
-            try { sync(); } catch (err) { /* never break the page */ }
-        });
+        window.requestAnimationFrame(flush);
+        window.setTimeout(flush, 32);
     }
 
-    schedule();
+    // Straight away rather than a frame from now: until this has run, the page is
+    // laid out around the stylesheet's guess at the input bar rather than its
+    // measured height, and that is a frame the reader sees.
+    safeSync();
     new MutationObserver(schedule).observe(doc.body, { childList: true, subtree: true });
     // Streaming appends text nodes that sometimes do not trigger the observer.
     setInterval(function () { if (isProcessing()) schedule(); }, 250);

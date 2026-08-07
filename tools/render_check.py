@@ -669,9 +669,20 @@ def audit(data, scenario, scheme, width, state: str) -> list[str]:
                           ".st-key-error-actions", ".notice")),
         key=lambda b: b["bottom"], default=None,
     )
+    reserved = data.get("reserved", {})
+    # app.js publishes these in px. Still holding the stylesheet's rem fallback in
+    # a state that loads app.js means it never ran, and every measured thing below
+    # is then auditing a layout the app only has for one frame. Said out loud,
+    # because as a gap number it reads like a spacing bug and is not one: it was a
+    # `requestAnimationFrame` that never fired in a browser producing no frames.
+    if state != "unmeasured" and reserved.get("bar", "").endswith("rem"):
+        problems.append(
+            f"{where}: app.js never measured the input bar (--bar-h is still "
+            f"{reserved.get('bar')})"
+        )
+
     if newest and bar:
         gap = bar["top"] - newest["bottom"]
-        reserved = data.get("reserved", {})
         # What the page reserved, versus what the bar actually takes. When these
         # disagree the gap checks below are measuring a stale reservation, which
         # is a different bug from a stylesheet that reserved the wrong amount.
