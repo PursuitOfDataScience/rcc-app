@@ -283,7 +283,7 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
 .st-key-composer-strip [data-testid="stElementContainer"]:has(.ai-disclaimer) {
     flex: 1 1 8rem !important;
     min-width: 0 !important;
-    text-align: left !important;
+    text-align: center !important;
 }
 
 /* Model picker. A popover trigger, i.e. a button, so it is sized by its own
@@ -551,7 +551,10 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
  * ignored, which is the whole job. */
 .ai-disclaimer {
     display: block;
-    text-align: left;
+    /* Centred in the space the controls leave, not hard left against the edge of the
+     * input box: left-aligned it read as a stray label rather than a caption, and it
+     * lined up with nothing. */
+    text-align: center;
     /* All three !important, because Streamlit styles markdown paragraphs itself at
      * (0,1,1) — one class, one type — and a bare `.ai-disclaimer` is (0,1,0). It
      * lost: the line rendered at Streamlit's size and wrapped onto a second line,

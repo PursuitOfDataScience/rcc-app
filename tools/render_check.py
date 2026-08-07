@@ -194,6 +194,12 @@ body {{ margin: 0; background: {BACKGROUNDS[scheme]}; color: {FOREGROUNDS[scheme
        font-family: "Source Sans Pro", system-ui, sans-serif; }}
 [data-testid="stAppViewContainer"] {{ min-height: 100vh; }}
 [data-testid="stMain"] {{ overflow: auto; height: 100vh; }}
+/* The other place Streamlit's scrollbar can be: on the document, with stMain just
+   a block that grows. It matters because it decides which element answers "does
+   this page scroll?" — ask stMain in this shape and it says no however long the
+   conversation is, which is how a screenful of slack ended up above one that
+   scrolled. See `page(doc_scroll=…)`. */
+.doc-scroll [data-testid="stMain"] {{ overflow: visible; height: auto; }}
 .block-container {{ padding: 6rem 1rem 10rem; margin: 0 auto; }}
 .stMarkdown h1 {{ font-size: 2.75rem; font-weight: 600; line-height: 1.2;
                  padding: 1.25rem 0 1rem; margin: 0; }}
@@ -396,6 +402,11 @@ def _check_balanced(scenarios: dict) -> None:
 # Streamlit is doing, one of these screens is looking at it.
 STICKY_BAR = {"landing-flat", "answer", "long-chat"}
 
+# Which screens put the scrollbar on the document rather than on stMain. Kept to
+# one screen for the same reason as above: it costs a screen, not a doubling, and
+# every state and width still passes through the shape.
+DOC_SCROLL = {"doc-scroll"}
+
 # What is actually on screen while an answer is being generated: the question, and
 # a status row where the answer will go. The other screens render a *finished*
 # answer with the processing marker set, which is a much taller page — so the slack
@@ -425,6 +436,12 @@ SCENARIOS = {
     "answer": CHAT_MARKER + answer_block(0) + strip(wrapped=False),
     "short-answer": CHAT_MARKER + SHORT_ANSWER + strip(),
     "long-chat": CHAT_MARKER
+    + "".join(answer_block(i) for i in range(6))
+    + strip(wrapped=False),
+    # The same long conversation with the scrollbar on the document instead of on
+    # stMain (see DOC_SCROLL). Only one thing differs, and it is the thing that
+    # decides whether app.js thinks this page has room to spare.
+    "doc-scroll": CHAT_MARKER
     + "".join(answer_block(i) for i in range(6))
     + strip(wrapped=False),
     "in-flight": CHAT_MARKER + IN_FLIGHT + strip(wrapped=False),
@@ -554,7 +571,23 @@ function hitTest(el, r) {
   return (top.getAttribute('data-testid') || top.id ||
           top.className || top.tagName || 'something').toString().slice(0, 60);
 }
-var main = document.querySelector('[data-testid="stMain"]');
+// Whichever element actually scrolls, not whichever one usually does. This
+// replica gave `[data-testid="stMain"]` `overflow: auto` from the day it was
+// written, and every measurement below took that for granted; the app has a
+// shape where the document scrolls and stMain reports no overflow at all, and
+// asking the element that is not the scrollport whether the page scrolls is
+// what put a screenful of slack above a conversation that already scrolled.
+// Falls back to stMain so a page with nowhere to scroll still measures.
+function scrollport() {
+  var el = document.querySelector('[data-testid="stMain"]');
+  var candidates = [el, document.scrollingElement, document.documentElement];
+  for (var i = 0; i < candidates.length; i++) {
+    var c = candidates[i];
+    if (c && c.scrollHeight > c.clientHeight + 1) return c;
+  }
+  return el;
+}
+var main = scrollport();
 if (window.__scrollBottom && main) main.scrollTop = main.scrollHeight;
 // Leave the view where app.js's per-turn pin would have left it, so the settle
 // that runs once the answer lands has something to actually close.
@@ -570,19 +603,31 @@ function snapshot() {
   // says whether the reservation was measured or still on the CSS fallback —
   // "2px under the input bar" with no numbers took a while to place.
   var root = getComputedStyle(document.documentElement);
+  // Re-resolved rather than reused from the pin above: app.js has run by now, and
+  // the slack it added can be what made something start scrolling.
+  var port = scrollport();
   var out = {viewport: {w: innerWidth, h: innerHeight}, hostBar: HOSTBAR,
-           scrolled: main ? Math.round(main.scrollTop) : 0,
+           scrolled: port ? Math.round(port.scrollTop) : 0,
            // Whether there is anywhere to scroll to. A conversation shorter than
            // the window sits at the bottom of the space reserved for it, so if
            // that reservation is wrong it lands under the input with no scroll
            // available to reveal it.
-           canScroll: !!main && main.scrollHeight - main.clientHeight > 1,
+           canScroll: !!port && port.scrollHeight - port.clientHeight > 1,
+           // Whether it would scroll with the slack taken back out. app.js only
+           // adds slack to a page too short to fill the window, so asking
+           // "does it scroll?" of the padded page answers a question the padding
+           // itself decides: enough slack makes any page scrollable, and the
+           // check that reads it then fires on every page it succeeded on.
+           canScrollUnfilled: !!port
+             && port.scrollHeight - port.clientHeight
+                - (parseFloat(root.getPropertyValue('--fill')) || 0) > 1,
            // Already as far down as the page goes. The scroll pin clamps to this,
            // so a question that looks low here is as high as it can be put.
-           atEnd: !main || main.scrollHeight - main.clientHeight - main.scrollTop <= 2,
+           atEnd: !port || port.scrollHeight - port.clientHeight - port.scrollTop <= 2,
            docOverflowX: Math.max(0, document.documentElement.scrollWidth - innerWidth),
            reserved: {bar: root.getPropertyValue('--bar-h').trim(),
-                      strip: root.getPropertyValue('--strip-h').trim()},
+                      strip: root.getPropertyValue('--strip-h').trim(),
+                      fill: root.getPropertyValue('--fill').trim()},
            els: {}};
   SELECTORS.forEach(function (s) { out.els[s] = box(s); });
   document.title = JSON.stringify(out);
@@ -645,7 +690,8 @@ MAX_TAIL_GAP = 64
 
 
 def page(body: str, scheme: str, scroll: bool, generating: bool = False,
-         pin: bool = False, script: bool = True, sticky: bool = False) -> str:
+         pin: bool = False, script: bool = True, sticky: bool = False,
+         doc_scroll: bool = False) -> str:
     """The replica, with or without app.js, and with the bar pinned either way.
 
     `script=False` is the app's first frame: the stylesheet's own fallback for how
@@ -660,6 +706,11 @@ def page(body: str, scheme: str, scroll: bool, generating: bool = False,
     bar's worth of room at the end of every conversation on the strength of it, and
     that reservation was the dead space three rounds of fixes could not find.
     Nothing here is allowed to model only one of them again.
+
+    `doc_scroll` moves the scrollbar off stMain and onto the document. Nothing
+    about the stylesheet changes; what changes is which element can answer "does
+    this conversation scroll?", and a wrong answer there is how a page that
+    scrolled got a screenful of slack padded on top of it.
     """
     bar = ('<div data-testid="stBottom">'
            '<div data-testid="stBottomBlockContainer">'
@@ -668,7 +719,7 @@ def page(body: str, scheme: str, scroll: bool, generating: bool = False,
            "</div></div></div></div>")
     return f"""<!doctype html><html><head><meta charset="utf-8">
 <style>{base_css(scheme)}</style><style>{theme_css(scheme)}</style></head>
-<body class="{'bar-sticky' if sticky else 'bar-fixed'}">
+<body class="{'bar-sticky' if sticky else 'bar-fixed'}{' doc-scroll' if doc_scroll else ''}">
 <div data-testid="stHeader"></div><div id="host-bar"></div>
 <div data-testid="stAppViewContainer">
   <div data-testid="stMain" class="main">
@@ -705,7 +756,11 @@ def render(name, html, width, height, shot=False):
 
 def audit(data, scenario, scheme, width, state: str) -> list[str]:
     problems, els = [], data["els"]
-    where = f"{scenario}/{scheme}/{width}px"
+    # The state belongs in the label. Six identical-looking failures that named only
+    # screen, theme and width could not be placed to a state at all, and the state is
+    # what says whether app.js had run, whether an answer was in flight, and whether
+    # the view had been scrolled — i.e. most of what a failure means.
+    where = f"{scenario}/{scheme}/{width}px/{state}"
     generating = state == "generating"
     # "unmeasured" is the first frame, so it is at the top of the page like "rest":
     # the host-toolbar collision check below is meaningful in both.
@@ -841,6 +896,21 @@ def audit(data, scenario, scheme, width, state: str) -> list[str]:
             f"{reserved.get('bar')})"
         )
 
+    # Slack above the conversation is for a page shorter than the window. On a page
+    # that scrolls it is a gap at the TOP instead — reported as "the top and bottom
+    # both have the problem" — and it got there because `fill()` asked stMain whether
+    # the page scrolls rather than asking which element does.
+    # Measured with the slack subtracted, not as the page stands: a short page that
+    # took slack often scrolls *because* of it, and reading the padded page would
+    # fire this on every page the slack was right for.
+    fill = reserved.get("fill", "0px")
+    if (state in ("rest", "settled") and data.get("canScrollUnfilled")
+            and fill not in ("", "0px")):
+        problems.append(
+            f"{where}: {fill} of slack above a conversation that scrolls "
+            f"without it (only a page shorter than the window has slack to take)"
+        )
+
     if newest and bar:
         gap = bar["top"] - newest["bottom"]
         # What the page reserved, versus what the bar actually takes. When these
@@ -902,7 +972,8 @@ def main() -> int:
                                 generating=state == "generating",
                                 pin=state == "settled",
                                 script=state != "unmeasured",
-                                sticky=scenario in STICKY_BAR)
+                                sticky=scenario in STICKY_BAR,
+                                doc_scroll=scenario in DOC_SCROLL)
                     data = render(name, html, width, height,
                                   shot=(scheme == "dark" and width == 1263
                                         and state == "rest"))
