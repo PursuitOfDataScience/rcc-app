@@ -369,14 +369,19 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
 }
 
 .welcome-subtitle {
-    font-size: clamp(0.95rem, 2.1vw, 1.12rem);
+    /* !important for the same reason the disclaimer needs it: this is the app's
+     * only other markdown paragraph, Streamlit sizes those at one class and one
+     * type, and a bare `.welcome-subtitle` is one class. The title next to it has
+     * carried !important since it was written; this one never did, which means it
+     * has probably never rendered at the clamp below. */
+    font-size: clamp(0.95rem, 2.1vw, 1.12rem) !important;
+    line-height: 1.55 !important;
     color: var(--text-secondary);
     /* Wide enough to keep the one-line subtitle on one line; it still wraps
      * gracefully on narrow screens. */
     max-width: min(40rem, 92vw);
     text-wrap: pretty;
     margin: 0 auto 0.6rem;
-    line-height: 1.55;
     animation: fadeInUp 0.6s ease-out 0.25s both;
 }
 
@@ -547,17 +552,18 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
 .ai-disclaimer {
     display: block;
     text-align: left;
-    font-size: 0.66rem;
-    line-height: 1.3;
-    color: var(--text-muted);
-    /* Explicit: it is a <p>, so leaving it to inherit means inheriting Streamlit's
-     * 1rem paragraph margin and paying for a line of whitespace nobody chose in
-     * the band the page has to reserve. */
+    /* All three !important, because Streamlit styles markdown paragraphs itself at
+     * (0,1,1) — one class, one type — and a bare `.ai-disclaimer` is (0,1,0). It
+     * lost: the line rendered at Streamlit's size and wrapped onto a second line,
+     * which is a paragraph at the bottom of the window rather than a caveat beside
+     * the model name. The replica had no paragraph size of its own, so it never saw
+     * the fight; it models one now. */
+    font-size: 0.66rem !important;
+    line-height: 1.35 !important;
+    /* Also explicit: leaving the margin to inherit means inheriting Streamlit's 1rem
+     * paragraph margin and paying for a line of whitespace nobody chose. */
     margin: 0 !important;
-    /* Two lines at most, ever. It shares a line with the controls, so an
-     * unbounded wrap here is what makes the bottom of the window grow. */
-    max-height: 2.6em;
-    overflow: hidden;
+    color: var(--text-muted);
 }
 
 .ai-disclaimer a { color: inherit; text-decoration: underline; }

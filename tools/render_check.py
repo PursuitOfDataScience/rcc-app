@@ -16,14 +16,22 @@ It has already caught what reading the CSS did not:
   * 19–25px between a question and its answer, and up to 566px of nothing
     between the last message and the input box;
   * the slack above a short conversation growing by 42px a frame, because a media
-    query was quietly overriding the padding it was being applied to.
+    query was quietly overriding the padding it was being applied to;
+  * the caveat line under the input rendering at Streamlit's own paragraph size and
+    wrapping onto a second line, because a bare `.ai-disclaimer` is one class where
+    the rule it was losing to is a class and a type — and this replica had no
+    paragraph size of its own for it to lose to;
+  * that same slack being applied while an answer was still generating, which put
+    the question halfway down the window with the reply arriving into the bottom of
+    it. Both of those needed a model added here before they could be caught.
 
 The dead space at the end of a conversation outlived three rounds of fixes because
 of a line in this file: the bar was modelled `position: fixed`, the stylesheet
 reserved a bar's worth of room at the end of the page on the strength of it, and
 that reservation *was* the dead space. Streamlit also ships it `sticky`, in the
-flow, where it needs no room reserved at all. Half the screens here are rendered
-each way now, and app.js asks the browser which one it is looking at.
+flow, where it needs no room reserved at all. Four of the screens here are
+rendered the first way and three the second, and app.js asks the browser which one
+it is looking at rather than trusting either.
 
 It also, for a while, cheerfully passed a top bar that was completely unusable,
 because the replica modelled Streamlit's header as a small right-aligned box
@@ -35,14 +43,17 @@ checks came out of that and are the ones worth keeping honest:
   * whatever the harness cannot see, it must not silently model away — a wrong
     model is worse than no model, because it reads as a pass.
 
-Five states per screen: the first frame with no app.js at all, at rest, scrolled to
-the end, mid-generation, and just finished. The first is the layout the stylesheet's
-own fallbacks produce, which is a frame every user sees and where CI once found an
-answer 2px under the input; in the other four the real app.js runs, because the room
-the page leaves for the bar and the slack above a short conversation are both
-measurements it publishes, and the last two additionally exercise the per-turn
-scroll pin and the settle that closes what it leaves behind. (The landing screen has
-no turn to be in the middle of, so it renders the first two only.)
+Five states per screen — the first frame with no app.js at all, at rest, scrolled to
+the end, mid-generation, and just finished — except the two landing screens, which
+have no turn to be in the middle of and render the first two, and the mid-answer
+screen, which *is* the generating state and renders only that.
+
+The first of those states is the layout the stylesheet's own fallbacks produce — a
+frame every user sees, and where CI once found an answer 2px under the input. In the
+rest the real app.js runs, because the room the page leaves for the bar and the slack
+above a short conversation are both measurements it publishes; the last two states
+additionally exercise the per-turn scroll pin and the settle that closes what it
+leaves behind.
 
 Usage:
     python tools/render_check.py            # audit; exits non-zero on failure
@@ -113,10 +124,29 @@ def _card_labels() -> list[str]:
 
 
 def _disclaimer() -> str:
-    """The line under the input. Read from app.py so the two cannot drift apart —
-    its line count is what decides how much room the page has to reserve."""
-    match = re.search(r"^DISCLAIMER = \((.*?)\n\)", APP, re.S | re.M)
-    return "".join(re.findall(r'"([^"]*)"', match.group(1))) if match else "(missing)"
+    """The line under the input, read from app.py so the two cannot drift apart.
+
+    Loud on failure rather than falling back to a placeholder. It used to return
+    "(missing)" when the regex missed, and when `DISCLAIMER` was shortened from a
+    parenthesised pair of strings to one literal, that is what every render
+    measured: nine characters where the app has sixty. The line-count check passed
+    on text the app does not contain, which is the harness's own cardinal sin —
+    a wrong model reads as a pass.
+    """
+    # Flags per pattern: `re.S` belongs to the parenthesised form only. Shared, it
+    # let `.*` in the single-literal form run to the end of the file, and the
+    # "disclaimer" became app.py itself.
+    for pattern, flags in (
+        (r"^DISCLAIMER = \((.*?)\n\)", re.S | re.M),
+        (r'^DISCLAIMER = ("[^"]*")\s*$', re.M),
+    ):
+        match = re.search(pattern, APP, flags)
+        if match:
+            return "".join(re.findall(r'"([^"]*)"', match.group(1)))
+    raise SystemExit(
+        "render_check: could not find DISCLAIMER in app.py. Fix this parser rather "
+        "than letting every render measure a placeholder."
+    )
 
 
 SUBTITLE = _subtitle()
@@ -168,7 +198,12 @@ body {{ margin: 0; background: {BACKGROUNDS[scheme]}; color: {FOREGROUNDS[scheme
 .stMarkdown h1 {{ font-size: 2.75rem; font-weight: 600; line-height: 1.2;
                  padding: 1.25rem 0 1rem; margin: 0; }}
 .stMarkdown h2 {{ font-size: 1.75rem; line-height: 1.3; margin: 0 0 .5rem; }}
-.stMarkdown p {{ margin: 0 0 1rem; }}
+/* Streamlit sizes markdown paragraphs itself, at a specificity of (0,1,1) — one
+   class and one type. A bare `.ai-disclaimer` rule is (0,1,0) and loses to it, so
+   the line under the input rendered at Streamlit's size rather than the one the
+   stylesheet asked for, and wrapped onto a second line. Modelled here because the
+   replica had no paragraph size at all, which let that rule win by default. */
+.stMarkdown p {{ margin: 0 0 1rem; font-size: 1rem; line-height: 1.6; }}
 .stMarkdown pre {{ background: {'#262730' if scheme == 'dark' else '#f0f2f6'};
                   padding: 1rem; border-radius: 8px; overflow-x: auto; margin: 0 0 1rem; }}
 .stMarkdown code {{ font-family: monospace; }}
@@ -334,11 +369,53 @@ LANDING = f"""
   </div></div></div>
 <div class="st-key-examples element-container">{_cards_html()}</div>"""
 
+def _check_balanced(scenarios: dict) -> None:
+    """Every fixture must close every div it opens.
+
+    One missing `</div>` in the mid-answer screen re-parented everything after it:
+    Streamlit's bottom container was parsed *inside* the block that holds the
+    conversation instead of beside it, so the in-flow bar landed mid-window with
+    553px of empty page below it. Nothing failed — the checks that would have
+    noticed only run in states that screen does not render — so the screen added to
+    catch a bug was structurally unable to see it. A replica that is not the shape
+    it claims to be is the one failure mode this harness cannot afford.
+    """
+    for name, body in scenarios.items():
+        opened = len(re.findall(r"<div\b", body))
+        closed = len(re.findall(r"</div\s*>", body))
+        if opened != closed:
+            raise SystemExit(
+                f"render_check: the {name!r} fixture opens {opened} divs and closes "
+                f"{closed}. Every render of it measures a DOM the app never has."
+            )
+
+
 # Which screens render the bar in the flow rather than fixed over the page. Split
 # across the scenarios rather than doubling every render: both ways of pinning it
 # are then audited at every width, in both themes, in every state. Whichever
-# Streamlit is doing, one of these six is looking at it.
+# Streamlit is doing, one of these screens is looking at it.
 STICKY_BAR = {"landing-flat", "answer", "long-chat"}
+
+# What is actually on screen while an answer is being generated: the question, and
+# a status row where the answer will go. The other screens render a *finished*
+# answer with the processing marker set, which is a much taller page — so the slack
+# app.js puts above a short conversation stayed small there and the check below had
+# nothing to catch. On this screen it is the whole page, which is how the question
+# ended up halfway down the window with the answer arriving underneath it.
+IN_FLIGHT = """
+<div class="element-container"><div class="stMarkdown">
+  <div class="user-message"><div class="user-bubble">How do I connect to Midway via
+  SSH?</div></div>
+</div></div>
+<div class="element-container"><div class="stChatMessage">
+ <div></div>
+ <div class="stMarkdown">
+  <div class="status-row" role="status" aria-live="polite">
+    <span class="status-dot" aria-hidden="true"></span>
+    <span class="status-text">Reading SSH (Secure Shell)</span>
+    <span class="status-dots" aria-hidden="true"><span></span><span></span><span></span></span>
+  </div>
+ </div></div></div>"""
 
 # The strip's container shape alternates across the screens, so both shapes are
 # audited at every width, in both themes, in every state.
@@ -350,6 +427,7 @@ SCENARIOS = {
     "long-chat": CHAT_MARKER
     + "".join(answer_block(i) for i in range(6))
     + strip(wrapped=False),
+    "in-flight": CHAT_MARKER + IN_FLIGHT + strip(wrapped=False),
     "error": CHAT_MARKER
     + """
 <div class="element-container"><div class="stMarkdown">
@@ -372,13 +450,27 @@ SCENARIOS = {
 }
 
 # Elements every scenario should keep clear of the chrome, and their line budgets.
+_check_balanced(SCENARIOS)
+
 LINE_LIMITS = {
     ".welcome-subtitle": 1,
     # Two lines is fine for an error action; three means the label no longer fits
     # its column and should be shortened rather than allowed to sprawl.
     ".st-key-retry button p": 1, ".st-key-switch-model button p": 2,
+    # One line, sharing it with the controls. It is a standing caveat that should
+    # be findable and ignorable; at two lines it is a paragraph at the bottom of
+    # the window, which is what it looked like when Streamlit's own paragraph size
+    # won over this stylesheet's.
+    ".ai-disclaimer": 1,
+    # NB: the loop below gates line limits on width >= 641, because at phone widths
+    # nearly everything wraps and a limit there would be noise. That gate made this
+    # entry dead at 414px — the one width where this line does wrap — so the narrow
+    # budget is stated separately in NARROW_LINE_LIMITS rather than left unenforced.
     **{f".st-key-example-card-{i} button p": 1 for i in range(6)},
 }
+
+# Line budgets that apply BELOW 641px too, where the general gate does not.
+NARROW_LINE_LIMITS = {".ai-disclaimer": 2}
 
 MEASURE = """
 <script>
@@ -485,6 +577,9 @@ function snapshot() {
            // that reservation is wrong it lands under the input with no scroll
            // available to reveal it.
            canScroll: !!main && main.scrollHeight - main.clientHeight > 1,
+           // Already as far down as the page goes. The scroll pin clamps to this,
+           // so a question that looks low here is as high as it can be put.
+           atEnd: !main || main.scrollHeight - main.clientHeight - main.scrollTop <= 2,
            docOverflowX: Math.max(0, document.documentElement.scrollWidth - innerWidth),
            reserved: {bar: root.getPropertyValue('--bar-h').trim(),
                       strip: root.getPropertyValue('--strip-h').trim()},
@@ -638,8 +733,9 @@ def audit(data, scenario, scheme, width, state: str) -> list[str]:
         # button, matched by `last:`, is not — it has nothing to ellipse.)
         if b["overflowX"] > 1 and "pre" not in sel and sel not in ELLIPSIS_OK:
             problems.append(f"{where}: {sel} overflows horizontally by {b['overflowX']}px")
-        limit = LINE_LIMITS.get(sel)
-        if limit and b["lines"] > limit and width >= 641:
+        limit = (LINE_LIMITS.get(sel) if width >= 641
+                 else NARROW_LINE_LIMITS.get(sel))
+        if limit and b["lines"] > limit:
             problems.append(f"{where}: {sel} wraps to {b['lines']} lines (want {limit})")
         # Small text needs 4.5:1; >=18.66px counts as large text at 3:1.
         if b["contrast"] and "chip" not in sel:
@@ -679,6 +775,26 @@ def audit(data, scenario, scheme, width, state: str) -> list[str]:
             problems.append(
                 f"{where}: the question is {data['hostBar'] - asked['top']}px above "
                 "the fold while its answer generates"
+            )
+        # And not the other way either. The slack that sits a *finished* short
+        # conversation above the composer was also being applied to a question with
+        # a "Reading…" row under it, which put the question halfway down the window
+        # with the answer arriving into the bottom of it and the top half empty.
+        # Reported as "way below the top of the page, which looks very off".
+        # 0.35 rather than 0.4 of the window. At 0.4 this cleared the failure it
+        # exists to catch by two pixels at 966×626 — a guard that passes by 2px is
+        # one font metric away from not passing at all. With the slack suppressed
+        # mid-turn the question sits ~100px down at every width, so the tighter
+        # ceiling costs nothing and buys ~30px of margin at the narrowest window.
+        ceiling = round(data["viewport"]["h"] * 0.35)
+        # Not when the page is scrolled as far as it goes: the pin clamps to max
+        # scroll, so on a conversation whose last turn is near the end of the
+        # document the question cannot be lifted any higher and this would be
+        # asking the layout for something the geometry forbids.
+        if asked and asked["top"] > ceiling and not data.get("atEnd", False):
+            problems.append(
+                f"{where}: the question is {asked['top']}px down the window while "
+                f"its answer generates (want no lower than {ceiling})"
             )
 
     for sel in INTERACTIVE:
@@ -772,10 +888,13 @@ def main() -> int:
                 # scrolled to the bottom, mid-generation (app.js pinning the
                 # question), and just-finished (app.js closing the dead space the
                 # pin left behind).
-                states = (["unmeasured", "rest"]
-                          if scenario.startswith("landing")
-                          else ["unmeasured", "rest", "scrolled", "generating",
-                                "settled"])
+                if scenario.startswith("landing"):
+                    states = ["unmeasured", "rest"]   # no turn to be in the middle of
+                elif scenario == "in-flight":
+                    states = ["generating"]           # it *is* the mid-turn screen
+                else:
+                    states = ["unmeasured", "rest", "scrolled", "generating",
+                              "settled"]
                 for state in states:
                     suffix = "" if state == "rest" else f"-{state}"
                     name = f"{scenario}-{scheme}-{width}{suffix}"

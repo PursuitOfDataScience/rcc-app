@@ -107,20 +107,21 @@ onto an extra line:
 
 ```bash
 python tools/render_check.py                 # measure and report
-python tools/render_check.py "New subtitle"  # try alternative hero copy
+python tools/render_check.py -v              # also print every measurement
 ```
 
-It renders six screens (landing, landing again with the other container shape
-Streamlit emits, answer, short answer, long chat, error) in both colour schemes at
-five widths, in five states — the first frame, before `static/app.js` has measured
-how much room the input bar needs; at rest; scrolled; mid-generation; and
-just-finished, the last four with the real `static/app.js` driving the page — 240
-renders. Half the screens pin Streamlit's input bar with `position: fixed` and half
-with `position: sticky`, because Streamlit has shipped both and the difference
-decides whether the page must reserve room for it or already has. It fails on clipping, content hidden behind the input bar, horizontal
-overflow, unwanted wrapping, a control something else is painted on top of, the gap
-between a question and its answer, dead space above the input bar, or contrast
-below WCAG AA. CI runs it too.
+It renders seven screens (landing, landing again with the other container shape
+Streamlit emits, answer, short answer, long chat, a question mid-answer, error)
+in both colour schemes at five widths, in five states — the first frame, before
+`static/app.js` has measured how much room the input bar needs; at rest;
+scrolled; mid-generation; and just-finished, the last four with the real
+`static/app.js` driving the page — 250 renders. Four of the screens pin
+Streamlit's input bar with `position: fixed` and three with `position: sticky`,
+because Streamlit has shipped both and the difference decides whether the
+page must reserve room for it or already has. It fails on clipping, content
+hidden behind the input bar, horizontal overflow, unwanted wrapping, a control
+something else is painted on top of, the gap between a question and its answer,
+dead space above the input bar, or contrast below WCAG AA. CI runs it too.
 
 It catches what reading the CSS does not. So far: the newest answer sitting 131px
 underneath the chat input, the hero subtitle and all six starter cards wrapping to
@@ -131,7 +132,14 @@ stacking into a column when the `st-key-…` class lands on the vertical block r
 than on a wrapper around it, and a `padding-top` override in a media query that
 silently ate the slack `app.js` puts above a short conversation — which then grew by
 42px a frame, because it measured the slack as "what is left after the padding I
-applied" with padding that was being ignored.
+applied" with padding that was being ignored. Two more got past it first, each
+for want of a model: the caveat line under the input rendering at Streamlit's
+own paragraph size and wrapping onto a second line — a bare `.ai-disclaimer` is
+a class where the rule Streamlit styles markdown paragraphs with is a class and
+a type, and it won here only because the replica had no paragraph size of its
+own to lose to — and that same slack being applied while an answer was still
+generating, which put the question halfway down the window with the answer
+arriving into the bottom of it. Both are modelled now.
 
 What it cannot catch is a wrong assumption about Streamlit's own markup: it audits
 this stylesheet against a replica, so a rule that reaches nothing in the real DOM

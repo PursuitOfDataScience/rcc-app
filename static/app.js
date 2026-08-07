@@ -108,15 +108,27 @@
     // asserting a layout the app may not have. Three rounds of trying to close a
     // gap by tuning padding, alignment and scrolling never touched the padding that
     // was the gap. So this asks the browser instead of guessing.
+    //
+    // The rule is `fixed` or `absolute` anywhere from the bar up, and nothing else:
+    // those are the two values that take a box out of the flow, and a `fixed`
+    // ancestor takes its whole subtree with it however the elements inside it are
+    // positioned. `sticky`, `relative` and `static` all keep their box in the flow,
+    // so the page already ends above the bar and reserving room for it again is the
+    // dead space this is here to stop.
+    //
+    // Hence the walk to the top rather than a verdict at the first positioned
+    // element it meets: returning "in flow" at the first `sticky` read a bar that is
+    // sticky inside something fixed as needing no room, which hid the newest answer
+    // 132px under the input in testing — the exact failure this function prevents, in
+    // the one shape the replica does not model. (A box pinned by `transform` would
+    // fool this, since a transform leaves the box in flow. Streamlit does not do
+    // that, and if it ever does, the symptom is the 131px this file already knows.)
     function overlays(bar) {
         for (var node = bar; node && node !== doc.body; node = node.parentElement) {
             var position = view.getComputedStyle(node).position;
-            if (position === 'fixed') return true;
-            if (position === 'sticky') return false;
+            if (position === 'fixed' || position === 'absolute') return true;
         }
-        // Unknown: reserve the room. A little dead space is a blemish; an answer
-        // hidden under the input is unreadable.
-        return true;
+        return false;
     }
 
     function measureChrome() {
@@ -189,7 +201,13 @@
     // instead of doing damage.
     function fill(port) {
         var bar = doc.querySelector('[data-testid="stBottomBlockContainer"]');
-        if (!bar || !doc.querySelector('.chat-container')) {
+        // Not while an answer is coming. A question and a "Reading…" row are short,
+        // so this would sit them just above the composer and stream the answer into
+        // the bottom of the window with most of the page empty above it — which is
+        // where a question goes to be read, not where it goes to be answered. The
+        // pin puts it at the top for the duration; this takes over once the answer
+        // has landed and its real height is known.
+        if (!bar || isProcessing() || !doc.querySelector('.chat-container')) {
             publish('--fill', 0);
             return;
         }
@@ -214,22 +232,29 @@
     // it survives Streamlit rebuilding this script's iframe on every rerun. That
     // matters more than it looks: a version that ran every frame would yank the
     // page back down each time the reader scrolled up to re-read something.
-    function settle(el, answers) {
+    // A backstop now rather than the mechanism: with the page reserving exactly the
+    // bar plus one gap, and `--fill` closing the slack on a short conversation, max
+    // scroll already lands the tail one gap above the bar and this finds nothing to
+    // do. It stays for the cases neither of those covers — no ResizeObserver, a
+    // stylesheet whose padding something else is overriding — so it must still be
+    // correct if it ever does fire.
+    function settle(el) {
         var messages = doc.querySelectorAll('.user-message');
         var latest = messages[messages.length - 1];
         var end = tail();
         var bar = doc.querySelector('[data-testid="stBottomBlockContainer"]');
-        // Measure first, and only then spend the once-per-answer stamp. Spending
-        // it up front looked equivalent and was not: this runs on a page Streamlit
-        // is still rebuilding, so a pass with no messages in the DOM yet burned the
-        // stamp for that answer count and returned — and the real layout, when it
-        // landed a moment later, carried the same count and was never settled.
-        // That is the dead space that survived two rounds of fixing it.
+        // Measure before spending the once-per-turn stamp. Spending it up front
+        // looked equivalent and was not: this runs on a page Streamlit is still
+        // rebuilding, so a pass with no messages in the DOM yet burned the stamp and
+        // returned, and the real layout — arriving a moment later with the same
+        // count — was never settled. That is the dead space that survived two rounds.
         if (!latest || end === null || !bar) return;
 
-        var stamp = String(answers.length);
+        // Counted on questions, not on answers. An errored turn appends no assistant
+        // message, so an answer count carries over from the previous turn and this
+        // reads as already done; every turn has exactly one question.
+        var stamp = String(messages.length);
         if (doc.body.dataset.sageSettled === stamp) return;
-        doc.body.dataset.sageSettled = stamp;
 
         var excess = bar.getBoundingClientRect().top - end - TAIL_GAP;
         if (excess <= 4) return;
@@ -238,7 +263,12 @@
         // Once it has scrolled away on its own there is nothing left to protect.
         var top = latest.getBoundingClientRect().top;
         var move = Math.min(excess, top >= TOP_GAP ? top - TOP_GAP : excess);
-        if (move > 4) el.scrollTop += move;
+        if (move <= 4) return;
+        // Stamped here, where it has actually scrolled. Stamped before the two
+        // returns above, a pass that found nothing to do would spend the turn's one
+        // chance and a later pass with a real gap could not take it.
+        doc.body.dataset.sageSettled = stamp;
+        el.scrollTop += move;
     }
 
     // A landing screen starts at the top. Streamlit keeps the scroll position
@@ -265,7 +295,7 @@
         if (landing(el)) return;
         if (!isProcessing()) {
             pinnedTurn = false;
-            settle(el, doc.querySelectorAll('[class*="st-key-answer-"]'));
+            settle(el);
             return;
         }
 
