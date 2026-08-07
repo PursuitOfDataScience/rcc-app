@@ -459,16 +459,6 @@ with st.container(key="topbar"):
 # --- body ------------------------------------------------------------------
 
 if not has_messages:
-    # Reserve exactly the height of the fixed input bar, no more. 11rem (the chat
-    # reserve) made the welcome screen scrollable on windows where it would
-    # otherwise fit, and any scroll takes the title up under the top chrome.
-    # Measured: 10rem is the smallest value that still keeps the bottom row of
-    # example cards clear of the input at every width tested.
-    st.markdown(
-        "<style>[data-testid='stMainBlockContainer'], .main .block-container"
-        "{padding-bottom: 10rem !important;}</style>",
-        unsafe_allow_html=True,
-    )
     st.markdown(
         """
         <div class="welcome">

@@ -23,8 +23,6 @@
 
     /* --- scrolling ------------------------------------------------------- */
 
-    var NEAR_BOTTOM_PX = 140;
-
     // The single element that actually scrolls.
     //
     // This used to force `overflow: auto` onto stAppViewContainer, stMain and body,
@@ -47,14 +45,54 @@
         return null;
     }
 
-    // Clearance for the host toolbar and our own fixed controls.
-    var TOP_GAP = 58;
+    // Clearance for Streamlit's header strip (3.75rem, full width, and on top of
+    // the page) plus the sticky top bar that parks just below it. Pinning tighter
+    // than this puts the question underneath both.
+    var TOP_GAP = 112;
+    // What should be left between the end of an answer and the input bar.
+    var TAIL_GAP = 28;
     var pinnedTurn = false;
 
+    // Close the dead space the pin leaves behind once an answer has landed.
+    //
+    // The pin scrolls so the question sits at the top; if the answer then turns
+    // out to be short, the view is left with the reply floating high above the
+    // input bar and a screenful of nothing under it.
+    //
+    // Runs exactly once per answer, keyed off a marker on the parent document so
+    // it survives Streamlit rebuilding this script's iframe on every rerun. That
+    // matters more than it looks: a version that ran every frame would yank the
+    // page back down each time the reader scrolled up to re-read something.
+    function settle(el, answers) {
+        var stamp = String(answers.length);
+        if (doc.body.dataset.sageSettled === stamp) return;
+        doc.body.dataset.sageSettled = stamp;
+
+        var messages = doc.querySelectorAll('.user-message');
+        var latest = messages[messages.length - 1];
+        var last = answers[answers.length - 1];
+        var bar = doc.querySelector('[data-testid="stBottomBlockContainer"]');
+        if (!latest || !last || !bar) return;
+
+        var excess = bar.getBoundingClientRect().top -
+                     last.getBoundingClientRect().bottom - TAIL_GAP;
+        if (excess <= 4) return;
+
+        // Never buy that space by pushing a still-visible question off the top.
+        // Once it has scrolled away on its own there is nothing left to protect.
+        var top = latest.getBoundingClientRect().top;
+        var move = Math.min(excess, top >= TOP_GAP ? top - TOP_GAP : excess);
+        if (move > 4) el.scrollTop += move;
+    }
+
     function autoScroll() {
-        if (!isProcessing()) { pinnedTurn = false; return; }
         var el = scroller();
         if (!el) return;
+        if (!isProcessing()) {
+            pinnedTurn = false;
+            settle(el, doc.querySelectorAll('[class*="st-key-answer-"]'));
+            return;
+        }
 
         // Put the question at the TOP of the viewport once per turn and let the
         // answer stream in beneath it, the way every chat UI behaves.
