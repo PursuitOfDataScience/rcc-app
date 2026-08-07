@@ -50,6 +50,26 @@ _BINARY_BYTES = bytes(range(0, 9)) + bytes(range(11, 13)) + bytes(range(14, 32))
 _ENCODINGS = ("utf-8", "utf-8-sig", "cp1252", "latin-1")
 
 
+# Images, by magic bytes rather than by extension — a screenshot pasted from the
+# clipboard arrives with a name this app invented, so the name says nothing. Checked
+# before the binary sniff, which would otherwise reject every one of them.
+_IMAGE_MAGIC = (
+    (b"\x89PNG\r\n\x1a\n", "image/png"),
+    (b"\xff\xd8\xff", "image/jpeg"),
+    (b"GIF87a", "image/gif"),
+    (b"GIF89a", "image/gif"),
+)
+
+
+def _image_mime(data: bytes) -> str | None:
+    for magic, mime in _IMAGE_MAGIC:
+        if data.startswith(magic):
+            return mime
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp"
+    return None
+
+
 @dataclass
 class Attachment:
     filename: str
@@ -57,9 +77,19 @@ class Attachment:
     text: str
     pages: int = 0
     truncated: bool = False
+    # Set for images only: the raw bytes and their type, so a vision-capable model
+    # can be handed the picture rather than a sentence about it.
+    data: bytes = b""
+    mime: str = ""
+    # Byte size of the upload it came from. Half of the (name, size) pair the app
+    # identifies a file by across reruns, since the uploader reports the same files
+    # again on every one of them.
+    size: int = 0
 
     @property
     def icon(self) -> str:
+        if self.kind == "image":
+            return "🖼️"
         extension = self.filename.rsplit(".", 1)[-1].lower()
         return _ICONS.get(extension, "📎")
 
@@ -67,9 +97,16 @@ class Attachment:
     def summary(self) -> str:
         if self.kind == "pdf":
             detail = f"{self.pages} page{'s' if self.pages != 1 else ''}"
+        elif self.kind == "image":
+            detail = f"{len(self.data) / 1024:,.0f} KB image"
         else:
             detail = f"{len(self.text):,} characters"
         return f"{detail}{', truncated' if self.truncated else ''}"
+
+    def as_data_url(self) -> str:
+        import base64  # noqa: PLC0415  (only images need it)
+
+        return f"data:{self.mime};base64,{base64.b64encode(self.data).decode()}"
 
 
 def _extract_pdf(data: bytes) -> tuple[str, int]:
@@ -145,10 +182,17 @@ def process(filename: str, data: bytes) -> tuple[Attachment | None, str | None]:
         text, truncated = _truncate(text, "Document")
         return Attachment(filename, "pdf", text, pages, truncated), None
 
-    # Everything that is not a PDF is text, and whether it is text is decided by
-    # reading it. Checking the extension against a list was the old rule, and the
-    # files it turned away were the ones this app exists to answer questions about: a
-    # job script, the .out it wrote, a Makefile, a config with no extension at all.
+    # Before the binary sniff, which would throw every image out. A pasted screenshot
+    # is the case this exists for: it arrives as PNG bytes under a name this app made
+    # up, so the only evidence about what it is comes from the bytes themselves.
+    mime = _image_mime(data)
+    if mime:
+        return Attachment(filename, "image", "", data=data, mime=mime), None
+
+    # Everything that is not a PDF or an image is text, and whether it is text is
+    # decided by reading it. Checking the extension against a list was the old rule,
+    # and the files it turned away were the ones this app exists to answer questions
+    # about: a job script, the .out it wrote, a Makefile, a config with no extension.
     if _looks_binary(data):
         return None, (
             f"{filename} does not look like text. Attach a PDF or a text file — a "
@@ -171,6 +215,11 @@ def process(filename: str, data: bytes) -> tuple[Attachment | None, str | None]:
 
 def as_context(attachment: Attachment) -> str:
     """Frame file content so a model treats it as data, not as instructions."""
+    if attachment.kind == "image":
+        # No text to quote. Whether the picture itself reaches the model depends on
+        # the model, so this says only that it exists; `history` attaches the bytes
+        # when the model can see them.
+        return f"The user attached an image: {attachment.filename}."
     label = (
         f"{attachment.filename} ({attachment.pages} pages)"
         if attachment.kind == "pdf"

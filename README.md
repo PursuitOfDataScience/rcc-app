@@ -10,7 +10,7 @@ Built with [Streamlit](https://streamlit.io/), answered by [Mistral](https://mis
 - 🔎 **Grounded answers** — no invented commands, partitions or quotas.
 - 🔗 **Real citations** — a Sources strip deep-links to the exact section, plus Related sections from the same page.
 - 💬 **Streaming replies** with memory for follow-ups.
-- 📎 **File uploads** — a PDF, or anything that reads as text: a job script, the `.out` it wrote, a config, source. Judged on the bytes, not the extension.
+- 📎 **Attachments** — several at once. A PDF, an image pasted straight from the clipboard, or anything that reads as text: a job script, the `.out` it wrote, a config, source. Judged on the bytes, not the extension.
 - 🗂️ **Self-updating docs** — one command refreshes the bundled guide.
 - ♿ **Light and dark themes**, keyboard focus, reduced motion, print stylesheet.
 
@@ -54,7 +54,8 @@ Environment-driven; defaults in [`sage/config.py`](sage/config.py).
 | `SAGE_OPENCODE_MODELS` | deepseek-v4-flash-free, … | Fallback list if `GET /models` fails |
 | `OPENCODE_BASE_URL` | `https://opencode.ai/zen/v1` | OpenAI-compatible endpoint |
 | `SAGE_TOOLLESS_MODELS` | *(empty)* | Substrings of models that cannot call tools |
-| `SAGE_MAX_TOKENS` | `1600` | Response cap |
+| `SAGE_VISION_MODELS` | `pixtral,claude` | Substrings of models that can be shown an image |
+| `SAGE_MAX_TOKENS` | `8000` | Response cap. Generous: 1600 cut answers off mid-sentence |
 | `SAGE_TEMPERATURE` | `0.2` | Sampling temperature |
 | `RCC_DOCS_PATH` | `./docs` | User Guide markdown source |
 | `RCC_WEB_PATH` | `./web` | Scraped website text source |

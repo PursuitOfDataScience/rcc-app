@@ -72,9 +72,25 @@ OPENCODE_MODELS = _env_list(
 # automatically if a provider rejects a request because of tools.
 TOOLLESS_MODELS = _env_list("SAGE_TOOLLESS_MODELS", ())
 
+# Substrings marking models that can be handed a picture. Deliberately short and
+# conservative: an image sent to a text-only model is a 4xx, not a graceful refusal,
+# so anything not listed here gets told the file is attached and left unread rather
+# than gambling with the request. Extend it as a deployment learns its own lineup.
+VISION_MODELS = _env_list("SAGE_VISION_MODELS", ("pixtral", "claude"))
+
+
+def sees_images(model: str) -> bool:
+    lowered = (model or "").lower()
+    return any(mark and mark.lower() in lowered for mark in VISION_MODELS)
+
 # Retained for compatibility; the UI picker overrides it per session.
 MODEL = os.getenv("SAGE_MODEL", "mistral-small-latest")
-MAX_TOKENS = _env_int("SAGE_MAX_TOKENS", 1600)
+# Generous on purpose. 1600 was the old value and it cut answers off mid-sentence —
+# "Per the RCC docs," and then nothing — which is worse than a long answer in every
+# way: the reader cannot tell a finished thought from a severed one, and asking again
+# costs another full request. A walkthrough with two code blocks and a Sources strip
+# runs well past 1600, and no answer this app gives is improved by being truncated.
+MAX_TOKENS = _env_int("SAGE_MAX_TOKENS", 8000)
 TEMPERATURE = _env_float("SAGE_TEMPERATURE", 0.2)
 MAX_TOOL_ROUNDS = _env_int("SAGE_MAX_TOOL_ROUNDS", 6)
 REQUEST_RETRIES = _env_int("SAGE_REQUEST_RETRIES", 2)

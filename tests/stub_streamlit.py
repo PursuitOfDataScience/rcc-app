@@ -67,9 +67,12 @@ class StubStreamlit(ModuleType):
         # empty rather than None so a test can assert on it without the app having
         # had to reach the call.
         self.chat_input_kwargs: dict[str, object] = {}
+        # Same, for the uploader.
+        self.uploader_kwargs: dict[str, object] = {}
         self.stream_chunks: list[int] = []
         self.errors: list[str] = []
         self.warnings: list[str] = []
+        self.captions: list[str] = []
         self._chat_input = chat_input
         self._buttons = buttons or {}
         self._upload = upload
@@ -119,6 +122,7 @@ class StubStreamlit(ModuleType):
 
     def caption(self, body, **_kwargs):
         self.events.append(("caption", body))
+        self.captions.append(str(body))
 
     def code(self, body, **_kwargs):
         self.events.append(("code", body))
@@ -138,8 +142,12 @@ class StubStreamlit(ModuleType):
             self.tooltips[key or label] = help
         return bool(self._buttons.get(key, False))
 
-    def file_uploader(self, label, key=None, **_kwargs):
+    def file_uploader(self, label, key=None, **kwargs):
         self.events.append(("file_uploader", key))
+        # Recorded so a test can prove the app asks for more than one file and does
+        # not filter by extension — the two settings that decided whether a second
+        # attachment, or a pasted screenshot, could arrive at all.
+        self.uploader_kwargs = dict(kwargs)
         return self._upload
 
     def chat_input(self, placeholder=None, **kwargs):

@@ -49,8 +49,12 @@ def test_binary_uploads_are_rejected_on_their_bytes():
 
 
 def test_a_binary_named_like_text_is_still_rejected():
-    """The extension is not evidence. A PNG called .txt is not a text file."""
-    attachment, error = files.process("sneaky.txt", b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR")
+    """The extension is not evidence. A compiled binary called .txt is not text.
+
+    An ELF header rather than a PNG one: a PNG *is* now accepted, as an image, so
+    using one here would have tested the image path while claiming to test refusal.
+    """
+    attachment, error = files.process("sneaky.txt", b"\x7fELF\x02\x01\x01\x00" + b"\x00" * 24)
     assert attachment is None
     assert "does not look like text" in error
 
@@ -199,3 +203,38 @@ def test_attachment_context_frames_content_as_data():
 )
 def test_icons(name, icon):
     assert files.Attachment(name, "text", "x").icon == icon
+
+
+def test_a_png_is_accepted_as_an_image():
+    """A pasted screenshot arrives as bytes under a name the app invented, so the
+    name says nothing and the magic number is the only evidence."""
+    png = b"\x89PNG\r\n\x1a\n" + b"\x00\x00\x00\rIHDR" + b"x" * 64
+    attachment, error = files.process("pasted-image.png", png)
+    assert error is None
+    assert attachment.kind == "image"
+    assert attachment.mime == "image/png"
+    assert attachment.icon == "🖼️"
+    assert "image" in attachment.summary
+    assert attachment.as_data_url().startswith("data:image/png;base64,")
+
+
+@pytest.mark.parametrize(
+    "name,payload,mime",
+    [
+        ("shot.png", b"\x89PNG\r\n\x1a\n" + b"y" * 40, "image/png"),
+        ("photo.jpg", b"\xff\xd8\xff\xe0" + b"y" * 40, "image/jpeg"),
+        ("anim.gif", b"GIF89a" + b"y" * 40, "image/gif"),
+        ("shot.webp", b"RIFF" + b"\x00\x00\x00\x00" + b"WEBP" + b"y" * 40, "image/webp"),
+    ],
+)
+def test_every_clipboard_image_format_is_recognised(name, payload, mime):
+    attachment, error = files.process(name, payload)
+    assert error is None, f"{name} was refused: {error}"
+    assert attachment.mime == mime
+
+
+def test_an_image_with_a_misleading_name_is_still_an_image():
+    """Nothing about this decision comes from the filename."""
+    attachment, error = files.process("notes.txt", b"\x89PNG\r\n\x1a\n" + b"z" * 40)
+    assert error is None
+    assert attachment.kind == "image"

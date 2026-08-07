@@ -62,6 +62,30 @@
     // value as `--tail-gap` in app.css, which is how much room the page reserves
     // past its last message; this is the scroll that lands on it.
     var TAIL_GAP = 28;
+    // Between the attachment chips and the top of the input bar. Matches the 0.35rem
+    // the stylesheet offsets them by, so the room reserved is the room they occupy.
+    var CHIP_GAP = 6;
+
+    // The top edge of everything pinned at the bottom of the window.
+    //
+    // Not the bar's own top: the attachment chips are pinned above it and are `fixed`
+    // too, so a gap measured to the bar is a gap measured underneath them. Every
+    // spacing decision in this file is about how much room is left before the reader
+    // runs into the composer, and the composer starts where the chips do.
+    //
+    // This was worth 5px of overlap with one row of chips and 38px with two, which is
+    // the last message disappearing behind a chip — found by the `attached` screens in
+    // tools/render_check.py the moment they were added.
+    function composerTop(bar) {
+        var top = bar.getBoundingClientRect().top;
+        var chips = doc.querySelector('.st-key-attachments');
+        if (chips) {
+            var rect = chips.getBoundingClientRect();
+            if (rect.height > 0 && rect.top < top) top = rect.top;
+        }
+        return top;
+    }
+
     var pinnedTurn = false;
 
     /* --- chrome measurement ---------------------------------------------- */
@@ -137,12 +161,30 @@
     function measureChrome() {
         var strip = doc.querySelector('.st-key-composer-strip');
         var bar = doc.querySelector('[data-testid="stBottomBlockContainer"]');
+        var chips = doc.querySelector('.st-key-attachments');
         // Strip first: the bar reserves room for it, so publishing it is what
         // gives the bar its final height. Reading the bar's rect afterwards
         // flushes that change, so both values come from the same layout.
         if (strip) publish('--strip-h', band(strip));
-        if (bar) publish('--bar-h', overlays(bar) ? band(bar) : 0);
-        watch(strip, bar);
+        if (bar) {
+            // Two numbers, and the difference between them matters.
+            //
+            // `--bar-band` is the bar alone, measured from the bottom of the window.
+            // The attachment chips are pinned to it, so it must not include them.
+            // `--bar-h` is what the page reserves at its end, which must include
+            // them, because they are `fixed` and would otherwise sit on top of the
+            // newest answer.
+            //
+            // Kept apart on purpose. One variable used for both would mean the chips'
+            // position depended on a number their own height changed — a feedback
+            // loop, and the last one of those in this file grew by 42px a frame until
+            // it was the height of the window.
+            var barBand = overlays(bar) ? band(bar) : 0;
+            publish('--bar-band', barBand);
+            var chipRoom = chips ? chips.getBoundingClientRect().height + CHIP_GAP : 0;
+            publish('--bar-h', barBand + chipRoom);
+        }
+        watch(strip, bar, chips);
     }
 
     // Re-measure whenever either one changes size, rather than only when the
@@ -151,7 +193,7 @@
     // arriving late — and a published height that has gone stale is a stale
     // reservation: too small, and the newest answer sits under the input.
     var watcher = null;
-    function watch(strip, bar) {
+    function watch(strip, bar, chips) {
         if (typeof ResizeObserver === 'undefined') return;
         try {
             if (!watcher) watcher = new ResizeObserver(measureChrome);
@@ -159,6 +201,9 @@
             // run every sync and pick up the elements Streamlit just rebuilt.
             if (strip) watcher.observe(strip);
             if (bar) watcher.observe(bar);
+            // The chips too: one more attached file adds a row, and the room the
+            // page reserves has to follow it without waiting for the next rerun.
+            if (chips) watcher.observe(chips);
         } catch (err) { /* the sync pass still measures */ }
     }
 
@@ -221,7 +266,7 @@
         }
         var end = tail();
         if (end === null) return;
-        var slack = bar.getBoundingClientRect().top - end - TAIL_GAP;
+        var slack = composerTop(bar) - end - TAIL_GAP;
         publish('--fill', Math.max(0, Math.min(Math.round(slack), port.clientHeight)));
     }
 
@@ -259,7 +304,7 @@
         var stamp = String(messages.length);
         if (doc.body.dataset.sageSettled === stamp) return;
 
-        var excess = bar.getBoundingClientRect().top - end - TAIL_GAP;
+        var excess = composerTop(bar) - end - TAIL_GAP;
         if (excess <= 4) return;
 
         // Never buy that space by pushing a still-visible question off the top.
@@ -356,6 +401,84 @@
 
         input.style.position = 'relative';
         input.insertBefore(btn, input.firstChild);
+    }
+
+    // Paste a screenshot into the box and have it attach.
+    //
+    // Before this, nothing happened at all: the clipboard's image never reached
+    // Streamlit's uploader, because the only thing wired to that uploader was the
+    // paperclip's `click()`. A paste is the same file arriving by a different door,
+    // so it is handed to the same input.
+    //
+    // The transfer has to go through `DataTransfer`, because `input.files` is not
+    // otherwise assignable, and the `change` has to be dispatched by hand: React
+    // listens for the native event at the document root, so a bubbling one reaches
+    // its handler, but nothing dispatches it when the list is set programmatically.
+    function addPasteHandler() {
+        var input = doc.querySelector('[data-testid="stChatInput"]');
+        if (!input || input.dataset.sagePaste) return;
+        input.dataset.sagePaste = '1';
+        input.addEventListener('paste', function (event) {
+            var data = event.clipboardData;
+            if (!data) return;
+            var files = [];
+            // `items` rather than `files`: a screenshot on the clipboard is an item
+            // of kind 'file' and shows up in both, but some browsers only populate
+            // `items` for synthesised image data.
+            for (var i = 0; i < (data.items || []).length; i++) {
+                var item = data.items[i];
+                if (item.kind === 'file') {
+                    var file = item.getAsFile();
+                    if (file) files.push(file);
+                }
+            }
+            if (!files.length) return;
+            // Only now: a paste of plain text has to go on behaving like a paste of
+            // plain text, and calling this earlier would swallow it.
+            event.preventDefault();
+            var target = doc.querySelector(
+                '[data-testid="stFileUploader"] input[type="file"]');
+            if (!target) return;
+            var transfer = new view.DataTransfer();
+            files.forEach(function (file) {
+                // A clipboard image arrives as "image.png" or with no name at all, so
+                // several pastes would collide on the (name, size) pair app.py
+                // identifies a file by. The size makes them distinct in practice; the
+                // index makes them distinct on purpose.
+                var name = file.name || 'pasted-image.png';
+                transfer.items.add(new view.File([file], name, {type: file.type}));
+            });
+            target.files = transfer.files;
+            target.dispatchEvent(new view.Event('change', {bubbles: true}));
+        });
+    }
+
+    // Close the model picker once a model has been picked.
+    //
+    // Streamlit leaves the popover open across the rerun, so the panel stayed up over
+    // the conversation and had to be dismissed by clicking somewhere else — after
+    // choosing, which is the one moment there is nothing left to choose. Base Web
+    // closes its popover on Escape, so that is what this sends.
+    //
+    // Delegated from the document, because the panel is rendered in a portal that
+    // Streamlit rebuilds on every rerun: a listener bound to the panel itself would
+    // be attached to a node that no longer exists by the time it is needed.
+    function closePickerOnPick() {
+        if (doc.documentElement.dataset.sagePicker) return;
+        doc.documentElement.dataset.sagePicker = '1';
+        doc.addEventListener('click', function (event) {
+            var button = event.target && event.target.closest
+                ? event.target.closest('button')
+                : null;
+            if (!button || !button.closest('[data-baseweb="popover"]')) return;
+            // After the click has been delivered, not instead of it.
+            view.setTimeout(function () {
+                doc.dispatchEvent(new view.KeyboardEvent('keydown', {
+                    key: 'Escape', code: 'Escape', keyCode: 27, which: 27,
+                    bubbles: true, cancelable: true
+                }));
+            }, 0);
+        }, true);
     }
 
     function copyText(text) {
@@ -495,6 +618,8 @@
 
     function sync() {
         addPaperclip();
+        addPasteHandler();
+        closePickerOnPick();
         addCodeCopyButtons();
         addAnswerCopyButtons();
         blockSendWhileProcessing();
