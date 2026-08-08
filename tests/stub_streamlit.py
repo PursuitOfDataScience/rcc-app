@@ -34,6 +34,13 @@ class SessionState(dict):
         self.pop(name, None)
 
 
+class QueryParams(dict):
+    """`st.query_params`: dict-like, with the `.clear()` the deep link relies on."""
+
+    def get(self, key, default=None):
+        return dict.get(self, key, default)
+
+
 @contextmanager
 def _noop_context():
     yield None
@@ -73,11 +80,17 @@ class StubStreamlit(ModuleType):
         self.errors: list[str] = []
         self.warnings: list[str] = []
         self.captions: list[str] = []
+        # (label, filename, data) for each download offered, so a test can assert on
+        # what an export actually contains rather than only that a button exists.
+        self.downloads: list[tuple[str, str, str]] = []
+        # Scripts handed to st.html, and whether the JS flag was accepted.
+        self.scripts: list[str] = []
         self._chat_input = chat_input
         self._buttons = buttons or {}
         self._upload = upload
         self._selections = selections or {}
         self.secrets = SimpleNamespace(get=lambda _key, default="": default)
+        self.query_params = QueryParams()
 
     # --- layout -----------------------------------------------------------
     def set_page_config(self, **kwargs):
@@ -135,6 +148,27 @@ class StubStreamlit(ModuleType):
         return "".join(parts)
 
     # --- widgets ----------------------------------------------------------
+    def html(self, body, unsafe_allow_javascript=False, **_kwargs):
+        """`st.html`, which replaced components.v1.html for the script layer.
+
+        The real one takes `unsafe_allow_javascript` from Streamlit 1.56. The stub
+        accepts it so the app's primary path is what gets exercised here; the app
+        falls back to the deprecated call on a TypeError, which is what an older
+        Streamlit would raise.
+        """
+        self.scripts.append(body)
+        self.events.append(("html", unsafe_allow_javascript))
+
+    def download_button(self, label, data=None, file_name=None, key=None,
+                        help=None, **_kwargs):  # noqa: A002
+        self.downloads.append((label, file_name or "", data if isinstance(data, str)
+                               else ""))
+        if key:
+            self.button_labels[key] = label
+            if help:
+                self.tooltips[key] = help
+        return bool(self._buttons.get(key))
+
     def button(self, label, key=None, help=None, **_kwargs):  # noqa: A002
         self.events.append(("button", key or label))
         self.button_labels[key or label] = label

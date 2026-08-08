@@ -1,3 +1,5 @@
+import pytest
+
 from sage import config, search
 from sage.corpus import Chunk, Corpus
 
@@ -132,3 +134,99 @@ class TestSnippet:
 def test_index_builds_over_the_real_corpus(real_index):
     assert real_index.total > 300
     assert real_index.average_length > 0
+
+
+class TestStem:
+    """Verb inflections must collapse, not just plurals.
+
+    The stemmer stripped plurals only while claiming to be "Porter-ish", so
+    `preempted` never reached `preempt` and the synonym group written for that
+    query could not fire.
+    """
+
+    @pytest.mark.parametrize(
+        ("inflected", "base"),
+        [
+            ("preempted", "preempt"),
+            ("purged", "purge"),
+            ("purging", "purge"),
+            ("purges", "purge"),
+            ("running", "run"),
+            ("submitting", "submit"),
+            ("installed", "install"),
+            ("installing", "install"),
+            ("killed", "kill"),
+            ("cancelled", "cancel"),
+            ("exceeded", "exceed"),
+            ("jobs", "job"),
+            ("modules", "module"),
+            ("quotas", "quota"),
+        ],
+    )
+    def test_inflections_share_a_key(self, inflected, base):
+        assert search._stem(inflected) == search._stem(base)
+
+    def test_exceed_is_not_read_as_an_inflection(self):
+        """`eed` is excluded, or `exceed` stems to `exce` and never matches the
+        documented OOM message "exceeded memory limit"."""
+        assert search._stem("exceed") == "exceed"
+
+    @pytest.mark.parametrize("token", ["gres", "globus", "lammps", "gromacs", "hpss"])
+    def test_protected_terms_are_untouched(self, token):
+        assert search._stem(token) == token
+
+    def test_preempt_synonyms_now_reach_the_query(self):
+        """The regression this whole change exists for."""
+        weights = search.expand_query("how do I stop my jobs from being preempted")
+        assert search._stem("scavenge") in weights
+
+
+class TestStopwords:
+    def test_question_scaffolding_is_dropped(self):
+        weights = search.expand_query("how do I install OpenFOAM")
+        assert "how" not in weights
+        assert "do" not in weights
+        assert "instal" in weights
+
+    def test_synonym_group_members_are_never_stopwords(self):
+        """Dropping one of these would silently disable a synonym group."""
+        for group in search._SYNONYM_GROUPS:
+            for term in group:
+                assert not search.is_stopword(search._stem(term)), term
+
+    def test_a_query_of_only_stopwords_retrieves_nothing(self, real_index):
+        assert real_index.search("how do I do this") == []
+
+
+class TestAssessment:
+    def test_unknown_terms_make_a_query_unanswerable(self, real_index):
+        assessment = real_index.assess("how do I install OpenFOAM")
+        assert "openfoam" in assessment.unknown_terms
+        assert not assessment.covered
+        assert not assessment.confident
+        assert "openfoam" in assessment.caveat()
+
+    def test_a_real_question_is_confident_and_silent(self, real_index):
+        assessment = real_index.assess("how do I submit a batch job with sbatch")
+        assert assessment.covered
+        assert assessment.confident
+        assert assessment.caveat() == ""
+
+    def test_margin_is_reported(self, real_index):
+        assessment = real_index.assess("what are the storage quotas")
+        assert assessment.margin >= 0
+
+
+class TestSpread:
+    def test_one_page_cannot_take_every_slot(self, real_index):
+        from collections import Counter
+
+        results = real_index.search("sbatch", limit=6)
+        counts = Counter(f"{r.chunk.source}/{r.chunk.path}" for r in results)
+        assert max(counts.values()) <= config.MAX_PER_PAGE
+
+    def test_a_full_page_of_results_is_still_returned(self, real_index):
+        """Overflow is deferred, not discarded: a query matching mostly one page
+        must still fill the list rather than returning two hits."""
+        results = real_index.search("sbatch", limit=6)
+        assert len(results) == 6

@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import re
 
-from . import config
 from .corpus import Corpus, docs_url
 
 _MARKDOWN_LINK = re.compile(r"\[([^\]]+)\]\(\s*([^)\s]+)(?:\s+\"[^\"]*\")?\s*\)")
@@ -54,8 +53,36 @@ def resolve(target: str, corpus: Corpus) -> str | None:
     return docs_url(document.path, anchor)
 
 
+def unresolved(text: str, corpus: Corpus) -> list[str]:
+    """Internal link targets in `text` that resolve to nothing.
+
+    Worth counting rather than only hiding: a model inventing a path is a
+    generation defect, and a turn that produces one should be visible in the logs
+    rather than silently tidied away by the renderer.
+    """
+    missing = []
+    for match in _MARKDOWN_LINK.finditer(_ATTR_LIST.sub("", text)):
+        target = match.group(2)
+        if target.startswith(_EXTERNAL):
+            continue
+        if resolve(target, corpus) is None:
+            missing.append(target)
+    return missing
+
+
 def fix_links(text: str, corpus: Corpus) -> str:
-    """Point internal links at published URLs; unlink what cannot be resolved."""
+    """Point internal links at published URLs; unlink what cannot be resolved.
+
+    That second clause is what this docstring always promised and the code did not
+    do: an unresolvable target used to become a live link to `DOCS_BASE_URL`, so a
+    reader who clicked a citation landed on the front page of the User Guide
+    believing they had reached the cited section. A confident, wrong citation is
+    worse than no citation — it spends the trust the Sources strip is here to earn,
+    and it cannot be told apart from a working one by looking.
+
+    Now the label survives as plain text. The reader sees a section named but not
+    linked, which is honest about exactly what happened.
+    """
     text = _ATTR_LIST.sub("", text)
 
     def replace(match: re.Match[str]) -> str:
@@ -64,6 +91,6 @@ def fix_links(text: str, corpus: Corpus) -> str:
             # A bare in-page anchor has nowhere to go in a chat transcript.
             return label if target.startswith("#") else match.group(0)
         url = resolve(target, corpus)
-        return f"[{label}]({url})" if url else f"[{label}]({config.DOCS_BASE_URL})"
+        return f"[{label}]({url})" if url else label
 
     return _MARKDOWN_LINK.sub(replace, text)
