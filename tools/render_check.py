@@ -1189,7 +1189,17 @@ def audit(data, scenario, scheme, width, state: str) -> list[str]:
                 f"its answer generates (want no lower than {ceiling})"
             )
 
-    for sel in INTERACTIVE:
+    # An OPEN popover is meant to cover the page: that is what an overlay is, and
+    # clicking the thing underneath is how a reader dismisses it. So on the screens
+    # that render one, the composer being covered is the feature, and what has to stay
+    # reachable is the panel's own buttons — which are in INTERACTIVE and are checked.
+    covered_by_overlay = (
+        {INPUT, SEND, PICKER, STRIP, ".st-key-composer-strip button",
+         "last:.st-key-composer-strip button"}
+        if scenario.startswith("picker-open")
+        else set()
+    )
+    for sel in INTERACTIVE - covered_by_overlay:
         b = els.get(sel)
         # 'offscreen' is covered by the geometry checks above and is expected for
         # in-flow content once the page is scrolled. What this is here to catch is
