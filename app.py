@@ -8,26 +8,23 @@ session state, layout, and the tool loop that drives them.
 
 from __future__ import annotations
 
-import datetime
 import hashlib
 import html
 import logging
 import os
-import uuid
 
 import streamlit as st
 import streamlit.components.v1 as components
 
-from sage import config, export, feedback, files, history, links, llm, providers, scrub
+from sage import config, feedback, files, history, links, llm, providers
 from sage import corpus as corpus_mod
-from sage.prompts import STYLES, system_prompt
+from sage.prompts import SYSTEM_PROMPT
 from sage.search import Index
 from sage.tools import (
     READ_DOC,
     SEARCH_DOCS,
     TOOL_SCHEMAS,
     ToolRunner,
-    follow_up_queries,
     gather_context,
 )
 
@@ -40,28 +37,15 @@ logger = logging.getLogger("sage.app")
 
 STATIC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 
-# (icon, question). One string, not a label plus a different question:
-# The label IS the question sent. It used to be a short label paired with a longer
-# question, so the user's own bubble filled with words they had not written — and a
-# fully-formed question is useful modelling for the many users writing in a second
-# language, but only when it is the one they chose.
-#
-# Two of the six were replaced. "Check my allocation" was the worst card on the
-# screen: first person, phrased as something Sage would do, on a product whose second
-# must-know is that it cannot see your account. "Run PyTorch on GPUs" was one
-# framework and one accelerator, which reads as "not for me" to everyone else.
-#
-# Three of the six are now failures, in the words a user would type. The corpus is
-# densest exactly there — docs/slurm/faq.md, docs/storage/faq.md and
-# docs/mistakes.md are entire pages of documented symptoms — and a landing screen of
-# setup tasks serves only the minority who arrive without a problem.
+# (icon, card label, question actually sent). The label is kept short so every
+# card is a single line; the question stays conversational for the model.
 EXAMPLES = [
-    ("🧰", "How do I submit a batch job with sbatch?"),
-    ("🧯", "My job was killed for exceeding the memory limit."),
-    ("🔌", "How do I connect to Midway3 with SSH?"),
-    ("💾", "What are the quotas on /home, /project and /scratch?"),
-    ("🐍", "How do I create a conda environment on /project?"),
-    ("⏳", "My job is stuck in the queue."),
+    ("🚀", "Connect to Midway via SSH", "How do I connect to Midway via SSH?"),
+    ("💾", "Storage quotas", "What are the storage quotas on Midway?"),
+    ("⚙️", "Submit a batch job", "How do I submit a batch job with sbatch?"),
+    ("🐍", "Set up a Python environment", "How do I set up a Python environment?"),
+    ("🎮", "Run PyTorch on GPUs", "How do I run PyTorch on GPUs?"),
+    ("📊", "Check my allocation", "How do I check my allocation balance?"),
 ]
 
 st.set_page_config(
@@ -86,36 +70,7 @@ def load_asset(name: str) -> str:
 
 
 st.markdown(f"<style>{load_asset('app.css')}</style>", unsafe_allow_html=True)
-
-
-def inject_script(source: str) -> None:
-    """Run app.js against the parent document.
-
-    `components.v1.html` was deprecated in Streamlit 1.56 with a removal target that
-    has already passed, and `requirements.txt` pins `streamlit>=1.42,<2` — an open
-    upper bound, so a fresh deploy installs a version that warns about this today.
-
-    `st.html(..., unsafe_allow_javascript=True)` is the replacement and it needs no
-    change to app.js: that file opens with `var view = window.parent`, and at top
-    level `window.parent is window`, so `view`/`doc` resolve to the real page either
-    way. It also removes the 0×0 iframe whose own `innerHeight` is zero — the
-    measurement hazard the file's header comment is about.
-
-    Falls back to the old call on older Streamlit, because the floor is 1.42 and the
-    keyword does not exist there. The fallback is the *documented* shape rather than
-    a guess, so the failure mode is a deprecation warning, not a blank page.
-    """
-    try:
-        st.html(f"<script>{source}</script>", unsafe_allow_javascript=True)
-        return
-    except TypeError:
-        pass  # Streamlit older than the flag; fall through.
-    except Exception as exc:  # pragma: no cover - defensive
-        logger.warning("st.html could not run the script layer: %s", exc)
-    components.html(f"<script>{source}</script>", height=0)
-
-
-inject_script(load_asset("app.js"))
+components.html(f"<script>{load_asset('app.js')}</script>", height=0)
 
 
 # --- resources -------------------------------------------------------------
@@ -197,23 +152,8 @@ for key, default in (
     # replacement has actually answered, so the notice can never claim a switch
     # worked while an error card below it says it did not.
     ("switched_from", None),
-    # Concise or Explanatory. This audience is genuinely bimodal — a first-year grad
-    # student who has never used SSH and a PI who wants one flag — and one system
-    # prompt suffix serves both.
-    ("style", "normal"),
-    # Anonymous, per browser session, never derived from anything about the person.
-    # It exists so a turn record can be grouped into a conversation; it identifies
-    # nobody and does not survive a reload.
-    ("session_id", ""),
-    # `?q=` is consumed exactly once. Without this a reload re-asks the question and
-    # bills it again.
-    ("deep_link_used", False),
-    ("secret_warning", False),
 ):
     st.session_state.setdefault(key, default)
-
-if not st.session_state.session_id:
-    st.session_state.session_id = uuid.uuid4().hex[:12]
 
 
 def model_options() -> list[providers.Model]:
@@ -276,19 +216,9 @@ def escape(text: str) -> str:
     return html.escape(text, quote=False).replace("\n", "<br>")
 
 
-def render_user(message: dict, stale: bool = False) -> None:
-    """`stale` dims the attachment badges once the file text stops being sent.
-
-    Only the newest attachment-bearing turn ships its file content
-    (`ATTACHMENT_FULL_TEXT_TURNS`), so on an earlier turn the model can see the
-    filename and not the file. Saying so on the badge is the difference between a
-    surprising answer and an expected one — Claude warns before the send for the
-    same reason, and this app used to say nothing at all.
-    """
-    classes = "attachment-badge is-stale" if stale else "attachment-badge"
-    hint = ' title="The text of this file is no longer being sent"' if stale else ""
+def render_user(message: dict) -> None:
     badge = "".join(
-        f'<div class="{classes}"{hint}>{item.icon} '
+        f'<div class="attachment-badge">{item.icon} '
         f"{html.escape(item.filename)}</div>"
         for item in (message.get("attachments") or [])
     )
@@ -340,194 +270,41 @@ def render_sources(sources: list[dict], related: list[dict]) -> None:
     st.markdown(strip, unsafe_allow_html=True)
 
 
-def question_before(position: int) -> str:
-    """The user turn this answer replied to."""
-    return next(
-        (
-            item.get("text", "")
-            for item in reversed(st.session_state.messages[:position])
-            if item.get("role") == "user"
-        ),
-        "",
-    )
-
-
-def save_rating(position: int, message: dict, verdict: str, reason: str = "") -> None:
-    feedback.record_rating(
-        verdict,
-        question_before(position),
-        message.get("text", ""),
-        message.get("sources", []),
-        reason=reason,
-        model=message.get("model", ""),
-    )
-
-
-def render_ungrounded_notice(position: int, message: dict) -> None:
-    """Shown when an answer cites nothing at all.
-
-    Previously this rendered exactly like a grounded answer minus the chips, and the
-    absence of a strip is not something a reader interprets as "this came from
-    nowhere". Now it says so, and — the part that matters — it ends somewhere:
-    a drafted help desk message carrying the question and the searches already tried,
-    and a documentation-gap issue for the upstream repo.
-
-    Nobody in this product category does the no-answer state well, and for a
-    university support tool it is worth more than a hedged answer.
-    """
-    trace = message.get("trace") or {}
-    searches = trace.get("searches") or []
-    question = question_before(position)
-    st.markdown(
-        '<div class="notice notice-gap">No documentation section matched this, so '
-        "the answer above is not grounded in the RCC User Guide. Treat it with "
-        "care.</div>",
-        unsafe_allow_html=True,
-    )
-    with st.container(key=f"gap-{position}"):
-        mail = export.help_desk_mailto(question, searches, message.get("sources", []))
-        st.markdown(
-            f'<a class="gap-action" href="{html.escape(mail, quote=True)}">'
-            "✉ Email the Help Desk — draft ready</a>",
-            unsafe_allow_html=True,
-        )
-        issue = export.docs_issue_url(question, searches)
-        if issue:
-            st.markdown(
-                f'<a class="gap-action" href="{html.escape(issue, quote=True)}" '
-                'target="_blank" rel="noopener noreferrer">'
-                "＋ Report a missing page</a>",
-                unsafe_allow_html=True,
-            )
-
-
 def render_rating(position: int, message: dict) -> None:
-    """The thumbs, then — on a thumbs-down only — what was wrong with it.
-
-    This used to return early unless `SAGE_FEEDBACK_LOG` was set, so the default
-    deployment had no feedback affordance at all: the one quality signal the product
-    has was switched off by the absence of an environment variable, and users had
-    never been asked. The widget now always renders and only the *write* is gated,
-    which is also the honest split — being asked for an opinion is part of the
-    interface, whether or not this deployment keeps it.
-
-    A bare verdict conflates three different failures with three different owners:
-    retrieval put the wrong page in front of the model, generation mangled a right
-    page, or the documentation genuinely does not cover it. One extra click sorts
-    them, and fixed categories get completed where a text box does not.
-    """
-    verdict = message.get("rating")
-    if verdict == "down" and not message.get("rating_reason"):
-        with st.container(key=f"reason-{position}"):
-            st.caption("Thanks — what was wrong with it?")
-            for key, label in feedback.REASONS:
-                if st.button(label, key=f"reason-{position}-{key}"):
-                    message["rating_reason"] = key
-                    save_rating(position, message, "down", reason=key)
-                    st.rerun()
-            if st.button("Skip", key=f"reason-{position}-skip"):
-                message["rating_reason"] = "skipped"
-                save_rating(position, message, "down")
-                st.rerun()
+    if not feedback.enabled():
         return
-
-    if verdict:
+    if message.get("rating"):
         st.markdown(
-            '<div class="rating-thanks">'
-            + (
-                "Thanks — logged for RCC staff."
-                if verdict == "down"
-                else "Thanks."
-            )
-            + "</div>",
-            unsafe_allow_html=True,
+            '<div class="rating-thanks">Thanks — noted.</div>', unsafe_allow_html=True
         )
         return
 
     with st.container(key=f"rate-{position}"):
         columns = st.columns([1, 1, 12], gap="small")
-        for column, choice, glyph, hint in (
+        for column, verdict, glyph, hint in (
             (columns[0], "up", "👍", "This answered my question"),
-            (columns[1], "down", "👎", "Wrong or unhelpful"),
+            (columns[1], "down", "👎", "This was wrong or unhelpful"),
         ):
             with column:
-                if st.button(glyph, key=f"rate-{position}-{choice}", help=hint):
-                    message["rating"] = choice
-                    if choice == "up":
-                        # A thumbs-up is a vote and needs no follow-up; a
-                        # thumbs-down is a report, and the reason picker asks.
-                        save_rating(position, message, "up")
+                if st.button(glyph, key=f"rate-{position}-{verdict}", help=hint):
+                    question = next(
+                        (
+                            item.get("text", "")
+                            for item in reversed(
+                                st.session_state.messages[:position]
+                            )
+                            if item.get("role") == "user"
+                        ),
+                        "",
+                    )
+                    feedback.record_rating(
+                        verdict,
+                        question,
+                        message.get("text", ""),
+                        message.get("sources", []),
+                    )
+                    message["rating"] = verdict
                     st.rerun()
-
-
-def follow_ups(sources: list[dict], limit: int = 3) -> list[str]:
-    """Clickable next *questions*, templated over sections that really exist.
-
-    The Related strip is document discovery; this is question suggestion, and they
-    are different jobs — a reader who does not know the vocabulary cannot turn
-    "Job arrays" into a question, which is most of what stops a second turn
-    happening at all.
-
-    Derived rather than generated: the target is a heading already in the corpus, so
-    a suggestion can never point at a topic the documentation does not have, and it
-    costs no model call.
-    """
-    seen: list[str] = []
-    for item in related_sections(sources, limit=limit * 2):
-        label = (item.get("label") or "").strip()
-        if not label or len(label) > 48:
-            continue
-        question = f"Tell me about {label[0].lower()}{label[1:]}."
-        if question not in seen:
-            seen.append(question)
-        if len(seen) >= limit:
-            break
-    return seen
-
-
-def render_follow_ups(position: int, message: dict) -> None:
-    suggestions = follow_ups(message.get("sources", []))
-    if not suggestions:
-        return
-    with st.container(key=f"followups-{position}"):
-        for index, question in enumerate(suggestions):
-            if st.button(question, key=f"followup-{position}-{index}"):
-                start_new_turn(question, st.session_state.attachments)
-
-
-def render_trace(position: int, message: dict) -> None:
-    """What was searched and read, kept after the answer lands.
-
-    `describe()` already narrates each step while the turn runs and then
-    `status.empty()` destroys it. This is the only place a reader can see that a
-    search *missed* — three searches and one weak read is a signal to treat the
-    answer with suspicion, and without it every answer looks equally confident.
-
-    The tool trace, never model reasoning: this is a record of things that provably
-    happened, which is the opposite of a post-hoc rationalisation.
-    """
-    trace = message.get("trace") or {}
-    searches = trace.get("searches") or []
-    reads = trace.get("reads") or []
-    if not searches and not reads:
-        return
-    missed = sum(1 for item in searches if not item.get("confident"))
-    summary = f"Searched {len(searches)}× · read {len(reads)} section"
-    summary += "" if len(reads) == 1 else "s"
-    if missed:
-        summary += f" · {missed} weak"
-    with st.expander(summary):
-        for item in searches:
-            query = item.get("query") or ""
-            if item.get("confident"):
-                st.markdown(f"- Searched **{html.escape(query)}**")
-            else:
-                unknown = ", ".join(item.get("unknown_terms") or [])
-                note = f" — not in the documentation: {unknown}" if unknown else \
-                    " — only weak matches"
-                st.markdown(f"- Searched **{html.escape(query)}**{note}")
-        for label in reads:
-            st.markdown(f"- Read *{html.escape(label)}*")
 
 
 def render_assistant(position: int, message: dict) -> None:
@@ -536,11 +313,7 @@ def render_assistant(position: int, message: dict) -> None:
             st.markdown(links.fix_links(message.get("text", ""), CORPUS))
         sources = message.get("sources", [])
         render_sources(sources, related_sections(sources))
-        if not sources:
-            render_ungrounded_notice(position, message)
-        render_trace(position, message)
         render_rating(position, message)
-        render_follow_ups(position, message)
 
 
 def _detail(exc: BaseException | None) -> str:
@@ -663,27 +436,6 @@ def render_model_picker() -> None:
                 st.session_state.switched_from = None
                 st.session_state.notice = ""
                 st.rerun()
-        render_style_choice()
-
-
-def render_style_choice() -> None:
-    """Answer length, inside the picker rather than as a new row.
-
-    The composer strip does not get another control: every row there is a slice of a
-    phone screen spent on furniture, which is the note above `render_controls`. The
-    picker is already the place you go to change how answers are produced, so this
-    belongs in it — buttons, not a segmented control, for the same reason the model
-    list is buttons: a stateful widget hands back its previous value on the run after
-    a programmatic change.
-    """
-    st.caption("Answer style")
-    labels = {"concise": "Concise", "normal": "Default", "explanatory": "Explanatory"}
-    for key in STYLES:
-        label = labels.get(key, key.title())
-        mark = "●" if st.session_state.style == key else "○"
-        if st.button(f"{mark}  {label}", key=f"style-{key}", use_container_width=True):
-            st.session_state.style = key
-            st.rerun()
 
 def render_controls() -> None:
     """One line under the input: Clear and the model picker, in the right corner.
@@ -712,7 +464,7 @@ def render_controls() -> None:
     """
     with st.container(key="composer-strip"):
         if has_messages and st.button(
-            "🗑️", key="clear", help="Start over — deletes this conversation"
+            "🗑️", key="clear", help="Clear this conversation"
         ):
             st.session_state.messages = []
             st.session_state.processing = False
@@ -720,88 +472,23 @@ def render_controls() -> None:
             st.session_state.dropped_uploads = {}
             st.session_state.upload_refusals = {}
             st.session_state.error = None
-            st.session_state.error_detail = ""
             st.session_state.notice = ""
             st.session_state.failed_over = False
             st.session_state.switched_from = None
             st.session_state.uploader_key += 1
             st.rerun()
-        if has_messages:
-            # Reloading the page destroys the conversation and nothing here persists
-            # it, so a download is what turns data loss into an inconvenience. Citations
-            # are resolved on the way out; a transcript of raw `docs/...md` targets
-            # would look correct and be full of dead links.
-            stamped = datetime.datetime.now(datetime.timezone.utc).isoformat(
-                timespec="seconds"
-            )
-            st.download_button(
-                "⭳",
-                data=export.as_markdown(st.session_state.messages, CORPUS, stamped),
-                file_name=export.filename(stamped),
-                mime="text/markdown",
-                key="download",
-                help="Download this conversation as Markdown, with citations",
-            )
         render_model_picker()
-
-
-# --- deep link -------------------------------------------------------------
-
-# `?q=How+do+I+submit+a+batch+job` opens Sage mid-question, so the RCC docs site, a
-# help desk reply or a staff macro can hand a user straight to an answer instead of a
-# blank composer. Fired exactly once and the parameter cleared: without that a reload
-# re-asks the question and bills it again.
-if not st.session_state.deep_link_used and not st.session_state.messages:
-    try:
-        asked = str(st.query_params.get("q", "") or "").strip()
-    except Exception:  # older Streamlit, or no query-param support
-        asked = ""
-    st.session_state.deep_link_used = True
-    if asked:
-        if len(asked) > config.MAX_PROMPT_CHARS:
-            asked = asked[: config.MAX_PROMPT_CHARS]
-        try:
-            st.query_params.clear()
-        except Exception:
-            logger.debug("Could not clear query params", exc_info=True)
-        start_new_turn(asked, [])
 
 
 # --- body ------------------------------------------------------------------
 
-def freshness() -> str:
-    """"synced 6 July 2026", from the stamp refresh-docs.sh already writes.
-
-    `config.snapshot()` has parsed `docs_snapshot.json` since it was added and
-    nothing ever displayed it. It is the cheapest trust feature available: it turns
-    "some assistant said the quota is 100 GB" into a claim a reader can date, and it
-    pre-empts the "your version numbers are wrong" complaint every docs bot gets.
-    """
-    stamp = config.snapshot().get("refreshed_at", "")
-    if not stamp:
-        return ""
-    date = stamp.split(" ")[0]
-    try:
-        parsed = datetime.date.fromisoformat(date)
-        # Not "%-d": that is a glibc extension and this has to render on any host.
-        pretty = f"{parsed.day} {parsed.strftime('%B %Y')}"
-    except ValueError:
-        pretty = date
-    return f"Synced {pretty}. "
-
-
 if not has_messages:
-    # Scope, not provenance. "Answers from the official documentation" reads as a
-    # credential — it raises trust, which is the opposite of what the sentence has to
-    # do. The two things a first-time user must know are what corpus this is and that
-    # it cannot see their account, and both belong here rather than in a permanent
-    # caveat line under the input (see the note above `render_controls`).
     st.markdown(
-        f"""
+        """
         <div class="welcome">
-            <h1 class="welcome-title">Ask the RCC docs</h1>
-            <p class="welcome-subtitle">{freshness()}Sage can't see your account,
-            jobs or files.</p>
+            <h1 class="welcome-title">What can I help you with?</h1>
+            <p class="welcome-subtitle">Answers from the official UChicago RCC
+            documentation, with citations.</p>
         </div>
         """,
         unsafe_allow_html=True,
@@ -814,12 +501,12 @@ if not has_messages:
                 position = row + offset
                 if position >= len(EXAMPLES):
                     continue
-                icon, question = EXAMPLES[position]
+                icon, label, question = EXAMPLES[position]
                 with column, st.container(key=f"example-card-{position}"):
                     # No `help=`: a tooltip on a card that already says what it
                     # does is just a black box following the cursor around.
                     if st.button(
-                        f"{icon} {question}",
+                        f"{icon} {label}",
                         key=f"example-{position}",
                         use_container_width=True,
                     ):
@@ -836,46 +523,11 @@ else:
     if st.session_state.processing and rendered and rendered[-1]["role"] == "user":
         rendered = rendered[:-1]
 
-    # Where the model's view of this conversation actually begins. Recomputed from
-    # the same function that builds the request, so the marker cannot claim one thing
-    # while the payload does another.
-    preview = history.build(
-        st.session_state.messages, system_prompt(st.session_state.style),
-        vision=config.sees_images(MODEL.id),
-    )
-
     for position, message in enumerate(rendered):
-        if position == preview.dropped_upto + 1 and preview.dropped:
-            # At the cut point, not as a banner at the top: the reader's question is
-            # "which part did it forget", and position answers that without words.
-            st.markdown(
-                '<div class="fold"><span>Earlier turns are no longer being sent to '
-                f'the model · {preview.dropped} message'
-                f'{"" if preview.dropped == 1 else "s"}</span></div>',
-                unsafe_allow_html=True,
-            )
         if message["role"] == "user":
-            render_user(message, stale=position in preview.stubbed)
+            render_user(message)
         elif message.get("text"):
             render_assistant(position, message)
-
-    if preview.clipped:
-        # Far more damaging than a dropped old turn and previously invisible: the
-        # model got the head of this turn and nothing after it.
-        st.markdown(
-            '<div class="notice notice-gap">This turn was too large to send whole — '
-            f"the last {preview.clipped:,} characters of it did not reach the model. "
-            "Attach the long part as a file, or ask about a smaller piece.</div>",
-            unsafe_allow_html=True,
-        )
-
-    if st.session_state.secret_warning:
-        st.session_state.secret_warning = False
-        st.warning(
-            "⚠️ That looked like a password or an API key. It was not written to any "
-            "log here, but it has already been sent to the model provider — treat it "
-            "as exposed and rotate it."
-        )
 
     if st.session_state.notice:
         st.markdown(
@@ -1074,11 +726,7 @@ def render_attachments() -> None:
 # Streamlit's, unversioned, and not visible from this repo, so a rule naming it would
 # be a guess that fails silently the day it changes. Not asking for the counter
 # cannot fail that way.
-# "Anything" is the deceivingly-strong-scent problem in one word: it promises the
-# opposite of the truth about a documentation assistant, and sets up every dead end.
-# "paste an error" is here because the arriving-with-a-problem majority is the larger
-# group and nothing else told them pasting is welcome.
-prompt = st.chat_input("Ask about Midway, Slurm, storage — or paste an error")
+prompt = st.chat_input("Ask anything about RCC…")
 
 # Rendered here, before the turn below: that block ends in `st.rerun()`, so
 # anything after it is never reached while an answer is generating — which is
@@ -1103,14 +751,9 @@ if prompt and prompt.strip():
         # this, "shorten it" asks the reader to shorten something the app has just
         # destroyed. The counter that used to enforce this made overrunning impossible
         # in the first place, so losing the text is a regression this pays off.
-        with st.expander("Your question — copy it before you leave", expanded=True):
+        with st.expander("Your question, to copy back out", expanded=True):
             st.code(asked, language=None)
     else:
-        if scrub.looks_like_secret(asked):
-            # Said after the fact on purpose. By the time this can fire the text has
-            # already gone to the model provider, so promising it was caught in time
-            # would be a lie; the useful advice is to rotate the key.
-            st.session_state.secret_warning = True
         start_new_turn(asked, st.session_state.attachments)
 
 
@@ -1146,19 +789,8 @@ if st.session_state.processing:
         st.session_state.switched_from = None
 
     def grounded(messages: list[dict]) -> list[dict]:
-        """Retrieve up front, for models that cannot call tools.
-
-        The query is the question with the previous turn's topic folded in. This path
-        retrieved on the raw last message, so "what about on Midway3?" became a BM25
-        query of five stopwords and a cluster name and came back with generic cluster
-        pages. A tool-capable model writes its own standalone query; this one cannot,
-        so the carry-forward happens here.
-        """
-        query = follow_up_queries(question, st.session_state.messages[:-1])
-        if query != question:
-            logger.info("toolless retrieval rewritten to %r", query)
-        context, chunks = gather_context(INDEX, query)
-        runner.queries.append(query)
+        """Retrieve up front, for models that cannot call tools."""
+        context, chunks = gather_context(INDEX, question)
         for chunk in chunks:
             runner.sources.append(chunk)
         if not context:
@@ -1178,12 +810,11 @@ if st.session_state.processing:
 
     try:
         provider = get_provider(MODEL.provider)
-        built = history.build(
+        messages = history.build(
             st.session_state.messages,
-            system_prompt(st.session_state.style),
+            SYSTEM_PROMPT,
             vision=config.sees_images(MODEL.id),
         )
-        messages = built.messages
         use_tools = MODEL.supports_tools
 
         if use_tools:
@@ -1211,48 +842,10 @@ if st.session_state.processing:
             if not turn.tool_calls or not use_tools:
                 break
             if round_number == config.MAX_TOOL_ROUNDS:
-                logger.warning("Tool-round limit reached; forcing a final answer")
-                if not final_text:
-                    # One more request with tools withheld, rather than an apology.
-                    # The old fallback threw away up to six rounds of retrieved
-                    # documentation — everything needed to answer was already in
-                    # `messages` — and asked the reader to rephrase a question that
-                    # had in fact been researched.
-                    answer.empty()
-                    show_status(status, "Writing the answer")
-                    messages.append(turn.as_message())
-                    for call in turn.tool_calls:
-                        messages.append(
-                            llm.tool_result_message(
-                                call, runner.run(call["name"], call["input"])
-                            )
-                        )
-                    messages.append(
-                        {
-                            "role": "system",
-                            "content": (
-                                "Stop searching and answer now from the sections "
-                                "already retrieved above. If they do not cover the "
-                                "question, say so plainly and point the user at the "
-                                f"RCC Help Desk ({config.HELP_DESK_EMAIL})."
-                            ),
-                        }
-                    )
-                    try:
-                        turn = llm.start(provider, MODEL.id, messages, None)
-                        with answer.container(), st.chat_message("assistant"):
-                            streamed = st.write_stream(
-                                clearing(turn.deltas(), status)
-                            )
-                        if isinstance(streamed, list):
-                            streamed = "".join(str(part) for part in streamed)
-                        final_text = streamed or ""
-                    except llm.AssistantError:
-                        logger.warning("Forced final answer failed", exc_info=True)
+                logger.warning("Tool-round limit reached without a final answer")
                 final_text = final_text or (
-                    "I looked this up but could not put an answer together. The "
-                    "sections I read are linked below, and the RCC Help Desk "
-                    f"({config.HELP_DESK_EMAIL}) can help."
+                    "I wasn't able to finish looking that up. Please try rephrasing "
+                    "your question."
                 )
                 break
 
@@ -1278,12 +871,6 @@ if st.session_state.processing:
 
         # Re-render once with links resolved, so a raw `docs/...md` target never flashes.
         answer.empty()
-        dead_citations = links.unresolved(final_text, CORPUS)
-        if dead_citations:
-            # A model inventing a path is a generation defect. It no longer reaches
-            # the reader as a live link, but it should not vanish silently either.
-            logger.warning("Answer cited %d unresolvable paths: %s",
-                           len(dead_citations), dead_citations[:5])
         st.session_state.messages.append(
             {
                 "role": "assistant",
@@ -1291,10 +878,6 @@ if st.session_state.processing:
                 "sources": sources,
                 "rating": None,
                 "model": MODEL.key,
-                # Kept so the collapsed "how I looked this up" panel survives the
-                # answer, and so a search that missed is visible afterwards.
-                "trace": {"searches": runner.searches, "reads": runner.reads},
-                "trimmed": bool(built.dropped or built.clipped),
             }
         )
         st.session_state.failed_over = False
@@ -1311,38 +894,6 @@ if st.session_state.processing:
         )
         if runner.queries and not sources:
             feedback.record_miss(runner.queries, st.session_state.messages[-2]["text"])
-
-        # One row per answered turn. Every field here was already in a local variable
-        # and being discarded; together they are the table the weekly gap report and
-        # every latency or cost question is a GROUP BY over.
-        feedback.record_turn(
-            {
-                "session": st.session_state.session_id,
-                "turn": len(st.session_state.messages) // 2,
-                "model": MODEL.key,
-                "mode": "tools" if use_tools else "single_pass",
-                "question": question,
-                "queries": list(runner.queries),
-                "searches": len(runner.searches),
-                "weak_searches": runner.weak_searches,
-                "reads": len(runner.reads),
-                "tool_rounds": round_number,
-                "n_sources": len(sources),
-                "zero_source": not sources,
-                "dead_citations": len(dead_citations),
-                "answer_chars": len(final_text),
-                "input_tokens": turn.usage.input_tokens,
-                "output_tokens": turn.usage.output_tokens,
-                "cached_input_tokens": turn.usage.cached_input_tokens,
-                "history_dropped": built.dropped,
-                "history_clipped": built.clipped,
-                "attachments": len(
-                    st.session_state.messages[-2].get("attachments") or []
-                ),
-                "docs_commit": config.snapshot().get("user_guide_commit", ""),
-                "failed_over": bool(switched),
-            }
-        )
 
     except llm.AssistantError as exc:
         status.empty()

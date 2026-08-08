@@ -553,59 +553,32 @@
             try { view.__sageHistoryOff(); } catch (err) { /* node gone */ }
         }
         // -1 means "not browsing"; 0 is the most recent question.
-        //
-        // Held on the parent window rather than in this closure. `sync()` calls this
-        // function on every coalesced mutation frame, so the closure was torn down and
-        // rebuilt constantly: any DOM change between two ArrowUp presses reset the
-        // cursor to -1 and repeated ArrowUp got stuck on the most recent question.
-        // The window outlives the rerun; the closure does not.
-        if (typeof view.__sageHistoryCursor !== 'number') view.__sageHistoryCursor = -1;
-        if (typeof view.__sageHistoryDraft !== 'string') view.__sageHistoryDraft = '';
+        var cursor = -1;
+        var draft = '';
 
         var onKey = function (event) {
             if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
-            // During IME composition the arrows navigate the candidate list. Without
-            // this, once `cursor` left -1 the `atStart` guard below was bypassed and
-            // every ArrowDown overwrote the textarea mid-composition, which makes
-            // Chinese, Japanese and Korean input unusable.
-            if (event.isComposing || event.keyCode === 229) return;
             var atStart = box.selectionStart === 0 && box.selectionEnd === 0;
-            if (event.key === 'ArrowUp' && !atStart &&
-                view.__sageHistoryCursor === -1) return;
+            if (event.key === 'ArrowUp' && !atStart && cursor === -1) return;
 
             var asked = [];
             doc.querySelectorAll('.user-bubble').forEach(function (node) {
-                // Clone and strip the attachment badges first: they are nested
-                // *inside* the bubble, and `textContent` concatenates without a
-                // separator, so recalling a turn that had a file attached produced
-                // "🖼️ pasted-image-1.pngHow do I read this log?" in the box.
-                var copy = node.cloneNode(true);
-                copy.querySelectorAll('.attachment-badge').forEach(function (badge) {
-                    badge.remove();
-                });
-                var text = copy.textContent.replace(/\s+$/, '').replace(/^\s+/, '');
+                var text = node.textContent.replace(/\s+$/, '');
                 if (text) asked.push(text);
             });
             if (!asked.length) return;
             asked.reverse();   // most recent first
 
             if (event.key === 'ArrowUp') {
-                if (view.__sageHistoryCursor === -1) {
-                    view.__sageHistoryDraft = box.value;   // keep what was half-typed
-                }
-                if (view.__sageHistoryCursor + 1 >= asked.length) {
-                    event.preventDefault(); return;
-                }
-                view.__sageHistoryCursor += 1;
+                if (cursor === -1) draft = box.value;   // keep what was half-typed
+                if (cursor + 1 >= asked.length) { event.preventDefault(); return; }
+                cursor += 1;
             } else {
-                // Down does nothing at the end
-                if (view.__sageHistoryCursor === -1) return;
-                view.__sageHistoryCursor -= 1;
+                if (cursor === -1) return;             // Down does nothing at the end
+                cursor -= 1;
             }
             event.preventDefault();
-            var text = view.__sageHistoryCursor === -1
-                ? view.__sageHistoryDraft
-                : asked[view.__sageHistoryCursor];
+            var text = cursor === -1 ? draft : asked[cursor];
             box.value = text;
             // React owns this field, so the value has to be announced or Streamlit
             // sends the old one when Enter is pressed.
@@ -618,7 +591,7 @@
         // Typing anything by hand ends the browse, so the next Up starts again from
         // the most recent question rather than from wherever the last one left off.
         var onInput = function () {
-            if (!browsing) view.__sageHistoryCursor = -1;
+            if (!browsing) cursor = -1;
             browsing = false;
         };
         var browsing = false;
@@ -785,12 +758,7 @@
             if (!existing) {
                 var style = doc.createElement('style');
                 style.id = BLOCK_STYLE_ID;
-                // `:not(#paperclip-btn)`. The paperclip is a button inside this same
-                // container, so the unscoped rule disabled it too and a file could
-                // not be attached while an answer streamed — the rest of this file
-                // and the stylesheet already write that exclusion everywhere else.
-                style.textContent =
-                    '[data-testid="stChatInput"] button:not(#paperclip-btn) {' +
+                style.textContent = '[data-testid="stChatInput"] button {' +
                     'background: var(--control-bg) !important; opacity: 0.5 !important;' +
                     'pointer-events: none !important; cursor: not-allowed !important; }';
                 doc.head.appendChild(style);
@@ -799,23 +767,6 @@
         } else {
             if (existing) existing.remove();
             if (send) send.removeAttribute('aria-disabled');
-        }
-
-        // `aria-disabled` is advisory: the button stays focusable and Enter or Space
-        // on it still fires a click, so a keyboard user could submit mid-generation
-        // while `pointer-events: none` blocked only the mouse. The author has to
-        // reject the activation, and nothing did.
-        if (send && !send.dataset.sageGuarded) {
-            send.dataset.sageGuarded = 'true';
-            var reject = function (event) {
-                if (!isProcessing()) return;
-                if (event.type === 'keydown' &&
-                    event.key !== 'Enter' && event.key !== ' ') return;
-                event.preventDefault();
-                event.stopPropagation();
-            };
-            send.addEventListener('click', reject, true);
-            send.addEventListener('keydown', reject, true);
         }
 
         var area = doc.querySelector('textarea[data-testid="stChatInputTextArea"]');
@@ -837,142 +788,18 @@
         // A single printable character only: never swallow Tab, Escape, arrows,
         // function keys, or Space/Enter aimed at a control.
         if (!event.key || event.key.length !== 1) return;
-        // Space has length 1. On a focused <summary> — which is what Streamlit's
-        // expander is, including the "Technical details" panel in the error path —
-        // or on any checkbox, tab or slider, Space is that control's activation key,
-        // and treating it as a printable character yanked focus into the composer
-        // instead. Under WCAG 2.1.4 a set of unconditional single-character
-        // shortcuts also has to be escapable; deferring whenever anything is
-        // deliberately focused is what makes that true.
-        if (event.key === ' ') return;
-        // Mid-composition keystrokes belong to the IME, not to this handler.
-        if (event.isComposing || event.keyCode === 229) return;
         var target = event.target;
         if (!target) return;
         if (target.isContentEditable) return;
         var tag = target.tagName;
         if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
-        if (target.closest && target.closest(
-            'button, a, summary, details, [role], [tabindex], [contenteditable]')) return;
-        // Only when nothing is deliberately focused. `activeElement` is body when the
-        // reader is simply looking at the page, which is the case this is for.
-        var active = doc.activeElement;
-        if (active && active !== doc.body && active !== doc.documentElement) return;
+        if (target.closest && target.closest('button, a, [role="button"], [role="dialog"]')) return;
 
         var input = doc.querySelector('textarea[data-testid="stChatInputTextArea"]');
         if (input) input.focus();
     });
 
     /* --- scheduling ------------------------------------------------------ */
-
-    // Accessible names for the controls Streamlit renders from an emoji label.
-    //
-    // `st.button("🗑️", help="...")` puts the tooltip in a hover popup and leaves the
-    // accessible name as the emoji, so a screen reader announced "wastebasket button"
-    // for Clear, "thumbs up button" for the rating, and "multiplication x" for the
-    // control that removes an attachment — a destructive action with no stated
-    // purpose. Python cannot set `aria-label` on an st.button, and app.js already
-    // owns the parent document, so it is set here.
-    //
-    // Keyed off `.st-key-*`, the closest thing Streamlit has to a supported hook and
-    // the same one the stylesheet uses. Emoji-labelled buttons carry no text, so
-    // there is no WCAG 2.5.3 "label in name" conflict to create.
-    var NAMES = [
-        ['.st-key-clear button', 'Start over — deletes this conversation'],
-        ['.st-key-download button', 'Download this conversation as Markdown'],
-        ['[class*="st-key-rate-"] [class*="-up"] button', 'This answered my question'],
-        ['[class*="st-key-rate-"] [class*="-down"] button', 'This was wrong or unhelpful']
-    ];
-
-    function nameIconButtons() {
-        for (var i = 0; i < NAMES.length; i++) {
-            var nodes = doc.querySelectorAll(NAMES[i][0]);
-            for (var j = 0; j < nodes.length; j++) {
-                if (!nodes[j].getAttribute('aria-label')) {
-                    nodes[j].setAttribute('aria-label', NAMES[i][1]);
-                }
-            }
-        }
-        // Attachment chips carry the filename, so the name is built per chip: the
-        // label reads "📝 slurm-1234.out ✕" and the action it performs is "remove".
-        var chips = doc.querySelectorAll('.st-key-attachments button');
-        for (var k = 0; k < chips.length; k++) {
-            if (chips[k].getAttribute('aria-label')) continue;
-            var text = (chips[k].textContent || '').replace(/[✕✖×]\s*$/, '').trim();
-            chips[k].setAttribute('aria-label', 'Remove attachment ' + text);
-        }
-    }
-
-    // Two persistent live regions, created empty and written to later.
-    //
-    // The app's only live region was built by `show_status`, which empties its slot
-    // and renders a fresh container whose markup already contains the text — so the
-    // region and its content enter the DOM in the same mutation, which is the one
-    // arrangement screen readers reliably do not announce. The status was therefore
-    // a no-op, and nothing announced the answer at all.
-    //
-    // Streamlit rebuilds its DOM every rerun, which is why a region rendered from
-    // Python cannot persist. These live on `body` and are created once.
-    var LOG_ID = 'sage-live-log';
-    var STATUS_ID = 'sage-live-status';
-
-    function ensureLiveRegions() {
-        if (doc.getElementById(LOG_ID)) return;
-        var css = 'position:absolute;width:1px;height:1px;margin:-1px;padding:0;' +
-                  'overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0;';
-        // role=log, not status: a transcript is append-only and order matters, and
-        // `log` leaves aria-atomic at false so only the new entry is spoken rather
-        // than the whole conversation being re-read on every answer.
-        var log = doc.createElement('div');
-        log.id = LOG_ID;
-        log.setAttribute('role', 'log');
-        log.setAttribute('aria-live', 'polite');
-        log.style.cssText = css;
-        var status = doc.createElement('div');
-        status.id = STATUS_ID;
-        status.setAttribute('role', 'status');
-        status.setAttribute('aria-live', 'polite');
-        status.style.cssText = css;
-        doc.body.appendChild(log);
-        doc.body.appendChild(status);
-    }
-
-    function announce(id, text) {
-        var node = doc.getElementById(id);
-        if (!node || !text || node.textContent === text) return;
-        node.textContent = text;
-    }
-
-    function mirrorStatus() {
-        var row = doc.querySelector('.status-text');
-        if (row) announce(STATUS_ID, (row.textContent || '').trim());
-    }
-
-    // Announce the finished answer once, on the processing -> idle transition, and
-    // never during streaming: a live region fed token by token produces a flood of
-    // speech, which is the usual way this gets fixed wrong.
-    function announceWhenDone() {
-        var busy = isProcessing();
-        var answers = doc.querySelectorAll('[class*="st-key-answer-"] .stChatMessage');
-        var last = answers.length ? answers[answers.length - 1] : null;
-        if (last) last.setAttribute('aria-busy', busy ? 'true' : 'false');
-        if (busy) {
-            doc.body.dataset.sageWasBusy = '1';
-            return;
-        }
-        if (doc.body.dataset.sageWasBusy !== '1') return;
-        delete doc.body.dataset.sageWasBusy;
-        if (!last) return;
-        var sources = doc.querySelectorAll(
-            '[class*="st-key-answer-"]:last-of-type .source-chip');
-        var summary = 'Answer ready. ';
-        if (sources.length) {
-            summary += sources.length + (sources.length === 1 ? ' source. ' : ' sources. ');
-        } else {
-            summary += 'No documentation sources. ';
-        }
-        announce(LOG_ID, summary + (last.textContent || '').trim());
-    }
 
     function sync() {
         // Measurement FIRST. It used to run after the injectors, all of them inside
@@ -993,14 +820,6 @@
         addCodeCopyButtons();
         addAnswerCopyButtons();
         blockSendWhileProcessing();
-        // Accessibility, after the injectors so the paperclip and copy buttons they
-        // create are already present, and before the scroll work below so a throw
-        // here cannot cost the frame its layout (measureChrome already ran).
-        if (!doc.documentElement.lang) doc.documentElement.lang = 'en';
-        ensureLiveRegions();
-        nameIconButtons();
-        mirrorStatus();
-        announceWhenDone();
         // `scroller()` first, because it is the one that asks which element actually
         // scrolls instead of assuming. This line named stMain outright while
         // `autoScroll()` two lines down asked `scroller()` — two functions in one file

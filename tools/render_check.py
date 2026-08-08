@@ -127,37 +127,17 @@ APP = _read("app.py")
 
 def _subtitle() -> str:
     match = re.search(r'class="welcome-subtitle">(.*?)</p>', APP, re.S)
-    if not match:
-        return "(missing)"
-    text = re.sub(r"\s+", " ", match.group(1)).strip()
-    # The subtitle interpolates the docs snapshot date. Substituting a realistic one
-    # rather than measuring the literal `{freshness()}` — a placeholder is four
-    # characters where the real string is twenty, and the subtitle is held to one line.
-    return text.replace("{freshness()}", "Synced 6 July 2026. ")
+    return re.sub(r"\s+", " ", match.group(1)).strip() if match else "(missing)"
 
 
 def _card_labels() -> list[str]:
-    """Read the real card strings out of app.py.
-
-    This required three quoted strings per entry, matching `(icon, label, question)`.
-    EXAMPLES is now `(icon, question)` — the label *is* the question sent — and the
-    old pattern would have matched nothing and returned an empty list, so every card
-    assertion below would have passed by measuring no cards at all. Asserting the
-    count is what turns that class of silence into a failure.
-    """
     block = re.search(r"EXAMPLES = \[(.*?)\n\]", APP, re.S).group(1)
-    found = [
-        f"{icon} {question}"
-        for icon, question in re.findall(
-            r'\(\s*"([^"]+)",\s*"([^"]+)"\s*\)', block
+    return [
+        f"{icon} {label}"
+        for icon, label, _q in re.findall(
+            r'\(\s*"([^"]+)",\s*"([^"]+)",\s*"([^"]+)"\s*\)', block
         )
     ]
-    if not found:
-        raise SystemExit(
-            "render_check could not parse EXAMPLES out of app.py. Fix the pattern in "
-            "_card_labels — an empty list would make every card check pass silently."
-        )
-    return found
 
 
 # There was a `_disclaimer()` here that read the caveat line out of app.py so the two
@@ -446,102 +426,7 @@ python train.py --epochs 100 --batch-size 64 --output /scratch/midway3/$USER/run
    <a class="source-chip" href="#">Large-Memory Jobs</a>
    <a class="source-chip" href="#">Checking job status</a>
  </div>
-{answer_footer(index)}
 </div>"""
-
-
-def answer_footer(index: int) -> str:
-    """The rating row, the trace expander and the follow-up chips.
-
-    None of this was ever rendered. `app.css` had 25 lines aimed at
-    `[class*="st-key-rate-"]` and no scenario contained one, which is why the rating
-    buttons could sit at 32.4x19 — under the WCAG 2.5.8 minimum, and passing only on
-    the spacing exception, by 3.2px — with nothing here to notice. A budget written
-    against an element no render contains is the "check that cannot fail" this file's
-    own docstring warns about.
-    """
-    return f"""
- <div class="st-key-rate-{index} element-container">
-  <div data-testid="stHorizontalBlock">
-   <div data-testid="stColumn"><div class="st-key-rate-{index}-up element-container">
-     <div class="stButton"><button><p>👍</p></button></div></div></div>
-   <div data-testid="stColumn"><div class="st-key-rate-{index}-down element-container">
-     <div class="stButton"><button><p>👎</p></button></div></div></div>
-   <div data-testid="stColumn"></div>
-  </div>
- </div>
- <div class="st-key-followups-{index} element-container">
-  <div data-testid="stVerticalBlock">
-   <div class="stButton"><button><p>Tell me about large-memory jobs.</p></button></div>
-   <div class="stButton"><button><p>Tell me about checking job status.</p></button></div>
-   <div class="stButton"><button><p>Tell me about partition QoS.</p></button></div>
-  </div>
- </div>"""
-
-
-# An answer that cited nothing: the warning notice plus the two escalation links.
-# Modelled because it is the state a reader is most likely to be frustrated in, and
-# the links are wider than anything else in an answer.
-GAP_ANSWER = """
-<div class="element-container"><div class="stMarkdown">
-  <div class="user-message"><div class="user-bubble">Can I use Julia on
-  Beagle3?</div></div>
-</div></div>
-<div class="st-key-answer-0 element-container"><div class="stChatMessage">
- <div></div>
- <div class="stMarkdown"><p>The documentation does not appear to cover Julia on
- Beagle3.</p></div>
- <div class="notice notice-gap">No documentation section matched this, so the answer
- above is not grounded in the RCC User Guide. Treat it with care.</div>
- <div class="st-key-gap-0 element-container">
-  <a class="gap-action" href="#">✉ Email the Help Desk — draft ready</a>
-  <a class="gap-action" href="#">＋ Report a missing page</a>
- </div>
- <div class="st-key-reason-0 element-container">
-  <div data-testid="stVerticalBlock">
-   <div class="stButton"><button><p>Wrong or misleading</p></button></div>
-   <div class="stButton"><button><p>Not covered by the docs</p></button></div>
-   <div class="stButton"><button><p>Cited the wrong section</p></button></div>
-   <div class="stButton"><button><p>Out of date</p></button></div>
-   <div class="stButton"><button><p>Hard to follow</p></button></div>
-   <div class="stButton"><button><p>Skip</p></button></div>
-  </div>
- </div>
-</div></div>"""
-
-# The history fold and a stale attachment badge. Both are new surfaces that report
-# what the model was actually sent, and the fold's rules use ::before/::after
-# flex fillers, which is exactly the kind of thing that collapses at a narrow width.
-def folded() -> str:
-    """A trimmed conversation: four turns, the fold, then two more.
-
-    Long on purpose, twice over. The fold only ever appears on a conversation that
-    outgrew the history budget, so a two-turn version models a state the app cannot
-    reach — and a short page puts `fill()` in play, which reported 166–274px of "dead
-    space" that was the fixture being short rather than the CSS being wrong.
-
-    The fold also goes *between* complete turns rather than immediately before the
-    first answer, because `GAP_QUESTION_TO_ANSWER` measures the first `.user-bubble`
-    to `.st-key-answer-0` and expects them adjacent — which they are in the app.
-    """
-    return (
-        "".join(answer_block(i) for i in range(4))
-        + """
-<div class="element-container"><div class="stMarkdown">
-  <div class="fold"><span>Earlier turns are no longer being sent to the model ·
-  6 messages</span></div>
-</div></div>
-<div class="element-container"><div class="stMarkdown">
-  <div class="user-message"><div class="user-bubble"><div class="attachment-badge
-  is-stale">📝 slurm-48123456.out</div>And on Midway2?</div></div>
-</div></div>
-<div class="st-key-answer-4 element-container"><div class="stChatMessage">
- <div></div>
- <div class="stMarkdown"><p>On Midway2 the equivalent partition is
- <code>broadwl</code>.</p></div>
-</div></div>"""
-        + answer_block(5)
-    )
 
 
 CHAT_MARKER = ('<div class="element-container"><div class="stMarkdown">'
@@ -589,7 +474,7 @@ def landing(wrapped: bool = True) -> str:
     return f"""
 <div class="element-container"><div class="stMarkdown">
   <div class="welcome">
-    <h1 class="welcome-title">Ask the RCC docs</h1>
+    <h1 class="welcome-title">What can I help you with?</h1>
     <p class="welcome-subtitle">{SUBTITLE}</p>
   </div></div></div>
 {cards}"""
@@ -698,14 +583,6 @@ SCENARIOS = {
     # is the panel, which lives outside every container this stylesheet reaches.
     "picker-open": CHAT_MARKER + SHORT_ANSWER + strip(),
     "picker-open-legacy": CHAT_MARKER + SHORT_ANSWER + strip(),
-    # An answer that cited nothing: the warning notice, the two escalation links and
-    # the thumbs-down reason picker. The state a reader is most likely to be
-    # frustrated in, and the widest labels in an answer.
-    "gap-answer": CHAT_MARKER + GAP_ANSWER + strip(wrapped=False),
-    # A trimmed conversation: the fold marker between the dropped turns and the sent
-    # ones, plus a struck-through attachment badge. The fold uses ::before/::after
-    # flex fillers, which is the kind of rule that collapses at a narrow width.
-    "folded": CHAT_MARKER + folded() + strip(wrapped=False),
     "in-flight": CHAT_MARKER + IN_FLIGHT + strip(wrapped=False),
     "error": CHAT_MARKER
     + """
@@ -740,12 +617,7 @@ LINE_LIMITS = {
     # everything wraps and a limit there would be noise. Anything that must hold at a
     # phone width belongs in NARROW_LINE_LIMITS instead, where the gate does not
     # apply — a budget listed only here is silently unenforced below 641px.
-    # Two, not one. The cards used to be short labels ("Storage quotas") paired with a
-    # different, longer question that was actually sent; now the card text *is* the
-    # question, which is what the user's own message bubble should contain. A real
-    # question does not fit on one line at this width, and the card grew a `min-height`
-    # to hold it — three lines still means the wording should be shortened.
-    **{f".st-key-example-card-{i} button p": 2 for i in range(6)},
+    **{f".st-key-example-card-{i} button p": 1 for i in range(6)},
 }
 
 # Line budgets that apply BELOW 641px too, where the general gate does not. Empty
@@ -817,9 +689,6 @@ function box(sel) {
     fontPx: Math.round(parseFloat(cs.fontSize) * 10) / 10,
     overflowX: el.scrollWidth - el.clientWidth,
     contrast: ratio(cs.color, solidBg(el)),
-    // For WCAG 2.5.8. Reported for every element so a target that shrinks is
-    // visible even where no budget is set for it yet.
-    w: Math.round(r.width), h: Math.round(r.height),
     hit: hitTest(el, r)
   };
 }
@@ -961,16 +830,6 @@ SELECTORS = [
     # The error card's actions. The switch one carries a whole model name, so it
     # is the widest button in the app and the first thing to overflow at 360px.
     ".st-key-retry button p", ".st-key-switch-model button p",
-    # The answer footer. `[class*="st-key-rate-"] button` is here because the rating
-    # buttons measured 32.4x19 — under the WCAG 2.5.8 24x24 minimum — while nothing
-    # rendered them, so the `min-height: 0` that removed the floor was invisible.
-    '[class*="st-key-rate-"] button',
-    '[class*="st-key-followups-"] button',
-    '[class*="st-key-reason-"] button',
-    ".gap-action", "last:.gap-action", ".notice-gap", ".fold",
-    ".attachment-badge", ".attachment-badge.is-stale",
-    # Nested opacity used to hide this one from the contrast check entirely.
-    ".source-kind",
 ] + [f".st-key-example-card-{i} button p" for i in range(6)]
 
 # Controls a user has to be able to click. For these, occupying a sensible
@@ -991,31 +850,6 @@ INTERACTIVE = {
 # three selectors that can reach it are exempt from the overflow check; the emoji
 # button they also reach has nothing to ellipse.
 ELLIPSIS_OK = {PICKER, ".st-key-composer-strip button", "last:.st-key-composer-strip button"}
-
-# WCAG 2.5.8 (AA): 24x24 CSS px minimum for a pointer target.
-TARGET_MIN = 24
-TARGET_SIZE = {
-    '[class*="st-key-rate-"] button',
-    '[class*="st-key-followups-"] button',
-    '[class*="st-key-reason-"] button',
-    ".gap-action",
-    ".st-key-composer-strip button",
-    "last:.st-key-composer-strip button",
-    SEND,
-    '[data-testid="stPopoverBody"] button',
-    ".st-key-attachments button",
-}
-
-# Contrast exemptions, each for a stated reason rather than by name-matching.
-#
-# `.welcome-title` was gradient-clipped text, where the computed `color` is not what
-# is painted. It is now solid, so it is measured like everything else — the exemption
-# is gone rather than left pointing at nothing.
-CONTRAST_EXEMPT = {
-    # Attachment chips are green at rest and red on hover; this harness renders the
-    # rest state, and the hover pair is what the old blanket exemption was for.
-    ".st-key-attachments button",
-}
 
 # How far apart things should be, in px. Both ends matter: the first of these was
 # reported twice as "barely any spacing between the user and AI messages", at a
@@ -1095,7 +929,7 @@ def page(body: str, scheme: str, scroll: bool, generating: bool = False,
            # exclusion that keeps it out of the send button's corner was ever rendered.
            '<button id="paperclip-btn" type="button">📎</button>'
            + ('<textarea rows="6">' + TYPED + "</textarea>" if typed else
-              '<textarea rows="1" placeholder="Ask about Midway, Slurm, storage — or paste an error"></textarea>')
+              '<textarea rows="1" placeholder="Ask anything about RCC…"></textarea>')
            + (f'<div class="chat-actions">{send}</div>' if column_input else send)
            + "</div></div></div></div>")
     return f"""<!doctype html><html><head><meta charset="utf-8">
@@ -1250,27 +1084,10 @@ def audit(data, scenario, scheme, width, state: str) -> list[str]:
                  else NARROW_LINE_LIMITS.get(sel))
         if limit and b["lines"] > limit:
             problems.append(f"{where}: {sel} wraps to {b['lines']} lines (want {limit})")
-        # WCAG 2.5.8: a pointer target must be at least 24x24 CSS px, unless
-        # sufficiently spaced from its neighbours. The rating buttons measured
-        # 32.4x19 and cleared the spacing exception by 3.2px — one nudge to a margin
-        # from being a hard failure, with nothing here to notice because no scenario
-        # rendered them. Only the button itself is budgeted, not its <p>.
-        if sel in TARGET_SIZE and (b["w"] < TARGET_MIN or b["h"] < TARGET_MIN):
-            problems.append(
-                f"{where}: {sel} is {b['w']}x{b['h']}px "
-                f"(WCAG 2.5.8 wants {TARGET_MIN}x{TARGET_MIN})"
-            )
         # Small text needs 4.5:1; >=18.66px counts as large text at 3:1.
-        #
-        # The exemption was `"chip" not in sel`, which excused every selector with
-        # "chip" in its name — `.source-chip` and the attachment chips — from contrast
-        # entirely. `.source-kind` sat inside one at `opacity: 0.65`, measuring 3.13:1
-        # in light and 4.45:1 in dark, and was unmeasurable by construction. The
-        # exemption is now the specific pair it was written for: the attachment chip's
-        # hover state swaps to a colour this harness renders without hovering.
-        if b["contrast"] and sel not in CONTRAST_EXEMPT:
+        if b["contrast"] and "chip" not in sel:
             need = 3.0 if b["fontPx"] >= 18.66 else 4.5
-            if b["contrast"] < need:
+            if b["contrast"] < need and sel not in (".welcome-title",):
                 problems.append(
                     f"{where}: {sel} contrast {b['contrast']}:1 (needs {need}:1)"
                 )

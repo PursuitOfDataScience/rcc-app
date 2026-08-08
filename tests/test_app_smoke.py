@@ -89,28 +89,18 @@ class TestWelcome:
         # Collapsed, because the markup is wrapped for the source file and a
         # sentence in it is split across lines wherever that happened to land.
         html = " ".join("\n".join(stub.markdown_html).split())
-        assert "Ask the RCC docs" in html
+        assert "What can I help you with?" in html
         # The hero says what this is, and that is all the explaining the landing
         # screen does. The limits were a third line in the hero, then an ℹ️ popover
         # in the row under the input, then three paragraphs of small print under the
         # starter cards, then one 11px caveat line beside the model name. Each was
         # one explanation too many in the way of the box you type in, and the last
         # of them is gone too.
-        #
-        # This guard is structural rather than a list of banned phrases. It used to
-        # assert that the words "Sage reads the docs" were absent, which was a proxy
-        # for "no extra explanatory surface" — and the subtitle now carries exactly
-        # that sentence, because scope belongs in the one line that already exists
-        # rather than in a second line underneath it. What must stay true is the
-        # count: one subtitle, no note block, no popover, no caveat row.
-        assert html.count('class="welcome-subtitle"') == 1
-        assert "landing-note" not in html
+        assert "Sage reads the docs" not in html
         assert "What Sage is" not in html
         assert "Documentation synced" not in html
         assert "drop into the walk-in lab" not in html
         assert "Sage can make mistakes" not in html
-        # The Help Desk address belongs in the answer to a question the docs cannot
-        # settle, not on the screen before anything has been asked.
         assert "RCC Help Desk" not in html
 
     def test_nothing_explains_the_app_with_a_control(self, monkeypatch):
@@ -209,33 +199,12 @@ class TestTurnLoop:
         assert stub.session_state["messages"][-1]["sources"] == []
 
     def test_the_tool_round_limit_is_enforced(self, monkeypatch):
-        """The loop still stops — but it answers from what it read.
-
-        It used to stop and emit "I wasn't able to finish looking that up. Please try
-        rephrasing your question.", discarding up to six rounds of retrieved
-        documentation and asking the reader to rephrase a question that had in fact
-        been researched. The limit now triggers one final request with tools
-        withheld, hence MAX_TOOL_ROUNDS + 2 calls rather than + 1.
-        """
         from sage import config
 
         client = ScriptedProvider([self.SEARCH] * (config.MAX_TOOL_ROUNDS + 1))
         stub, _module = run_app(monkeypatch, client=client, session=self.session())
-        assert client.calls == config.MAX_TOOL_ROUNDS + 2
-        # The loop is bounded: it does not keep going once tools are withheld.
-        assert client.calls <= config.MAX_TOOL_ROUNDS + 2
-        assert "wasn't able to finish" not in stub.session_state["messages"][-1]["text"]
-
-    def test_a_round_limit_with_nothing_to_say_still_names_the_help_desk(
-        self, monkeypatch
-    ):
-        """If even the forced answer comes back empty, the dead end has an exit."""
-        from sage import config
-
-        client = ScriptedProvider([self.SEARCH] * (config.MAX_TOOL_ROUNDS + 2))
-        stub, _module = run_app(monkeypatch, client=client, session=self.session())
-        text = stub.session_state["messages"][-1]["text"]
-        assert config.HELP_DESK_EMAIL in text
+        assert client.calls == config.MAX_TOOL_ROUNDS + 1
+        assert "wasn't able to finish" in stub.session_state["messages"][-1]["text"]
 
     def test_api_failure_becomes_a_typed_user_message(self, monkeypatch):
         error = RuntimeError("rate limit exceeded")
@@ -975,176 +944,3 @@ class TestVisionModels:
         assert isinstance(content, str), f"bytes went to a text-only model: {content!r}"
         assert "pasted-image.png" in content
         assert "base64" not in content
-
-
-class TestFeedbackIsAlwaysOffered:
-    """The widget rendered only when SAGE_FEEDBACK_LOG was set, so the default
-    deployment had no feedback affordance and users had never been asked. Being
-    asked is part of the interface; whether this deployment keeps the answer is a
-    separate question."""
-
-    def answered(self):
-        return {
-            "messages": [
-                {"role": "user", "text": "how do I submit a job", "attachments": []},
-                {
-                    "role": "assistant",
-                    "text": "Use sbatch.",
-                    "sources": [],
-                    "rating": None,
-                    "model": "mistral:mistral-small-latest",
-                },
-            ],
-            "processing": False,
-        }
-
-    def test_the_thumbs_render_with_no_sink_configured(self, monkeypatch):
-        monkeypatch.delenv("SAGE_FEEDBACK_LOG", raising=False)
-        from sage import config
-
-        monkeypatch.setattr(config, "FEEDBACK_LOG", "")
-        stub, _module = run_app(monkeypatch, session=self.answered())
-        assert "👍" in stub.button_labels.values()
-        assert "👎" in stub.button_labels.values()
-
-    def test_a_thumbs_down_asks_what_was_wrong(self, monkeypatch):
-        from sage import config, feedback
-
-        monkeypatch.setattr(config, "FEEDBACK_LOG", "")
-        session = self.answered()
-        session["messages"][1]["rating"] = "down"
-        stub, _module = run_app(monkeypatch, session=session)
-        labels = list(stub.button_labels.values())
-        for _key, label in feedback.REASONS:
-            assert label in labels, label
-
-    def test_a_thumbs_up_needs_no_follow_up(self, monkeypatch):
-        from sage import config, feedback
-
-        monkeypatch.setattr(config, "FEEDBACK_LOG", "")
-        session = self.answered()
-        session["messages"][1]["rating"] = "up"
-        stub, _module = run_app(monkeypatch, session=session)
-        labels = list(stub.button_labels.values())
-        assert all(label not in labels for _k, label in feedback.REASONS)
-
-
-class TestUngroundedAnswers:
-    """An answer citing nothing used to render like a grounded one minus the chips."""
-
-    def ungrounded(self):
-        return {
-            "messages": [
-                {"role": "user", "text": "can I use Julia on Beagle3", "attachments": []},
-                {
-                    "role": "assistant",
-                    "text": "The docs do not cover Julia.",
-                    "sources": [],
-                    "rating": None,
-                    "model": "mistral:mistral-small-latest",
-                    "trace": {"searches": [{"query": "julia"}], "reads": []},
-                },
-            ],
-            "processing": False,
-        }
-
-    def test_it_says_the_answer_is_not_grounded(self, monkeypatch):
-        stub, _module = run_app(monkeypatch, session=self.ungrounded())
-        html = " ".join("\n".join(stub.markdown_html).split())
-        assert "not grounded" in html
-
-    def test_it_offers_a_drafted_help_desk_message(self, monkeypatch):
-        from sage import config
-
-        stub, _module = run_app(monkeypatch, session=self.ungrounded())
-        html = "\n".join(stub.markdown_html)
-        assert f"mailto:{config.HELP_DESK_EMAIL}" in html
-        # The retrieval trace travels with it, so the human on the other end knows
-        # what has already been checked.
-        assert "julia" in html.lower()
-
-    def test_a_grounded_answer_gets_none_of_it(self, monkeypatch):
-        session = self.ungrounded()
-        session["messages"][1]["sources"] = [
-            {
-                "id": "docs/slurm/sbatch.md",
-                "label": "Batch jobs",
-                "url": "https://example.invalid/",
-                "source": "docs",
-            }
-        ]
-        stub, _module = run_app(monkeypatch, session=session)
-        html = " ".join("\n".join(stub.markdown_html).split())
-        assert "not grounded" not in html
-
-
-class TestFreshnessIsShown:
-    def test_the_snapshot_date_reaches_the_landing_screen(self, monkeypatch):
-        """config.snapshot() parsed docs_snapshot.json since it was added and nothing
-        ever displayed it — the cheapest trust feature in the repo, unspent."""
-        from sage import config
-
-        stamp = config.snapshot().get("refreshed_at", "")
-        stub, _module = run_app(monkeypatch)
-        html = " ".join("\n".join(stub.markdown_html).split())
-        if stamp:
-            # Case-insensitive: the stamp leads the subtitle, so it is capitalised.
-            assert "synced" in html.lower()
-            assert stamp.split("-")[0] in html      # the year
-
-    def test_a_missing_snapshot_does_not_break_the_hero(self, monkeypatch):
-        from sage import config
-
-        monkeypatch.setattr(config, "snapshot", dict)
-        stub, _module = run_app(monkeypatch)
-        html = " ".join("\n".join(stub.markdown_html).split())
-        assert "Ask the RCC docs" in html
-        assert "synced" not in html
-
-
-class TestExport:
-    def test_a_conversation_can_be_downloaded(self, monkeypatch):
-        session = {
-            "messages": [
-                {"role": "user", "text": "how do I submit a job", "attachments": []},
-                {
-                    "role": "assistant",
-                    "text": "See [Batch jobs](docs/slurm/sbatch.md).",
-                    "sources": [],
-                    "rating": None,
-                    "model": "mistral:mistral-small-latest",
-                },
-            ],
-            "processing": False,
-        }
-        stub, _module = run_app(monkeypatch, session=session)
-        assert stub.downloads, "no transcript offered"
-        _label, name, data = stub.downloads[0]
-        assert name.endswith(".md")
-        # Citations resolved on the way out; a transcript of raw docs/... targets
-        # would look correct and be full of dead links.
-        assert "slurm/sbatch/" in data
-        assert "docs/slurm/sbatch.md)" not in data
-
-    def test_nothing_to_download_on_the_landing_screen(self, monkeypatch):
-        stub, _module = run_app(monkeypatch)
-        assert not stub.downloads
-
-
-class TestDeepLink:
-    def test_a_q_parameter_asks_the_question_once(self, monkeypatch):
-        stub = stub_streamlit.install()
-        stub.query_params["q"] = "how do I submit a batch job"
-        monkeypatch.setenv("MISTRAL_API_KEY", "test-key")
-        monkeypatch.delenv("OPENCODE_API_KEY", raising=False)
-        import sys
-
-        sys.modules.pop("app", None)
-        try:
-            import app  # noqa: F401,PLC0415
-        except Exception:
-            pass
-        assert stub.session_state["messages"], "the deep link asked nothing"
-        assert stub.session_state["messages"][0]["text"] == "how do I submit a batch job"
-        # Cleared, or a reload re-asks and bills it again.
-        assert "q" not in stub.query_params

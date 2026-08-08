@@ -80,29 +80,9 @@ def test_in_page_anchors_are_unlinked():
     assert links.fix_links("jump to [that part](#later)", CORPUS) == "jump to that part"
 
 
-def test_unresolvable_targets_are_unlinked_not_pointed_at_the_root():
-    """This asserted the opposite, and the opposite was a bug.
-
-    `fix_links`' own docstring said "unlink what cannot be resolved" while the code
-    sent every unresolvable target to `DOCS_BASE_URL`. The test locked in the code
-    rather than the promise, so a reader clicking a citation landed on the front
-    page of the User Guide believing they had reached the cited section — a
-    confident, wrong citation, indistinguishable from a working one by looking.
-    """
+def test_unresolvable_targets_fall_back_to_the_guide_root():
     out = links.fix_links("[mystery](docs/nope/missing.md)", CORPUS)
-    assert out == "mystery"
-    assert config.DOCS_BASE_URL not in out
-
-
-def test_unresolved_targets_can_be_counted():
-    """A model inventing a path is a generation defect worth seeing in the logs,
-    not just something the renderer quietly tidies away."""
-    missing = links.unresolved(
-        "[a](docs/slurm/sbatch.md) and [b](docs/nope/missing.md)", CORPUS
-    )
-    assert missing == ["docs/nope/missing.md"]
-
-    assert links.unresolved("[RCC](https://rcc.uchicago.edu/)", CORPUS) == []
+    assert out == f"[mystery]({config.DOCS_BASE_URL})"
 
 
 def test_leaked_kramdown_attributes_are_stripped_from_answers():

@@ -29,33 +29,9 @@ Three of them are available and two of them hide:
 - **Lint**: `/root/.local/bin/ruff check .` — installed, but not on `PATH`, so a bare
   `ruff` or `python -m ruff` says "no module named ruff". A whole session was spent
   reporting the lint as unrunnable while CI failed on `SIM117`; it is runnable.
-- **Tests**: pytest cannot be installed (no package index). Write a shim in the session
-  scratchpad, put that directory first on `PYTHONPATH`, and run it from the repo root.
-  Do **not** commit a `pytest.py` to the repo: CI installs the real one and a module at
-  the root would shadow it.
-
-  Six things the shim needs, each because its absence silently shrinks the run rather
-  than failing:
-  1. `fixture` (including `scope="session"`) — without it, 2 files of 11 collect.
-  2. `mark.parametrize`, `raises(...).value`, `mark.xfail`, `skip`.
-  3. **Methods of `Test*` classes.** Collecting only module-level `test_*` functions
-     reports a green run of 136 tests where there are 329 — every class-based test in
-     `test_search.py`, `test_providers.py`, `test_app_smoke.py` and others is skipped,
-     and nothing says so. This is the single easiest way to believe the suite passes
-     when most of it never ran; check the count, not just the exit code.
-  4. `monkeypatch` (`setattr`/`setenv`/`setitem`/`undo`) and `caplog`.
-  5. `tests/` on `sys.path`, because test modules import `stub_streamlit` by bare name.
-  6. Marks read through `__func__` for bound methods — a bound method cannot carry the
-     attributes the decorators set.
-
-  The current count is **390 passing across 13 files**. A run reporting far fewer is a
-  collection bug in the shim, not a smaller suite.
-
-- **The stub matters as much as the shim.** `tests/stub_streamlit.py` models the
-  Streamlit API the app actually calls. Using a new `st.*` function means adding it
-  there or every smoke test dies at import with `AttributeError`. Watch the decorators
-  when inserting code into that file: a class dropped between `@contextmanager` and its
-  function turns `st.container()` into a generator and takes 57 tests down at once.
+- **Tests**: pytest cannot be installed (no package index). There is a working shim in
+  the session scratchpad that handles fixtures, `parametrize`, `raises(...).value` and
+  `xfail`; without those four it silently runs 2 test files out of 11.
 - **Layout**: `python tools/render_check.py`, ~4 minutes locally for ~576 renders.
 
 Run all three before pushing. Each has failed CI at least once for want of being run.

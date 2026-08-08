@@ -6,17 +6,13 @@ Built with [Streamlit](https://streamlit.io/), answered by [Mistral](https://mis
 
 ## Features
 
-- 🔀 **Model picker** — the button in the corner of the composer switches model mid-conversation, and sets answer style (Concise / Explanatory). A spent quota fails over on its own.
-- 🔎 **Grounded answers** — no invented commands, partitions or quotas. Retrieval reports when it has *not* found anything, so "the documentation does not cover this" is a reachable answer rather than six weak matches formatted like six good ones.
-- 🔗 **Real citations** — a Sources strip deep-links to the exact section, plus Related sections from the same page. A citation that cannot be resolved is left unlinked rather than pointed at the guide's front page.
-- 🧭 **"I can't see your account" is a route, not a dead end** — the docs record a command for nearly every piece of state Sage cannot see, so it hands you `rcchelp quota` or `squeue --user=…` and offers to read the output you paste back.
-- 🪧 **Says what it did** — a collapsed trace of what was searched and read, including the searches that missed; suggested follow-up questions drawn from real sibling sections; and a visible marker when a long conversation stops being sent to the model in full.
+- 🔀 **Model picker** — the button in the corner of the composer switches model mid-conversation. A spent quota fails over on its own.
+- 🔎 **Grounded answers** — no invented commands, partitions or quotas.
+- 🔗 **Real citations** — a Sources strip deep-links to the exact section, plus Related sections from the same page.
 - 💬 **Streaming replies** with memory for follow-ups.
-- ⭳ **Export** — download the conversation as Markdown with citations resolved and the docs snapshot stamped, or open a pre-drafted Help Desk mail carrying the question and the searches already tried.
 - 📎 **Attachments** — several at once. A PDF, an image pasted straight from the clipboard, or anything that reads as text: a job script, the `.out` it wrote, a config, source. Judged on the bytes, not the extension.
 - 🗂️ **Self-updating docs** — one command refreshes the bundled guide.
-- ♿ **Light and dark themes**, keyboard focus, reduced motion, forced-colors, print stylesheet, live regions for screen readers, and 24×24 pointer targets.
-- 🔒 **Nothing is logged in the clear** — credentials and identifiers (CNetIDs, home and project paths, emails, IPs) are replaced with placeholders before anything is written or exported, and a record whose scrub leaves a credential shape behind is dropped rather than stored.
+- ♿ **Light and dark themes**, keyboard focus, reduced motion, print stylesheet.
 
 ## Quickstart
 
@@ -43,8 +39,6 @@ Models that cannot call tools answer from a **single retrieval pass** instead of
 
 The model gets two tools: `search_docs(query)`, BM25 with IDF, length normalization, a title/path boost and RCC-specific synonym expansion (so "my job got killed" reaches the OOM docs); and `read_doc(path)`, one section in full.
 
-Retrieval is measured, not assumed. [`tests/test_retrieval_eval.py`](tests/test_retrieval_eval.py) is a golden set of real questions paired with the pages that should answer them, with ratcheted floors that may be raised and never lowered: **recall@3 100%, recall@5 100%, precision@1 79%, MRR 0.889** over 34 cases, on 572 chunks from 115 pages. Stemming covers verb inflections as well as plurals (`preempted` → `preempt`, so the synonym group written for it can fire); a query stoplist keeps "how do I install" from scoring on its own; no single page may take more than `SAGE_MAX_PER_PAGE` of a result set; and `Index.assess` reports the top score, the margin and any query word absent from the whole corpus. That last one is the useful signal — a question about software the guide never mentions is unanswerable however well the remaining words match — and it is what makes an honest refusal possible. No percentages: BM25 scores are not comparable across queries, so a "confidence" figure would be theatre.
-
 The corpus is indexed at **heading-sized chunks**, so a citation can deep-link to `…/slurm/sbatch/#gpu-jobs` and nothing has to be truncated. mkdocs-material syntax is normalized away at index time — most importantly content tabs, where cluster-specific command variants otherwise collapse into one blob. Reads resolve against the in-memory index, not the filesystem, so only indexed documents can be reached.
 
 ## Configuration
@@ -70,15 +64,11 @@ Environment-driven; defaults in [`sage/config.py`](sage/config.py).
 | `SAGE_EXCLUDE_HOSTS` | radiology + vislab hosts | Scraped hosts to keep out of the index (`SAGE_EXCLUDE_HOSTS=` indexes everything) |
 | `SAGE_EXCLUDE_FILES` | publication lists | Files to keep out of the index |
 | `SAGE_SEARCH_RESULTS` | `6` | Results per search |
-| `SAGE_MAX_PER_PAGE` | `2` | Most sections one page may take of a result set |
-| `SAGE_MIN_CONFIDENT_SCORE` | `12.0` | Below this, retrieval reports itself as weak |
-| `SAGE_SYNONYM_WEIGHT` | `0.5` | Weight of expanded synonym terms |
-| `SAGE_OUTLINE_BELOW_CHARS` | `1200` | Append a page outline only to sections shorter than this |
-| `RCC_DOCS_ISSUE_URL` | user-guide issues | Where "the docs are missing this" files a pre-filled issue. Empty hides the button |
+| `SAGE_SYNONYM_WEIGHT` | `0.8` | Weight of expanded synonym terms |
 | `SAGE_HISTORY_CHAR_BUDGET` | `48000` | History size before oldest turns are trimmed |
 | `SAGE_MAX_UPLOAD_BYTES` | `10485760` | Upload size limit, per file |
 | `SAGE_MAX_ATTACHED_BYTES` | `20971520` | Upload size limit, across one turn |
-| `SAGE_FEEDBACK_LOG` | *(unset)* | JSONL sink for ratings, retrieval misses and per-turn events. Unset = nothing recorded, but the 👍/👎 controls still render |
+| `SAGE_FEEDBACK_LOG` | *(unset)* | JSONL sink for 👍/👎 and zero-result queries. Unset = nothing recorded |
 | `LOG_LEVEL` | `WARNING` | Python log level |
 
 Server settings live in [`.streamlit/config.toml`](.streamlit/config.toml). `base` is deliberately unset so Streamlit follows the browser's colour scheme and stays in sync with the stylesheet.
@@ -110,9 +100,7 @@ sage/
   providers.py          # Mistral + OpenAI-compatible (OpenCode Zen) adapters
   llm.py                # turn assembly, streaming, typed errors
   prompts.py            # system prompt
-  feedback.py           # 👍/👎 with reasons, retrieval misses, per-turn events
-  scrub.py              # redact credentials and identifiers before anything is stored
-  export.py             # Markdown transcripts, help-desk drafts, docs-gap issues
+  feedback.py           # optional 👍/👎 sink
 static/app.css          # all styling
 static/app.js           # DOM touch-ups Streamlit cannot express
 tests/                  # unit tests, app smoke tests, retrieval eval

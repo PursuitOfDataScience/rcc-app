@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from . import config
-from .providers import Chunk, Usage
+from .providers import Chunk
 
 logger = logging.getLogger(__name__)
 
@@ -104,7 +104,6 @@ class Turn:
     text: str = ""
     tool_calls: list[dict] = field(default_factory=list)
     finished: bool = False
-    usage: Usage = field(default_factory=Usage)
 
     def deltas(self) -> Iterator[str]:
         pending: dict[int, dict] = {}
@@ -112,8 +111,6 @@ class Turn:
             for chunk in self.stream:
                 if not isinstance(chunk, Chunk):
                     continue
-                if chunk.usage:
-                    self.usage.add(chunk.usage)
                 if chunk.text:
                     self.text += chunk.text
                     yield chunk.text

@@ -62,52 +62,18 @@ _SYNONYM_GROUPS: tuple[tuple[str, ...], ...] = (
 )
 
 
-# Final consonants that double before `-ed`/`-ing`, so `cancelled` and `cancel`,
-# `running` and `run`, `submitting` and `submit` land on one key.
-_DOUBLES = frozenset("bdfglmnprt")
-
-
 def _stem(token: str) -> str:
-    """Collapse plurals *and* verb inflections onto one key.
-
-    This used to strip plurals only, while the docstring claimed "Porter-ish". The
-    gap was not cosmetic: `preempted` stayed `preempted`, so the synonym group
-    ("scavenge", "preemptible", "preempt") — written for exactly that query — could
-    never fire, and `purged`, `running`, `exceeded`, `installed` and `submitting`
-    all failed to reach the documentation's own wording.
-
-    The output is a key, not a word: `purge` and `purged` both become `purg`. That
-    is fine because the same function stems the index and the query, and it is why
-    the silent `-e` is dropped — without it `purge`/`purges` would key on `purge`
-    while `purged`/`purging` keyed on `purg`, which is the bug in a new place.
-    """
     if token in _PROTECTED or len(token) < 4:
         return token
-    original = token
-
     if token.endswith("ies") and len(token) > 4:
-        token = token[:-3] + "y"
-    elif token.endswith("sses"):
-        token = token[:-2]
-    elif (token.endswith("es") and len(token) > 4) or (
-        token.endswith("s") and not token.endswith("ss")
-    ):
-        token = token[:-1]
-
-    if token.endswith("ing") and len(token) > 5:
-        token = token[:-3]
-    elif token.endswith("ed") and not token.endswith("eed") and len(token) > 4:
-        # `eed` is excluded so `exceed` is not mistaken for an inflection of
-        # `exce` — it would then never match `exceeded`, which is the exact
-        # phrasing of the OOM message in docs/slurm/faq.md.
-        token = token[:-2]
-
-    if len(token) > 3 and token[-1] == token[-2] and token[-1] in _DOUBLES:
-        token = token[:-1]
-    if len(token) > 3 and token.endswith("e"):
-        token = token[:-1]
-
-    return token if len(token) >= 3 else original
+        return token[:-3] + "y"
+    if token.endswith("sses"):
+        return token[:-2]
+    if token.endswith("es") and len(token) > 4:
+        return token[:-1]
+    if token.endswith("s") and not token.endswith("ss"):
+        return token[:-1]
+    return token
 
 
 def tokenize(text: str) -> list[str]:
@@ -139,101 +105,17 @@ def _build_synonyms() -> dict[str, set[str]]:
 
 _SYNONYMS = _build_synonyms()
 
-# Question scaffolding, dropped from the *query* only (the index keeps every word,
-# so snippets still read naturally).
-#
-# These carry no topic and they are not free: "how do I install OpenFOAM" used to
-# score 23.9 against `slurm/partitions.md` on the strength of "how do I install"
-# alone, with nothing to signal that the one word that mattered — OpenFOAM — is
-# absent from the corpus entirely. IDF discounts them; it does not discount them to
-# zero, and a long page mentioning them often still climbs.
-#
-# Deliberately excluded from this list: every member of a synonym group above
-# (queue, status, script, memory, space, limit, usage, group, account, ...), and
-# single letters other than "i", because `R` and `C` are languages users ask about.
-#
-# Stemmed on the way in, because `expand_query` filters *after* `tokenize` has
-# already stemmed: `this` arrives as `thi` and `does` as `doe`, so an unstemmed
-# list silently matches almost nothing.
-_STOPWORDS = frozenset(
-    _stem(word)
-    for word in (
-        "a", "an", "and", "any", "are", "as", "at", "be", "been", "but", "by",
-        "can", "could", "did", "do", "doe", "does", "for", "from", "get", "got",
-        "had", "has", "have", "here", "how", "i", "if", "in", "into", "is", "it",
-        "its", "me", "my", "no", "not", "of", "on", "or", "please", "should",
-        "so", "some", "than", "that", "the", "their", "them", "then", "there",
-        "these", "they", "this", "those", "to", "was", "were", "what", "when",
-        "where", "which", "who", "why", "will", "with", "would", "you", "your",
-    )
-)
-
-
-def is_stopword(token: str) -> bool:
-    return token in _STOPWORDS
-
 
 def expand_query(query: str) -> dict[str, float]:
     """Query terms mapped to weights; synonyms enter at a reduced weight."""
     weights: dict[str, float] = {}
     for token in tokenize(query):
-        if token in _STOPWORDS:
-            continue
         weights[token] = max(weights.get(token, 0.0), 1.0)
     for token in list(weights):
         for synonym in _SYNONYMS.get(token, ()):
             if synonym not in weights:
                 weights[synonym] = config.SYNONYM_WEIGHT
     return weights
-
-
-@dataclass
-class Assessment:
-    """Whether a query looks answerable, from properties of *this* retrieval.
-
-    Deliberately not a percentage. BM25 scores are unnormalised sums of IDF-weighted
-    contributions plus title/path boosts and a source multiplier: they are not
-    comparable across queries and turning one into "87% confident" would be theatre.
-    Everything here is a checkable fact instead — how well the top hit scored, how
-    far ahead of the runner-up it is, and which query words appear nowhere in the
-    corpus at all.
-    """
-
-    top_score: float = 0.0
-    margin: float = 0.0
-    unknown_terms: tuple[str, ...] = ()
-
-    @property
-    def covered(self) -> bool:
-        """Every distinctive query word exists somewhere in the documentation.
-
-        An unknown word is the strongest out-of-scope signal available: a user
-        asking about OpenFOAM, when "openfoam" is in no chunk of the corpus, is
-        asking something the documentation cannot answer regardless of what the
-        remaining words happen to match.
-        """
-        return not self.unknown_terms
-
-    @property
-    def confident(self) -> bool:
-        return self.covered and self.top_score >= config.MIN_CONFIDENT_SCORE
-
-    def caveat(self) -> str:
-        """One honest sentence for the model, or empty when retrieval looks sound."""
-        if self.confident:
-            return ""
-        if self.unknown_terms:
-            missing = ", ".join(sorted(self.unknown_terms))
-            return (
-                f"No section of the RCC documentation contains: {missing}. The "
-                "results below matched the other words only, so they are probably "
-                "not about what was asked. Say the documentation does not cover it "
-                "rather than answering from these."
-            )
-        return (
-            "These are weak matches and may not answer the question. If they do "
-            "not, say the documentation does not appear to cover it."
-        )
 
 
 @dataclass
@@ -334,59 +216,8 @@ class Index:
                 score=round(score, 4),
                 snippet=snippet(self.corpus.chunks[position].text, weights),
             )
-            for score, position in self._spread(scored, limit)
+            for score, position in scored[:limit]
         ]
-
-    def _spread(
-        self, scored: list[tuple[float, int]], limit: int
-    ) -> list[tuple[float, int]]:
-        """Take the best `limit`, but no more than `MAX_PER_PAGE` from one page.
-
-        Measured before this existed: 53% of the six slots repeated a page already in
-        the list, and a third of the eval questions came back with all of the top
-        three from a single page — so a search asking for six sections was really
-        asking for two or three, and the model saw one page's view of the answer.
-
-        Overflow is not discarded, it is deferred: once every page has had its share
-        the leftovers backfill in score order, so a query that genuinely only matches
-        one page still returns a full page of results rather than a short list.
-        """
-        if limit <= 0:
-            return []
-        kept: list[tuple[float, int]] = []
-        deferred: list[tuple[float, int]] = []
-        seen: Counter[str] = Counter()
-        for score, position in scored:
-            chunk = self.corpus.chunks[position]
-            page = f"{chunk.source}/{chunk.path}"
-            if seen[page] >= config.MAX_PER_PAGE:
-                deferred.append((score, position))
-                continue
-            seen[page] += 1
-            kept.append((score, position))
-            if len(kept) >= limit:
-                return kept
-        return (kept + deferred)[:limit]
-
-    def assess(self, query: str, results: list[Result] | None = None) -> Assessment:
-        """Judge a query's retrieval without re-ranking it."""
-        weights = expand_query(query)
-        if results is None:
-            results = self.search(query)
-        unknown = tuple(
-            term
-            for term, weight in weights.items()
-            if weight >= 1.0
-            and not self._document_frequency.get(term)
-            and not any(term in title for title in self._titles)
-        )
-        top = results[0].score if results else 0.0
-        runner_up = results[1].score if len(results) > 1 else 0.0
-        return Assessment(
-            top_score=top,
-            margin=round(top - runner_up, 4),
-            unknown_terms=unknown,
-        )
 
 
 def snippet(text: str, weights: dict[str, float], width: int | None = None) -> str:
