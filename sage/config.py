@@ -124,10 +124,10 @@ REQUEST_RETRIES = _env_int("SAGE_REQUEST_RETRIES", 2)
 DOCS_PATH = os.getenv("RCC_DOCS_PATH", "./docs")
 WEB_PATH = os.getenv("RCC_WEB_PATH", "./web")
 
-# Which assistant this deployment is. `sage/profiles/` owns what each one means;
-# everything below is only the environment plumbing. Unset is the RCC assistant,
-# so an existing deployment sees no change.
-PROFILE = os.getenv("SAGE_PROFILE", "rcc").strip().lower() or "rcc"
+# Which assistant this deployment is lives in `sage/profiles/`, selected by
+# `SAGE_PROFILE`. It is deliberately *not* mirrored here: the UI resolves it with
+# an `st.secrets` fallback the same way it resolves API keys, and a second copy in
+# config would be a second answer to the same question.
 
 # The `site` profile: a synced snapshot of the personal website, written by
 # tools/build_site_corpus.py.

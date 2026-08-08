@@ -29,9 +29,30 @@ logger = logging.getLogger("sage.app")
 
 STATIC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 
+def setting(name: str, default: str = "") -> str:
+    """A deployment setting from the environment, falling back to `st.secrets`.
+
+    Community Cloud does surface root-level secrets as environment variables, but
+    this does not rely on that having happened by the time this module is imported.
+    Getting it wrong is not a crash: the app boots the *RCC* assistant over the blog
+    corpus, which reads as a prompt bug and takes an afternoon to trace. Reading
+    both is one line and removes the question.
+
+    Safe before `set_page_config` — `st.secrets` enqueues nothing, and the
+    page title and icon below are the profile's.
+    """
+    value = os.getenv(name, "").strip()
+    if value:
+        return value
+    try:
+        return str(st.secrets.get(name, default)).strip()
+    except Exception:  # no secrets.toml present
+        return default
+
+
 # Which assistant this is: corpus, prompt, tool copy, starter cards and brand.
 # `SAGE_PROFILE=site` is the personal-website deployment; unset is RCC.
-PROFILE = profiles.active()
+PROFILE = profiles.get(setting("SAGE_PROFILE", profiles.DEFAULT).lower())
 SYSTEM_PROMPT = PROFILE.system_prompt
 
 # (icon, card label, question actually sent). The label is kept short so every
@@ -74,7 +95,19 @@ components.html(f"<script>{load_asset('app.js')}</script>", height=0)
 def get_index() -> Index:
     built = corpus_mod.build(profile=PROFILE)
     index = Index(built)
-    logger.info("Index ready: %s", corpus_mod.summarize(built))
+    # The profile is named here, at WARNING, because it is the one fact you need
+    # from a deployment's logs to know it came up as the assistant you meant. At
+    # INFO it would be invisible under the default LOG_LEVEL.
+    logger.warning(
+        "Sage ready: profile=%s, %s", PROFILE.key, corpus_mod.summarize(built)
+    )
+    if not built.chunks:
+        st.error(
+            f"**The `{PROFILE.key}` corpus is empty.** Nothing was found under "
+            f"{', '.join(sorted(PROFILE.paths.values()))}. The assistant would "
+            "answer every question with 'not covered'."
+        )
+        st.stop()
     return index
 
 

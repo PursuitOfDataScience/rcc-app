@@ -6,6 +6,8 @@ it checks the things that would make the site app fail to start or answer from t
 wrong corpus, and leaves everything the two share to the RCC suite.
 """
 
+from types import SimpleNamespace
+
 import pytest
 
 import stub_streamlit
@@ -109,6 +111,65 @@ class TestBoot:
         labels = " ".join(str(label) for label in stub.button_labels.values())
         assert "Pretraining from scratch" in labels
         assert "Midway" not in labels
+
+
+class TestProfileSelection:
+    """How the deployment learns which assistant to be.
+
+    Getting this wrong is not a crash — it is the RCC assistant booting over the
+    blog corpus, answering in the wrong voice about the wrong things, and looking
+    like a prompt bug.
+    """
+
+    def test_the_environment_wins(self, monkeypatch):
+        _stub, module = boot(monkeypatch, ScriptedProvider([]))
+        assert module.PROFILE.key == "site"
+
+    def test_secrets_are_read_when_the_environment_is_empty(self, monkeypatch):
+        """Community Cloud does export root-level secrets as environment
+        variables. This does not depend on that having happened yet."""
+        import sys
+
+        sys.modules.pop("app", None)
+        monkeypatch.delenv("SAGE_PROFILE", raising=False)
+        monkeypatch.setenv("MISTRAL_API_KEY", "test-key")
+        monkeypatch.delenv("OPENCODE_API_KEY", raising=False)
+        stub = stub_streamlit.install()
+        stub.secrets = SimpleNamespace(
+            get=lambda key, default="": (
+                "site" if key == "SAGE_PROFILE" else default
+            )
+        )
+        monkeypatch.setattr(
+            providers, "build", lambda name, _key: ScriptedProvider([])
+        )
+        module = None
+        try:
+            import app as module  # noqa: PLC0415
+        except (stub_streamlit.Rerun, stub_streamlit.Stop):
+            pass
+        assert module is not None
+        assert module.PROFILE.key == "site"
+
+    def test_neither_source_means_the_assistant_this_repo_already_shipped(
+        self, monkeypatch
+    ):
+        import sys
+
+        sys.modules.pop("app", None)
+        monkeypatch.delenv("SAGE_PROFILE", raising=False)
+        monkeypatch.setenv("MISTRAL_API_KEY", "test-key")
+        monkeypatch.delenv("OPENCODE_API_KEY", raising=False)
+        stub_streamlit.install()
+        monkeypatch.setattr(
+            providers, "build", lambda name, _key: ScriptedProvider([])
+        )
+        module = None
+        try:
+            import app as module  # noqa: PLC0415
+        except (stub_streamlit.Rerun, stub_streamlit.Stop):
+            pass
+        assert module.PROFILE.key == "rcc"
 
 
 class TestAnswering:
