@@ -873,10 +873,104 @@ MAX_CHIP_GAP = 40
 MAX_CURSOR_GAP = 16
 
 
+# Every check above measures one frame. This one measures a *sequence*, because the
+# per-turn scroll is the one behaviour in app.js whose bug lives in the transition
+# rather than in any single layout: send a follow-up, and the view must move to the
+# question and keep up with the answer arriving under it.
+#
+# It exists because modelling the pin was not enough. The state checks above
+# reproduce the pin's formula (`__pinLast`) rather than running `autoScroll`, so they
+# agreed with a version that pinned once, on a page that had not grown an answer yet,
+# clamped against the bottom — and then held still for the rest of the turn while the
+# reply streamed in 778px below the composer. Re-implementing a function is not
+# testing it; this drives the real one.
+FOLLOW_DRIVER = r"""
+<script>
+var out = {steps: []};
+function port() {
+  var c = [document.querySelector('[data-testid="stMain"]'),
+           document.scrollingElement, document.documentElement];
+  for (var i = 0; i < c.length; i++)
+    if (c[i] && c[i].scrollHeight > c[i].clientHeight + 1) return c[i];
+  return document.documentElement;
+}
+function tick(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+
+// The two numbers the reader cares about: how far the newest content runs past the
+// composer, and whether their question has reached the top of the window (past which
+// a long reply is theirs to scroll).
+function look(label) {
+  var p = port();
+  var asked = document.querySelectorAll('.user-message');
+  var last = asked[asked.length - 1];
+  var tail = document.querySelector('#streamed') || last;
+  var bar = document.querySelector('[data-testid="stBottomBlockContainer"]');
+  var barTop = bar ? bar.getBoundingClientRect().top : innerHeight;
+  out.steps.push({
+    at: label,
+    scrollTop: Math.round(p.scrollTop),
+    maxScroll: Math.round(p.scrollHeight - p.clientHeight),
+    questionTop: last ? Math.round(last.getBoundingClientRect().top) : null,
+    hiddenBelow: tail ? Math.round(tail.getBoundingClientRect().bottom - barTop) : null
+  });
+}
+
+function para(n) {
+  var p = document.createElement('p');
+  p.textContent = 'Streamed sentence number ' + n + ', long enough to take a line or '
+    + 'two of the answer as it arrives from the model in real time. ';
+  return p;
+}
+
+(async function () {
+  await tick(400);                       // app.js boots and settles the page
+  var p = port();
+  p.scrollTop = p.scrollHeight;          // the reader is at the end of the last answer
+  out.shape = p === document.querySelector('[data-testid="stMain"]')
+    ? 'stMain' : 'document';
+  await tick(300);
+  look('before submit');
+
+  // The rerun that starts a turn appends two things: the marker app.js polls for, and
+  // the question. Nothing here touches the scroll — that is what is being measured.
+  var signal = document.createElement('div');
+  signal.id = 'processing-signal';
+  signal.hidden = true;
+  document.body.appendChild(signal);
+  var block = document.querySelector('[data-testid="stVerticalBlock"]');
+  var q = document.createElement('div');
+  q.className = 'element-container';
+  q.innerHTML = '<div class="stMarkdown"><div class="user-message">'
+    + '<div class="user-bubble">what else can you do?</div></div></div>';
+  block.appendChild(q);
+  var streamed = document.createElement('div');
+  streamed.id = 'streamed';
+  streamed.className = 'st-key-answer-9 element-container';
+  streamed.innerHTML = '<div class="stChatMessage"><div></div>'
+    + '<div class="stMarkdown" id="sink"></div></div>';
+  block.appendChild(streamed);
+  await tick(600);
+  look('question appended');
+
+  var sink = document.getElementById('sink');
+  for (var n = 1; n <= 12; n++) {
+    sink.appendChild(para(n));
+    await tick(180);
+    if (n === 3 || n === 6 || n === 12) look('streaming ' + n);
+  }
+  await tick(500);
+  look('answer complete');
+  document.title = JSON.stringify(out);
+})();
+</script>
+"""
+
+
 def page(body: str, scheme: str, scroll: bool, generating: bool = False,
          pin: bool = False, script: bool = True, sticky: bool = False,
          doc_scroll: bool = False, typed: bool = False,
-         column_input: bool = False, portal: str = "") -> str:
+         column_input: bool = False, portal: str = "",
+         driver: str = "") -> str:
     """The replica, with or without app.js, and with the bar pinned either way.
 
     `script=False` is the app's first frame: the stylesheet's own fallback for how
@@ -946,7 +1040,7 @@ def page(body: str, scheme: str, scroll: bool, generating: bool = False,
 {portal}
 <script>window.__scrollBottom = {str(scroll).lower()}; window.__pinLast = {str(pin).lower()};</script>
 {'<script>' + JS + '</script>' if script else ''}
-{MEASURE.replace("HOSTBAR", str(HOST_BAR)).replace("TOPGAP", str(TOP_GAP)).replace("SELECTORS", json.dumps(SELECTORS))}
+{driver or MEASURE.replace("HOSTBAR", str(HOST_BAR)).replace("TOPGAP", str(TOP_GAP)).replace("SELECTORS", json.dumps(SELECTORS))}
 </body></html>"""
 
 
@@ -1013,7 +1107,7 @@ def calibrate():
 VIEWPORT = None   # filled in by main(); {'chrome_h', 'chrome_w', 'min_w', 'min_h'}
 
 
-def render(name, html, width, height, shot=False):
+def render(name, html, width, height, shot=False, budget=1500):
     path = os.path.join(HERE, f"{name}.html")
     with open(path, "w", encoding="utf-8") as fh:
         fh.write(html)
@@ -1023,7 +1117,7 @@ def render(name, html, width, height, shot=False):
     pad_h = VIEWPORT["chrome_h"] if VIEWPORT else 0
     cmd = [CHROME, "--headless", "--no-sandbox", "--disable-gpu", "--hide-scrollbars",
            f"--window-size={width + pad_w},{height + pad_h}",
-           "--virtual-time-budget=1500"]
+           f"--virtual-time-budget={budget}"]
     if shot:
         cmd.append(f"--screenshot={os.path.join(HERE, name + '.png')}")
     cmd += ["--dump-dom", f"file://{path}"]
@@ -1036,6 +1130,58 @@ def render(name, html, width, height, shot=False):
     # The payload rides back in <title>, so every entity has to come back out —
     # `&gt;` in particular, or any selector containing ">" gets a mangled key.
     return json.loads(_html.unescape(out[start + 7 : end]))
+
+
+# The question's top edge is allowed to be a hair under TOP_GAP without that counting
+# as "not pinned yet": the pin lands within a pixel or two and rounding is reported to
+# whole pixels on both sides.
+FOLLOW_SLACK = 8
+
+
+def check_follow(widths) -> tuple[list[str], int]:
+    """Send a follow-up on a scrolled page and watch where the view goes.
+
+    The invariant, at every step of the turn: either the newest content is above the
+    composer, or the question has reached the top of the window. Those are the two
+    honest resting places. Anything else is the reader looking at a still page while
+    their answer arrives somewhere below it, which is the bug this reproduces.
+    """
+    problems: list[str] = []
+    body = CHAT_MARKER + "".join(answer_block(i) for i in range(3))
+    checked = 0
+    # Both shapes, because which element scrolls decides all of it, and a narrow
+    # window as well as a wide one: the shorter the viewport, the longer the page
+    # stays too short to put the question at the top, which is the whole failure.
+    for doc_scroll in (False, True):
+        shape = "document" if doc_scroll else "stMain"
+        for width, height in widths:
+            name = f"follow-{shape}-{width}"
+            html = page(body, "dark", scroll=False, doc_scroll=doc_scroll,
+                        driver=FOLLOW_DRIVER)
+            data = render(name, html, width, height, budget=20000)
+            if data is None or not data.get("steps"):
+                problems.append(f"{name}: the follow-up sequence reported nothing")
+                continue
+            checked += 1
+            if data.get("shape") != shape:
+                problems.append(
+                    f"{name}: meant to put the scrollbar on {shape} and app.js found "
+                    f"it on {data['shape']} — this render measured the other shape"
+                )
+                continue
+            for step in data["steps"]:
+                pinned = step["questionTop"] is not None and (
+                    step["questionTop"] <= TOP_GAP + FOLLOW_SLACK
+                )
+                if step["hiddenBelow"] > FOLLOW_SLACK and not pinned:
+                    problems.append(
+                        f"{name}/{step['at']}: the newest content runs "
+                        f"{step['hiddenBelow']}px past the composer while the question "
+                        f"sits {step['questionTop']}px down, so the view stopped "
+                        f"following the answer (scrollTop {step['scrollTop']} of "
+                        f"{step['maxScroll']})"
+                    )
+    return problems, checked
 
 
 def audit(data, scenario, scheme, width, state: str) -> list[str]:
@@ -1410,8 +1556,18 @@ def main() -> int:
                                 print(f"  {sel:42} top={b['top']:>5} "
                                       f"lines={b['lines']} contrast={b['contrast']}")
 
+    # Two window sizes rather than all six: this stage costs about a second a render
+    # and what it varies is the scrollport, not the breakpoint. A tall window and the
+    # narrowest one Chromium will open cover both ends of "is the page long enough to
+    # put the question at the top yet".
+    follow_problems, follow_checked = check_follow(
+        [(1263, 900), (VIEWPORT["min_w"], PHONE_H)]
+    )
+    failures.extend(follow_problems)
+
     print(f"\nChecked {checked} renders across {len(SCENARIOS)} screens, "
-          f"2 themes, {len(widths)} widths.")
+          f"2 themes, {len(widths)} widths, plus {follow_checked} follow-up scroll "
+          f"sequences.")
     if failures:
         print(f"\n{len(failures)} problem(s):")
         for problem in dict.fromkeys(failures):
