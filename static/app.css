@@ -424,17 +424,24 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
     font-size: clamp(1.7rem, 4.4vw, 2.4rem) !important;
     font-weight: 700;
     letter-spacing: -0.01em;
-    /* `background-clip: text` clips to the text box, so a tight line-height cuts
-     * the descenders in "help"/"you". Streamlit's `.stMarkdown h1` rule is more
-     * specific than this class, hence !important. */
-    line-height: 1.35 !important;
-    padding: 0 0 0.12em !important;
-    overflow: visible !important;
+    /* Solid, not gradient-clipped text.
+     *
+     * The gradient ran #800000 -> #a5122a across a heading now sixteen characters
+     * long, which nobody can perceive, and it cost five workarounds: a
+     * `line-height: 1.35 !important` to stop `background-clip: text` slicing
+     * descenders, a `padding-bottom`, an `overflow: visible`, a documented fallback
+     * colour for browsers without background-clip, and a permanent exemption from
+     * this stylesheet's own contrast check — because the computed `color` is not what
+     * gets painted, so the measurement was meaningless and had to be skipped.
+     *
+     * It also rendered as literally nothing in Windows High Contrast mode, where
+     * `color` is forced to CanvasText but `-webkit-text-fill-color` is not, and the
+     * gradient behind it is never drawn.
+     *
+     * Streamlit's `.stMarkdown h1` rule is more specific than this class, hence the
+     * !important on line-height. */
+    line-height: 1.25 !important;
     color: var(--brand-text);
-    background: linear-gradient(135deg, var(--gradient-text-start), var(--gradient-text-end));
-    -webkit-background-clip: text;
-    background-clip: text;
-    -webkit-text-fill-color: transparent;
     margin-bottom: var(--space-sm);
     animation: fadeInUp 0.6s ease-out 0.15s both;
 }
@@ -1273,7 +1280,9 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
  * `background-color`-only graphics (the status dot and the bouncing dots) are forced
  * to Canvas and vanish too, so they get a border instead. */
 @media (forced-colors: active) {
-    .welcome-title, .status-text {
+    /* .status-text is still gradient-clipped (it carries a shimmer), so it needs the
+     * reset. The hero title no longer is, and is left alone. */
+    .status-text {
         -webkit-text-fill-color: CanvasText;
         background: none;
         color: CanvasText;
@@ -1333,12 +1342,7 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
     .user-bubble { background: none !important; color: #000 !important; border: 1px solid #999; }
     .stChatMessage, .source-chip { color: #000 !important; }
 
-    /* The hero is gradient-clipped text, which prints as nothing. */
-    .welcome-title {
-        -webkit-text-fill-color: #000 !important;
-        background: none !important;
-        color: #000 !important;
-    }
+    .welcome-title { color: #000 !important; }
 
     /* A printed citation with no URL is not a citation. This app's whole proposition
      * is that every answer links the documentation it came from, and on paper that

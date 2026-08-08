@@ -975,3 +975,175 @@ class TestVisionModels:
         assert isinstance(content, str), f"bytes went to a text-only model: {content!r}"
         assert "pasted-image.png" in content
         assert "base64" not in content
+
+
+class TestFeedbackIsAlwaysOffered:
+    """The widget rendered only when SAGE_FEEDBACK_LOG was set, so the default
+    deployment had no feedback affordance and users had never been asked. Being
+    asked is part of the interface; whether this deployment keeps the answer is a
+    separate question."""
+
+    def answered(self):
+        return {
+            "messages": [
+                {"role": "user", "text": "how do I submit a job", "attachments": []},
+                {
+                    "role": "assistant",
+                    "text": "Use sbatch.",
+                    "sources": [],
+                    "rating": None,
+                    "model": "mistral:mistral-small-latest",
+                },
+            ],
+            "processing": False,
+        }
+
+    def test_the_thumbs_render_with_no_sink_configured(self, monkeypatch):
+        monkeypatch.delenv("SAGE_FEEDBACK_LOG", raising=False)
+        from sage import config
+
+        monkeypatch.setattr(config, "FEEDBACK_LOG", "")
+        stub, _module = run_app(monkeypatch, session=self.answered())
+        assert "👍" in stub.button_labels.values()
+        assert "👎" in stub.button_labels.values()
+
+    def test_a_thumbs_down_asks_what_was_wrong(self, monkeypatch):
+        from sage import config, feedback
+
+        monkeypatch.setattr(config, "FEEDBACK_LOG", "")
+        session = self.answered()
+        session["messages"][1]["rating"] = "down"
+        stub, _module = run_app(monkeypatch, session=session)
+        labels = list(stub.button_labels.values())
+        for _key, label in feedback.REASONS:
+            assert label in labels, label
+
+    def test_a_thumbs_up_needs_no_follow_up(self, monkeypatch):
+        from sage import config, feedback
+
+        monkeypatch.setattr(config, "FEEDBACK_LOG", "")
+        session = self.answered()
+        session["messages"][1]["rating"] = "up"
+        stub, _module = run_app(monkeypatch, session=session)
+        labels = list(stub.button_labels.values())
+        assert all(label not in labels for _k, label in feedback.REASONS)
+
+
+class TestUngroundedAnswers:
+    """An answer citing nothing used to render like a grounded one minus the chips."""
+
+    def ungrounded(self):
+        return {
+            "messages": [
+                {"role": "user", "text": "can I use Julia on Beagle3", "attachments": []},
+                {
+                    "role": "assistant",
+                    "text": "The docs do not cover Julia.",
+                    "sources": [],
+                    "rating": None,
+                    "model": "mistral:mistral-small-latest",
+                    "trace": {"searches": [{"query": "julia"}], "reads": []},
+                },
+            ],
+            "processing": False,
+        }
+
+    def test_it_says_the_answer_is_not_grounded(self, monkeypatch):
+        stub, _module = run_app(monkeypatch, session=self.ungrounded())
+        html = " ".join("\n".join(stub.markdown_html).split())
+        assert "not grounded" in html
+
+    def test_it_offers_a_drafted_help_desk_message(self, monkeypatch):
+        from sage import config
+
+        stub, _module = run_app(monkeypatch, session=self.ungrounded())
+        html = "\n".join(stub.markdown_html)
+        assert f"mailto:{config.HELP_DESK_EMAIL}" in html
+        # The retrieval trace travels with it, so the human on the other end knows
+        # what has already been checked.
+        assert "julia" in html.lower()
+
+    def test_a_grounded_answer_gets_none_of_it(self, monkeypatch):
+        session = self.ungrounded()
+        session["messages"][1]["sources"] = [
+            {
+                "id": "docs/slurm/sbatch.md",
+                "label": "Batch jobs",
+                "url": "https://example.invalid/",
+                "source": "docs",
+            }
+        ]
+        stub, _module = run_app(monkeypatch, session=session)
+        html = " ".join("\n".join(stub.markdown_html).split())
+        assert "not grounded" not in html
+
+
+class TestFreshnessIsShown:
+    def test_the_snapshot_date_reaches_the_landing_screen(self, monkeypatch):
+        """config.snapshot() parsed docs_snapshot.json since it was added and nothing
+        ever displayed it — the cheapest trust feature in the repo, unspent."""
+        from sage import config
+
+        stamp = config.snapshot().get("refreshed_at", "")
+        stub, _module = run_app(monkeypatch)
+        html = " ".join("\n".join(stub.markdown_html).split())
+        if stamp:
+            assert "synced" in html
+            assert stamp.split("-")[0] in html      # the year
+
+    def test_a_missing_snapshot_does_not_break_the_hero(self, monkeypatch):
+        from sage import config
+
+        monkeypatch.setattr(config, "snapshot", dict)
+        stub, _module = run_app(monkeypatch)
+        html = " ".join("\n".join(stub.markdown_html).split())
+        assert "Ask the RCC docs" in html
+        assert "synced" not in html
+
+
+class TestExport:
+    def test_a_conversation_can_be_downloaded(self, monkeypatch):
+        session = {
+            "messages": [
+                {"role": "user", "text": "how do I submit a job", "attachments": []},
+                {
+                    "role": "assistant",
+                    "text": "See [Batch jobs](docs/slurm/sbatch.md).",
+                    "sources": [],
+                    "rating": None,
+                    "model": "mistral:mistral-small-latest",
+                },
+            ],
+            "processing": False,
+        }
+        stub, _module = run_app(monkeypatch, session=session)
+        assert stub.downloads, "no transcript offered"
+        _label, name, data = stub.downloads[0]
+        assert name.endswith(".md")
+        # Citations resolved on the way out; a transcript of raw docs/... targets
+        # would look correct and be full of dead links.
+        assert "slurm/sbatch/" in data
+        assert "docs/slurm/sbatch.md)" not in data
+
+    def test_nothing_to_download_on_the_landing_screen(self, monkeypatch):
+        stub, _module = run_app(monkeypatch)
+        assert not stub.downloads
+
+
+class TestDeepLink:
+    def test_a_q_parameter_asks_the_question_once(self, monkeypatch):
+        stub = stub_streamlit.install()
+        stub.query_params["q"] = "how do I submit a batch job"
+        monkeypatch.setenv("MISTRAL_API_KEY", "test-key")
+        monkeypatch.delenv("OPENCODE_API_KEY", raising=False)
+        import sys
+
+        sys.modules.pop("app", None)
+        try:
+            import app  # noqa: F401,PLC0415
+        except Exception:
+            pass
+        assert stub.session_state["messages"], "the deep link asked nothing"
+        assert stub.session_state["messages"][0]["text"] == "how do I submit a batch job"
+        # Cleared, or a reload re-asks and bills it again.
+        assert "q" not in stub.query_params

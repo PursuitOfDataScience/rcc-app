@@ -60,7 +60,7 @@ EXAMPLES = [
     ("🧯", "My job was killed for exceeding the memory limit."),
     ("🔌", "How do I connect to Midway3 with SSH?"),
     ("💾", "What are the quotas on /home, /project and /scratch?"),
-    ("🐍", "How do I make a conda environment without filling my home quota?"),
+    ("🐍", "How do I create a conda environment on /project?"),
     ("⏳", "My job is stuck in the queue."),
 ]
 
@@ -800,9 +800,8 @@ if not has_messages:
         f"""
         <div class="welcome">
             <h1 class="welcome-title">Ask the RCC docs</h1>
-            <p class="welcome-subtitle">The RCC user guide and
-            rcc.uchicago.edu{freshness()}. Sage reads the docs — it can't see your
-            account, jobs or files.</p>
+            <p class="welcome-subtitle">RCC user guide and
+            website{freshness()}. Sage can't see your account.</p>
         </div>
         """,
         unsafe_allow_html=True,
