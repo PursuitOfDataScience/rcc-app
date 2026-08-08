@@ -191,6 +191,31 @@ class TestTurnLoop:
         html = "\n".join(stub.markdown_html)
         assert "Sources" in html or stub.session_state["messages"][-1]["sources"]
 
+    def test_the_models_own_sources_list_does_not_reach_the_transcript(self, monkeypatch):
+        """The screenshot: an answer ending `Sources: Storage System Layout › Quotas`,
+        directly above the app's own strip saying the same thing. The list the reader
+        should see is the one built from what was actually retrieved."""
+        answer = [
+            event("Your /home quota is 30 GB.\n\n"),
+            event("Sources: [Quotas](docs/storage/main.md#quotas)"),
+        ]
+        client = ScriptedProvider([self.SEARCH, self.READ, answer])
+        stub, _module = run_app(monkeypatch, client=client, session=self.session())
+
+        stored = stub.session_state["messages"][-1]
+        assert stored["text"] == "Your /home quota is 30 GB."
+        # And the strip the app draws itself is untouched by the removal.
+        assert [source["id"] for source in stored["sources"]] == [
+            "docs/storage/main.md#quotas"
+        ]
+
+    def test_the_prompt_asks_for_no_sources_list(self):
+        """Stripping is the backstop. Not spending the tokens is the fix."""
+        from sage.prompts import SYSTEM_PROMPT
+
+        assert "Never close with" in SYSTEM_PROMPT
+        assert "Cite inline" in SYSTEM_PROMPT
+
     def test_an_answer_with_no_tools_still_works(self, monkeypatch):
         client = ScriptedProvider([[event("I cannot run commands.")]])
         stub, _module = run_app(monkeypatch, client=client, session=self.session())
@@ -944,3 +969,40 @@ class TestVisionModels:
         assert isinstance(content, str), f"bytes went to a text-only model: {content!r}"
         assert "pasted-image.png" in content
         assert "base64" not in content
+
+
+class TestComposerReset:
+    """Clearing the conversation has to clear the box too.
+
+    The text in Streamlit's chat input is client-side state that Python only reads on
+    submit, so nothing in app.py can empty it. Clearing therefore wiped the transcript
+    and left the last question sitting over the starter cards as if it were about to be
+    sent. app.py publishes a token; app.js does the emptying.
+    """
+
+    def app(self, monkeypatch, session=None, **kwargs):
+        client = ScriptedProvider([], name="mistral", models=("m1",))
+        return run_app(monkeypatch, client=client,
+                       session={"processing": False, **(session or {})}, **kwargs)
+
+    def test_the_token_is_published_for_app_js(self, monkeypatch):
+        stub, _m = self.app(monkeypatch, {"messages": []})
+        assert any(
+            'id="composer-reset"' in html and "data-token=" in html
+            for html in stub.markdown_html
+        ), "app.js has nothing to watch"
+
+    def test_clearing_moves_the_token(self, monkeypatch):
+        session = {"messages": [{"role": "user", "text": "hi", "attachments": []}]}
+        before, _m = self.app(monkeypatch, session)
+        start = before.session_state["clear_token"]
+        after, _m2 = self.app(monkeypatch, session, buttons={"clear": True})
+        assert after.session_state["clear_token"] == start + 1
+
+    def test_an_ordinary_run_leaves_the_token_alone(self, monkeypatch):
+        """It must move only on a clear: app.js empties the box whenever it changes,
+        and a token that drifted would delete a half-typed question."""
+        session = {"messages": [{"role": "user", "text": "hi", "attachments": []}],
+                   "clear_token": 7}
+        stub, _m = self.app(monkeypatch, session)
+        assert stub.session_state["clear_token"] == 7

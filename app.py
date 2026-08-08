@@ -143,6 +143,9 @@ for key, default in (
     # Why a file was refused, keyed the same way, so the reason survives a rerun.
     ("upload_refusals", {}),
     ("uploader_key", 0),
+    # Bumped by the Clear button. Rendered into the page for app.js, which is the only
+    # side that can reach the text inside Streamlit's chat input.
+    ("clear_token", 0),
     ("error", None),
     ("error_detail", ""),
     ("model", ""),
@@ -476,6 +479,12 @@ def render_controls() -> None:
             st.session_state.failed_over = False
             st.session_state.switched_from = None
             st.session_state.uploader_key += 1
+            # Nothing here can empty the composer — the text in it is client-side
+            # state Streamlit only reads on submit — so clearing the conversation left
+            # the last question sitting in the box on the landing screen, over a set of
+            # starter cards, as if it were still about to be sent. app.js empties it
+            # when this counter moves.
+            st.session_state.clear_token += 1
             st.rerun()
         render_model_picker()
 
@@ -728,6 +737,15 @@ def render_attachments() -> None:
 # cannot fail that way.
 prompt = st.chat_input("Ask anything about RCC…")
 
+# The token app.js watches to know the composer should be emptied. A marker element
+# rather than a callback, for the same reason `#processing-signal` is one: this file
+# cannot touch the textarea, and a value in the DOM is something app.js can compare
+# against what it last acted on, so a clear empties the box exactly once.
+st.markdown(
+    f'<div id="composer-reset" data-token="{st.session_state.clear_token}" hidden></div>',
+    unsafe_allow_html=True,
+)
+
 # Rendered here, before the turn below: that block ends in `st.rerun()`, so
 # anything after it is never reached while an answer is generating — which is
 # exactly when a user whose model just ran out of credit reaches for the picker.
@@ -801,7 +819,8 @@ if st.session_state.processing:
                 "role": "system",
                 "content": (
                     "Answer only from these RCC documentation sections. Cite them "
-                    "as [Title](path) using the exact path in each header. If they "
+                    "inline as [Title](path) using the exact path in each header, and "
+                    "do not end with a Sources list — one is printed for you. If they "
                     "do not cover the question, say so.\n\n" + context
                 ),
             },
@@ -874,7 +893,10 @@ if st.session_state.processing:
         st.session_state.messages.append(
             {
                 "role": "assistant",
-                "text": final_text,
+                # Stored stripped, not merely rendered stripped: this text is also what
+                # goes back upstream next turn, and a footer in the history is a worked
+                # example teaching the model to write another one.
+                "text": links.strip_source_footer(final_text),
                 "sources": sources,
                 "rating": None,
                 "model": MODEL.key,
