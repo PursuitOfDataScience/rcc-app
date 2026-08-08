@@ -91,6 +91,26 @@ def docs_url(rel_path: str, anchor: str = "") -> str:
     return f"{url}#{anchor}" if anchor else url
 
 
+def safe_url(url: str) -> str:
+    """A scraped URL, or the RCC site if it is not a plain web address.
+
+    Line 1 of every scraped file is trusted as a URL and rendered straight into an
+    `href` by the Sources strip. Escaping there stops an attribute breakout but not
+    a scheme: `javascript:...` on line 1 would survive as a working link. The
+    scraper is ours, so this is a guard rather than a live hole — but it is two
+    lines, and the alternative is trusting the shape of a text file forever.
+    """
+    url = (url or "").strip()
+    if not url:
+        return _RCC_SITE
+    scheme = urlsplit(url).scheme.lower()
+    if scheme in ("http", "https"):
+        return url
+    if not scheme and url.startswith("//"):
+        return f"https:{url}"
+    return _RCC_SITE
+
+
 def _host(url: str) -> str:
     try:
         return urlsplit(url).netloc.lower()
@@ -268,7 +288,7 @@ def chunk_scraped(source: str, rel_path: str, raw: str) -> tuple[Document, list[
         source=source,
         path=rel_path,
         title=doc_title,
-        url=url or _RCC_SITE,
+        url=safe_url(url),
         text=body,
     )
 

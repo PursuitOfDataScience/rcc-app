@@ -162,6 +162,11 @@ MIN_CHUNK_CHARS = _env_int("SAGE_MIN_CHUNK_CHARS", 120)
 # Cap for reading a whole page. Pages above it return an outline plus their
 # opening, so the model asks for the section it actually needs.
 MAX_DOC_CHARS = _env_int("SAGE_MAX_DOC_CHARS", 20000)
+# A section read below this length gets its page outline appended; above it, the
+# outline is not worth the tokens. It was appended unconditionally, which on
+# docs/slurm/sbatch.md meant 222 tokens of navigation on a 409-token section — and
+# because every tool round resends the whole conversation, again in each later round.
+OUTLINE_BELOW_CHARS = _env_int("SAGE_OUTLINE_BELOW_CHARS", 1200)
 WEB_CHUNK_CHARS = _env_int("SAGE_WEB_CHUNK_CHARS", 2400)
 WEB_CHUNK_OVERLAP = _env_int("SAGE_WEB_CHUNK_OVERLAP", 240)
 
