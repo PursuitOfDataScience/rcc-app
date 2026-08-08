@@ -1,3 +1,5 @@
+import pytest
+
 from sage import config, search
 from sage.corpus import Chunk, Corpus
 
@@ -132,3 +134,98 @@ class TestSnippet:
 def test_index_builds_over_the_real_corpus(real_index):
     assert real_index.total > 300
     assert real_index.average_length > 0
+
+
+class TestStemming:
+    """The stemmer claimed to be "Porter-ish" and stripped plurals only."""
+
+    @pytest.mark.parametrize(
+        ("inflected", "base"),
+        [
+            # The group ("scavenge", "preemptible", "preempt") was written for this
+            # query and could never fire, because `preempted` reached the index as
+            # itself and matched no member of it.
+            ("preempted", "preempt"),
+            ("purged", "purge"),
+            ("exceeded", "exceed"),
+            ("submitting", "submit"),
+            ("installed", "install"),
+            ("cancelled", "cancel"),
+        ],
+    )
+    def test_a_verb_and_its_inflection_share_a_key(self, inflected, base):
+        assert search._stem(inflected) == search._stem(base)
+
+    @pytest.mark.parametrize("word", ["running", "getting", "making"])
+    def test_generic_verbs_are_left_apart(self, word):
+        """`running` onto `run` hands that key the frequency of both, and the golden
+        set charged 2.9pp of recall for it: `ecosystems.md` stopped being the best
+        answer to "what clusters does RCC run" because every page mentions running
+        something. A three-letter stem is scaffolding, not a topic."""
+        assert search._stem(word) != search._stem(word[:3])
+
+    @pytest.mark.parametrize("word", ["scoring", "sharing"])
+    def test_gerunds_do_not_collapse_onto_four_letter_fragments(self, word):
+        """`scoring` → `scor` matched a GIS page titled "Match Score" and scored a
+        radiology question the corpus cannot answer at 28.7, on a title boost."""
+        assert search._stem(word) == word
+
+    def test_the_synonym_group_written_for_preemption_now_fires(self, real_index):
+        weights = search.expand_query("my job was preempted")
+        assert search._stem("scavenge") in weights
+
+
+class TestAssessment:
+    """Whether retrieval admits it is weak. Both thresholds are pinned here, on the
+    labelled queries their values were measured from — the previous version of this
+    idea shipped a threshold that passed the whole suite at any value from 0 to 20."""
+
+    OUT_OF_SCOPE = [
+        "how do I install OpenFOAM",
+        "PI-RADS prostate MRI scoring",
+        "mpMRI prostate imaging protocol",
+        "what is the weather in Chicago",
+        "who won the world cup",
+        "how do I bake sourdough bread",
+    ]
+    # In scope, and each carrying a word the documentation has never seen: a daemon
+    # named in an error message, a job ID, a CNetID, an error token.
+    WITH_IDENTIFIERS = [
+        "my job was killed by slurmstepd oom-kill event",
+        "why did job 41235567 fail",
+        "my CNetID is jsmith and I cannot log in",
+        "srun: error: task 0 launch failed: Unspecified error",
+    ]
+
+    @pytest.mark.parametrize("question", OUT_OF_SCOPE)
+    def test_out_of_scope_questions_are_not_confident(self, real_index, question):
+        assessment = real_index.assess(question)
+        assert not assessment.confident, f"{question!r} scored {assessment.top_score:.1f}"
+        assert assessment.caveat()
+
+    @pytest.mark.parametrize("question", WITH_IDENTIFIERS)
+    def test_an_unseen_word_does_not_veto_strong_evidence(self, real_index, question):
+        """This is what made the idea unusable before: every one of these was told the
+        documentation does not cover it, and every one of them is answered by it."""
+        assessment = real_index.assess(question)
+        assert assessment.confident, (
+            f"{question!r} scored {assessment.top_score:.1f} and was refused over "
+            f"{assessment.unknown_terms}"
+        )
+        assert assessment.caveat() == ""
+
+    def test_a_job_number_is_never_an_unseen_topic(self, real_index):
+        assert real_index.assess("why did job 41235567 fail").unknown_terms == ()
+
+    def test_the_caveat_quotes_the_readers_words_not_stems(self, real_index):
+        """It said "No section contains: prostat, unspecifi, instal"."""
+        assessment = real_index.assess("how do I bake sourdough bread")
+        assert "sourdough" in assessment.caveat()
+        # `bake` stems to `bak`, and the stem is what used to be quoted.
+        assert "bake" in assessment.unknown_terms
+        assert "bak" not in assessment.unknown_terms
+
+    def test_a_caveat_is_not_a_percentage(self, real_index):
+        assessment = real_index.assess("how do I install OpenFOAM")
+        assert "%" not in assessment.caveat()
+        assert assessment.margin >= 0

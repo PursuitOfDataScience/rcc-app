@@ -77,10 +77,15 @@ _NO_RESULTS = (
 )
 
 
-def format_search_results(results) -> str:
+def format_search_results(results, caveat: str = "") -> str:
     if not results:
         return _NO_RESULTS
-    lines = [
+    lines = []
+    if caveat:
+        # Ahead of the results, not after them: a model reads top-down, and a warning
+        # underneath six confident-looking rows arrives too late to change the answer.
+        lines += [f"RETRIEVAL WARNING: {caveat}", ""]
+    lines += [
         "Top matching RCC documentation sections. "
         "Call read_doc with the exact `path` to read one in full.",
         "",
@@ -105,12 +110,19 @@ def gather_context(index: Index, query: str, limit: int | None = None):
 
     Returns (context_text, chunks). The chunks become the answer's Sources strip,
     exactly as if the model had read them itself.
+
+    The caveat matters more here than in the tool loop: a model that cannot call tools
+    cannot search again when the context is wrong, so if retrieval was weak, being told
+    so is the only thing between it and an invented answer.
     """
     results = index.search(query, limit or config.SEARCH_RESULTS)
     blocks = [
         f"=== {result.chunk.breadcrumb} ({result.chunk.id}) ===\n{result.chunk.text}"
         for result in results
     ]
+    caveat = index.assess(query, results).caveat()
+    if caveat and blocks:
+        blocks.insert(0, f"RETRIEVAL WARNING: {caveat}")
     return "\n\n".join(blocks), [result.chunk for result in results]
 
 
@@ -132,7 +144,12 @@ class ToolRunner:
             query = (arguments.get("query") or "").strip()
             self.queries.append(query)
             logger.info("search_docs(%r)", query)
-            return format_search_results(self.index.search(query))
+            results = self.index.search(query)
+            assessment = self.index.assess(query, results)
+            if not assessment.confident:
+                logger.info("weak retrieval for %r (top %.1f, unseen %s)",
+                            query, assessment.top_score, assessment.unknown_terms)
+            return format_search_results(results, assessment.caveat())
         if name == READ_DOC:
             return self._read(str(arguments.get("path") or "").strip())
         return f"Unknown tool: {name}"

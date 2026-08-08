@@ -9,7 +9,15 @@ those list all of them.
 Add a case whenever a bad answer is reported. A failure here means retrieval
 regressed — fix the ranking, don't loosen the case.
 
-Current: recall@5 97%, recall@3 94%, precision@1 79%.
+Measured, not remembered: this line said "recall@5 97%, recall@3 94%,
+precision@1 79%" for a configuration that scored 97/97/79 — the recall@3 figure was
+never true of the committed code, and a hand-written number nobody re-derives is worse
+than none. Print them with `tools/metrics.py` rather than trusting this paragraph:
+
+    recall@5 100%, recall@3 100%, precision@1 85% over the 33 cases below.
+
+The ratchets are one case below each of those, so a single regression fails and the
+slack is stated rather than hidden.
 """
 
 import pytest
@@ -72,17 +80,21 @@ CASES: list[tuple[str, tuple[str, ...]]] = [
 ]
 
 # Questions lexical search cannot reach today, kept visible rather than deleted.
-# "which queue should I submit to" fails because slurm/partitions.md never uses the
-# word "queue" — a genuine BM25 limitation that embeddings would close.
+# "which queue should I submit to" is hard because slurm/partitions.md never uses the
+# word "queue" — a genuine BM25 limitation that embeddings would close. It now reaches
+# rank 5 (so this xfails-not-strictly and reports an xpass) because capping sections
+# per page stopped slurm/sbatch.md taking the whole result set. Kept here rather than
+# promoted: at exactly rank 5 it is one ranking wobble from failing, and a case that
+# flaps in CI teaches nothing.
 KNOWN_GAPS: list[tuple[str, tuple[str, ...]]] = [
     ("which queue should I submit to", ("slurm/partitions.md", "slurm/main.md")),
 ]
 
 RECALL_AT = 5
 # Ratchet. Raise it when retrieval improves; never lower it to make CI pass.
-MINIMUM_RECALL_AT_5 = 0.90
-MINIMUM_RECALL_AT_3 = 0.85
-MINIMUM_PRECISION_AT_1 = 0.70
+MINIMUM_RECALL_AT_5 = 0.96      # measured 1.00; one of 33 cases is 3.0pp
+MINIMUM_RECALL_AT_3 = 0.96      # measured 1.00
+MINIMUM_PRECISION_AT_1 = 0.81   # measured 0.85
 
 
 def pages(index, question, limit):
@@ -122,6 +134,33 @@ def test_precision_at_1(real_index):
     """Matters most: the model usually reads the first result."""
     score = sum(hit(real_index, q, e, 1) for q, e in CASES) / len(CASES)
     assert score >= MINIMUM_PRECISION_AT_1, f"precision@1 fell to {score:.0%}"
+
+
+def test_every_answerable_question_is_reported_as_confident(real_index):
+    """The other half of the weak-retrieval caveat, and the half that decides whether
+    it is usable: a warning that fires on questions the documentation answers teaches
+    the model to ignore it. Every case in the golden set must come back clean."""
+    noisy = [
+        (question, real_index.assess(question))
+        for question, _ in CASES + KNOWN_GAPS
+    ]
+    wrong = [
+        f"{question!r} (top {a.top_score:.1f}, unseen {a.unknown_terms})"
+        for question, a in noisy
+        if not a.confident
+    ]
+    assert not wrong, "caveated an answerable question: " + "; ".join(wrong)
+
+
+def test_out_of_scope_questions_are_caveated(real_index):
+    """And the first half: something the corpus cannot answer must say so. These are
+    scored above the excluded-content pair below — "install OpenFOAM" reaches 23.9 on
+    the strength of "how do I install" alone — so a score floor alone cannot catch
+    them and the unseen-word rule has to."""
+    for question in ("how do I install OpenFOAM", "how do I bake sourdough bread"):
+        assessment = real_index.assess(question)
+        assert not assessment.confident, f"{question!r} passed as answerable"
+        assert "documentation does not appear to cover it" in assessment.caveat()
 
 
 def test_excluded_content_never_scores_confidently(real_index):
