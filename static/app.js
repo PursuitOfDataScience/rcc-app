@@ -504,32 +504,34 @@
         }
         if (heldByReader(stamp)) return;
 
-        var box = latest.getBoundingClientRect();
-        // Done when the question IS at the top of the window — a position, asked of the
-        // layout every pass, rather than a flag remembered from an earlier one.
+        // Keep the newest text on screen for as long as the answer is arriving, and
+        // scroll DOWN only. One rule for the whole turn, deliberately.
         //
-        // Two rounds of this bug were flags. First a boolean, which survived a rerun in
-        // a realm that outlived it, so a pass that ran before Streamlit had rendered
-        // the new question latched on the old one. Then a stamp spent once the scroll
-        // "landed", which latched on a scroll clamped by a page that had not grown an
-        // answer yet. Both left the reader on a still page with the reply arriving
-        // somewhere below it, and both were invisible to a check that reproduced the
-        // formula instead of running this function.
+        // It used to be two: follow the page while it was too short to lift the question
+        // to the top of the window, then stop there for the rest of the turn. That read
+        // as the page freezing — the view arrived on send and every token after the first
+        // screenful streamed in below the fold with nothing moving. Reinstating the
+        // follow *alongside* the pin is worse than either: the follow scrolls down to the
+        // tail, the pin pulls back up to the question, and they fight every pass.
         //
-        // A position cannot go stale that way. While the page is too short to lift the
-        // question that high the scroll clamps to the bottom, this stays false, and the
-        // view keeps up with the page as it grows — which is the "scroll down to the
-        // bottom" a reader asks for. The chase ends by itself on the first pass that
-        // can put the question at TOP_GAP, and from there a reply longer than the
-        // window is the reader's to scroll. It also self-corrects: `#processing-signal`
-        // and the new question are separate deltas, so a pass can see a generation in
-        // flight with the *previous* question still the newest one in the DOM, and
-        // whatever that pass does to the view is re-measured against the real question
-        // on the next one.
-        if (Math.abs(box.top - TOP_GAP) <= 2) return;
-
-        var target = box.top + el.scrollTop - TOP_GAP;
-        scrollView(el, Math.max(0, Math.min(target, limit)));
+        // The target is the tail rather than the document's end, because the container
+        // reserves the measured bar height plus `--tail-gap` below the last message to
+        // clear the fixed composer — the bottom of the document is mostly padding, and
+        // scrolling there wastes a third of the window on nothing. Where the reply
+        // actually ends, one gap above the composer, is the same edge `settle()` closes
+        // to once the turn is over.
+        //
+        // Down only, so a reply that already fits is never yanked, and the question ends
+        // up on screen without being pinned there: at the start of a turn the tail IS
+        // just below the question. A reply longer than the window stays the reader's to
+        // scroll — the moment they move it, the hand-off above sees that and this stops
+        // for the rest of the turn.
+        var bar = doc.querySelector('[data-testid="stBottomBlockContainer"]');
+        var end = tail();
+        if (!bar || end === null) return;
+        var hidden = end - (composerTop(bar) - TAIL_GAP);
+        if (hidden <= 2) return;
+        scrollView(el, Math.min(limit, el.scrollTop + hidden));
         // Read back rather than assumed. The scroller refuses while Streamlit is
         // mid-rebuild, and `scroll-behavior: smooth` anywhere in the chain turns the
         // assignment into an animation that has not started yet — in both cases the

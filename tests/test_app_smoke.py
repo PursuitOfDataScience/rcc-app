@@ -213,8 +213,11 @@ class TestTurnLoop:
         """Stripping is the backstop. Not spending the tokens is the fix."""
         from sage.prompts import SYSTEM_PROMPT
 
-        assert "Never close with" in SYSTEM_PROMPT
         assert "Cite inline" in SYSTEM_PROMPT
+        # Every form of it, not just the word "Sources": told only that, a model drops
+        # the label and closes with "Cited from X and Y" instead.
+        assert "do not restate your citations" in SYSTEM_PROMPT.lower()
+        assert "Cited from" in SYSTEM_PROMPT
 
     def test_an_answer_with_no_tools_still_works(self, monkeypatch):
         client = ScriptedProvider([[event("I cannot run commands.")]])
