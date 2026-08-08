@@ -8,6 +8,7 @@ session state, layout, and the tool loop that drives them.
 
 from __future__ import annotations
 
+import hashlib
 import html
 import logging
 import os
@@ -133,10 +134,14 @@ for key, default in (
     # offered while a file was already attached, and a second attachment looked from
     # the outside like a control that does nothing.
     ("attachments", []),
-    # Keys of files the user dismissed with the chip's ✕. The uploader widget still
-    # reports them on every rerun — nothing here can reach into it and remove one —
-    # so without this they come straight back on the next run.
-    ("dropped_uploads", set()),
+    # How many times the user has dismissed each uploaded file with a chip's ✕. The
+    # uploader widget still reports them on every rerun — nothing here can reach into
+    # it and remove one — so without this they come straight back on the next run. A
+    # count rather than a flag, so a file that is deliberately re-picked can return
+    # while one merely still being reported cannot.
+    ("dropped_uploads", {}),
+    # Why a file was refused, keyed the same way, so the reason survives a rerun.
+    ("upload_refusals", {}),
     ("uploader_key", 0),
     ("error", None),
     ("error_detail", ""),
@@ -189,6 +194,19 @@ def fallback_model() -> providers.Model | None:
 
 # Why a model refused, in words a user can act on.
 REASONS = {"quota": "out of credit", "auth": "its key was rejected"}
+
+# Streamlit signals "stop this script and start again" by raising. Matched by class
+# name rather than imported, because the module those classes live in has moved
+# between versions (`scriptrunner.script_runner` → `scriptrunner_utils.exceptions`)
+# and because the test stub raises its own equivalents — a name test covers all
+# three, an import covers whichever one happened to be installed when it was written.
+CONTROL_FLOW_NAMES = frozenset(
+    {"RerunException", "StopException", "Rerun", "Stop", "RerunError"}
+)
+
+
+def is_control_flow(exc: BaseException) -> bool:
+    return type(exc).__name__ in CONTROL_FLOW_NAMES
 
 
 # --- rendering helpers -----------------------------------------------------
@@ -365,7 +383,8 @@ def start_new_turn(question: str, attachments=None) -> None:
     # dismissal list is emptied because the keys in it refer to a widget that no
     # longer exists. Leaving stale keys behind would silently refuse a file with the
     # same name later in the conversation.
-    st.session_state.dropped_uploads = set()
+    st.session_state.dropped_uploads = {}
+    st.session_state.upload_refusals = {}
     st.session_state.uploader_key += 1
     st.rerun()
 
@@ -451,7 +470,8 @@ def render_controls() -> None:
             st.session_state.messages = []
             st.session_state.processing = False
             st.session_state.attachments = []
-            st.session_state.dropped_uploads = set()
+            st.session_state.dropped_uploads = {}
+            st.session_state.upload_refusals = {}
             st.session_state.error = None
             st.session_state.notice = ""
             st.session_state.failed_over = False
@@ -491,7 +511,10 @@ if not has_messages:
                         key=f"example-{position}",
                         use_container_width=True,
                     ):
-                        start_new_turn(question)
+                        # With the attachments, like any other question. Without
+                        # them, a file attached on the landing screen — where the
+                        # chips do render — was cleared by the send and never seen.
+                        start_new_turn(question, st.session_state.attachments)
 else:
     # Marker only: app.js keys page-scroll behaviour off its presence — without it
     # the screen is the landing screen, which always starts at the top.
@@ -577,29 +600,83 @@ upload = st.file_uploader(
 def upload_key(item) -> tuple:
     """Identity of an uploaded file across reruns.
 
-    Name and size, not Streamlit's `file_id`: the id changes on every rerun for the
-    same file in some versions, which would re-process and re-append one attachment
-    for every interaction with the page.
+    Name, size and a digest of the first 4 KB — not Streamlit's `file_id`, which
+    changes on every rerun for the same file in some versions and would re-process and
+    re-append one attachment per interaction with the page.
+
+    The digest is there because name and size alone collided: two different
+    `config.yaml` files of the same length were one attachment, and the second was
+    dropped without a word. 4 KB rather than the whole file so a 10 MB upload is not
+    rehashed on every rerun.
     """
-    return (item.name, item.size)
+    head = item.getvalue()[:4096]
+    return (item.name, item.size, hashlib.blake2b(head, digest_size=8).hexdigest())
 
 
-held = {(item.filename, item.size) for item in st.session_state.attachments}
-for item in upload or []:
-    key = upload_key(item)
-    if key in st.session_state.dropped_uploads or key in held:
+keyed = [(upload_key(item), item) for item in upload or []]
+offered = {key for key, _item in keyed}
+
+# Dismissals are COUNTED, not just remembered, and the count is how many copies of a
+# file to skip on this run.
+#
+# A plain set of keys blacklisted the file outright, so after dismissing a chip the
+# user could pick the *same file* again and nothing whatsoever happened — no chip, no
+# warning. Worse on the landing screen, where the Clear button that resets this does
+# not render, so there was no route back at all short of reloading the page.
+#
+# Counting keeps the distinction that matters. `accept_multiple_files` accumulates, so
+# a re-picked file is reported twice: one dismissal skips the first copy and the second
+# is a fresh offer and attaches. A file dismissed and not re-picked is still reported
+# once, still skipped, and still does not come back on its own.
+dismissed = dict(st.session_state.dropped_uploads)
+# Keys the widget has stopped reporting cannot come back, so their counts are dead.
+dismissed = {key: count for key, count in dismissed.items() if key in offered}
+
+# Reasons files were refused, so the explanation outlives the run that produced it. A
+# bare `st.warning` is discarded whenever the run ends in a rerun — which it does
+# whenever a file is dropped while an answer is generating — and the refusal was
+# permanent, so the user was left with a file in the uploader, no chip, and no reason.
+refusals = {
+    key: why
+    for key, why in dict(st.session_state.get("upload_refusals", {})).items()
+    if key in offered
+}
+
+held = {item.key for item in st.session_state.attachments if item.key}
+for key, item in keyed:
+    if key in held:
+        continue
+    if dismissed.get(key, 0) > 0:
+        dismissed[key] -= 1
         continue
     attachment, error = files.process(item.name, item.getvalue())
+    if not error:
+        # The per-file limit does not bound the total, and a handful of legal
+        # screenshots made one illegal request. Refused here rather than by the
+        # provider, which reports it as "this conversation got too long".
+        attached = sum(held_item.size for held_item in st.session_state.attachments)
+        if attached + item.size > config.MAX_ATTACHED_BYTES:
+            limit = config.MAX_ATTACHED_BYTES // (1024 * 1024)
+            error = (
+                f"{item.name} would put this turn over the {limit} MB total for "
+                "attachments. Send what is attached first, or drop something."
+            )
     if error:
-        # Remembered as dismissed rather than clearing the whole widget: a bad file
-        # among three good ones used to reset the uploader and take the other two
-        # with it.
-        st.session_state.dropped_uploads.add(key)
-        st.warning(f"⚠️ {error}")
+        # Remembered rather than clearing the whole widget: a bad file among three
+        # good ones used to reset the uploader and take the other two with it.
+        st.session_state.dropped_uploads[key] = (
+            st.session_state.dropped_uploads.get(key, 0) + 1
+        )
+        refusals[key] = error
         continue
     attachment.size = item.size
+    attachment.key = key
     st.session_state.attachments.append(attachment)
     held.add(key)
+
+st.session_state.upload_refusals = refusals
+for why in refusals.values():
+    st.warning(f"⚠️ {why}")
 
 
 def render_attachments() -> None:
@@ -620,9 +697,10 @@ def render_attachments() -> None:
                 help="Remove this attachment",
             ):
                 dropped = st.session_state.attachments.pop(index)
-                st.session_state.dropped_uploads.add(
-                    (dropped.filename, getattr(dropped, "size", 0))
-                )
+                if dropped.key:
+                    st.session_state.dropped_uploads[dropped.key] = (
+                        st.session_state.dropped_uploads.get(dropped.key, 0) + 1
+                    )
                 st.rerun()
         if any(item.kind == "image" for item in st.session_state.attachments) and not (
             config.sees_images(MODEL.id)
@@ -653,7 +731,7 @@ prompt = st.chat_input("Ask anything about RCC…")
 render_attachments()
 render_controls()
 
-if prompt:
+if prompt and prompt.strip():
     asked = prompt.strip()
     if len(asked) > config.MAX_PROMPT_CHARS:
         # The cap the counter used to advertise. Said once, at the moment it matters,
@@ -664,6 +742,12 @@ if prompt:
             f"{config.MAX_PROMPT_CHARS:,}-character limit. Shorten it, or attach the "
             "long part as a file."
         )
+        # And handed back, because `st.chat_input` empties its box on submit: without
+        # this, "shorten it" asks the reader to shorten something the app has just
+        # destroyed. The counter that used to enforce this made overrunning impossible
+        # in the first place, so losing the text is a regression this pays off.
+        with st.expander("Your question, to copy back out", expanded=True):
+            st.code(asked, language=None)
     else:
         start_new_turn(asked, st.session_state.attachments)
 
@@ -682,6 +766,11 @@ if st.session_state.processing:
     runner = ToolRunner(INDEX)
     final_text = ""
     question = st.session_state.messages[-1].get("text", "")
+    # Set only when Streamlit aborts this run from underneath us. The `finally` below
+    # must then leave `processing` alone and not issue a rerun of its own: the abort
+    # already is one, and clearing the flag on a turn that never finished left the
+    # question on screen with no answer, no error and nothing to click.
+    interrupted = False
 
     def fail(message: str, detail: str) -> None:
         """Surface a failure — and drop any notice, which can only contradict it.
@@ -834,6 +923,11 @@ if st.session_state.processing:
             )
             fail(exc.user_message, _detail(exc.original or exc))
     except Exception as exc:  # last-resort guard so the UI never dies
+        if is_control_flow(exc):
+            # Streamlit's own control flow, not a failure. Re-raised so the rerun or
+            # stop it represents actually happens.
+            interrupted = True
+            raise
         status.empty()
         answer.empty()
         logger.exception("Unexpected failure")
@@ -846,6 +940,11 @@ if st.session_state.processing:
             st.session_state.model = switch_to
             st.session_state.error = None
             st.session_state.error_detail = ""
-        else:
+        elif not interrupted:
             st.session_state.processing = False
-        st.rerun()
+        # Not while interrupted: the abort in flight IS a rerun, and calling another
+        # one here replaced it — which left the question on screen with no answer, no
+        # error card and nothing to click, because `processing` had been cleared by a
+        # turn that never finished.
+        if not interrupted:
+            st.rerun()

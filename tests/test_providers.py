@@ -1,6 +1,9 @@
 """Provider adapters: Mistral SDK and the OpenAI-compatible OpenCode Zen endpoint."""
 
-from types import SimpleNamespace
+import importlib
+import os
+import sys
+from types import ModuleType, SimpleNamespace
 
 import pytest
 
@@ -201,3 +204,97 @@ class TestOpenAICompat:
 def test_build_rejects_an_unknown_provider():
     with pytest.raises(ValueError, match="Unknown provider"):
         providers.build("nope", "key")
+
+
+def _shipped_max_tokens() -> int:
+    """`config.MAX_TOKENS` with any environment override taken away.
+
+    The module reads the environment at import, so the number the app ships with is
+    only visible with `SAGE_MAX_TOKENS` unset — otherwise this asserts on whatever
+    the machine running the tests happens to export. The second reload puts the
+    process back the way it was found.
+    """
+    saved = os.environ.pop("SAGE_MAX_TOKENS", None)
+    try:
+        return importlib.reload(config).MAX_TOKENS
+    finally:
+        if saved is not None:
+            os.environ["SAGE_MAX_TOKENS"] = saved
+        importlib.reload(config)
+
+
+class TestTokenBudgetReachesTheRequest:
+    """The cap is only a fix where the request is built.
+
+    `SAGE_MAX_TOKENS` was 1600 and answers came back severed mid-sentence — "Per the
+    RCC docs," and then nothing. Two things have to hold, and neither implies the
+    other: the shipped default has to be generous, and it has to be the number each
+    provider actually asks for. The SDK client and the HTTP client are stood in for
+    here; the payload built between them is the thing under test.
+    """
+
+    def test_the_default_is_not_the_value_that_severed_answers(self):
+        assert _shipped_max_tokens() >= 8000, (
+            "1600 tokens cut a walkthrough with two code blocks off mid-sentence"
+        )
+
+    def test_the_mistral_request_asks_for_the_configured_budget(self):
+        asked = {}
+
+        def stream(**kwargs):
+            asked.update(kwargs)
+            delta = SimpleNamespace(content="ok", tool_calls=None)
+            return iter([
+                SimpleNamespace(data=SimpleNamespace(
+                    choices=[SimpleNamespace(delta=delta)]
+                ))
+            ])
+
+        adapter = providers.MistralProvider.__new__(providers.MistralProvider)
+        adapter._client = SimpleNamespace(chat=SimpleNamespace(stream=stream))
+        assert "".join(chunk.text for chunk in adapter.stream("m", [], None)) == "ok"
+        assert asked.get("max_tokens") == config.MAX_TOKENS
+
+    def test_the_openai_compatible_payload_carries_the_configured_budget(
+        self, monkeypatch
+    ):
+        sent = {}
+
+        class Response:
+            status_code = 200
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_exc):
+                return False
+
+            def iter_lines(self):
+                return iter([
+                    'data: {"choices":[{"delta":{"content":"ok"}}]}',
+                    "data: [DONE]",
+                ])
+
+        class Client:
+            def __init__(self, **_kwargs):
+                pass
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_exc):
+                return False
+
+            def stream(self, _method, _url, json=None, **_kwargs):
+                sent.update(json or {})
+                return Response()
+
+        fake = ModuleType("httpx")
+        fake.Client = Client
+        fake.Timeout = lambda *_a, **_k: None
+        monkeypatch.setitem(sys.modules, "httpx", fake)
+
+        provider = providers.OpenAICompatProvider("k", "https://x.test/v1")
+        streamed = "".join(c.text for c in provider.stream("z1", [], None))
+        assert streamed == "ok"
+        assert sent.get("max_tokens") == config.MAX_TOKENS

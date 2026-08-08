@@ -113,8 +113,19 @@
     // reserving that much space would push the conversation off screen. The cap
     // turns that into slightly-wrong spacing rather than an empty page.
     function band(element) {
-        var raw = Math.ceil(view.innerHeight - element.getBoundingClientRect().top);
-        return Math.max(0, Math.min(raw, Math.round(view.innerHeight * 0.4)));
+        return Math.max(0, Math.min(rawBand(element),
+                                    Math.round(view.innerHeight * 0.4)));
+    }
+
+    // The same measurement without the cap, for the things that are POSITIONS rather
+    // than reservations. Capping a position does not make it safer, it moves it: the
+    // attachment chips are pinned from `--bar-band`, so every pixel the cap clipped
+    // slid them down into the input box. At 966x626 — a width CI renders — the cap
+    // was already clipping 16-24px off a bar that tall, and with a paragraph typed
+    // the chips ended up on top of the textarea.
+    function rawBand(element) {
+        return Math.max(0, Math.ceil(
+            view.innerHeight - element.getBoundingClientRect().top));
     }
 
     // Does the input bar sit ON the page, or IN it?
@@ -179,10 +190,21 @@
             // position depended on a number their own height changed — a feedback
             // loop, and the last one of those in this file grew by 42px a frame until
             // it was the height of the window.
-            var barBand = overlays(bar) ? band(bar) : 0;
-            publish('--bar-band', barBand);
-            var chipRoom = chips ? chips.getBoundingClientRect().height + CHIP_GAP : 0;
-            publish('--bar-h', barBand + chipRoom);
+            // The band is published UNCONDITIONALLY, because it is a position: it is
+            // where the bar's top edge is, and that is true whether Streamlit pinned
+            // the bar with `fixed` or `sticky`. Gating it on `overlays()` — as the
+            // reservation below is correctly gated — published 0 in the sticky shape,
+            // which pinned the attachment chips 5.6px off the bottom of the window:
+            // below the box they belong above, on top of the controls strip, and
+            // taking no clicks at all. The reservation is the only thing `overlays()`
+            // has an opinion about.
+            publish('--bar-band', rawBand(bar));
+            // Height first, then decide: a container that is present at zero height
+            // (or display:none) needs no gap reserved, and `composerTop` already
+            // takes that view of the same node.
+            var chipHeight = chips ? chips.getBoundingClientRect().height : 0;
+            var chipRoom = chipHeight > 0 ? chipHeight + CHIP_GAP : 0;
+            publish('--bar-h', (overlays(bar) ? band(bar) : 0) + chipRoom);
         }
         watch(strip, bar, chips);
     }
@@ -414,13 +436,33 @@
     // otherwise assignable, and the `change` has to be dispatched by hand: React
     // listens for the native event at the document root, so a bubbling one reaches
     // its handler, but nothing dispatches it when the list is set programmatically.
+    // Distinguishes one paste from the next. Two screenshots of the same size would
+    // otherwise be the same (name, size) pair and count as one attachment.
+    var pasteCount = 1;
+
+    // Re-registered every pass, with the previous registration torn down first.
+    //
+    // The guard used to be a `data-` marker on the parent's own node, and that was
+    // wrong in a way with no visible symptom: the marker lives in the parent document
+    // and survives, while the listener lives in THIS iframe's realm and dies whenever
+    // Streamlit rebuilds the component. The next copy of the script saw the marker,
+    // skipped registration, and no listener existed anywhere — so pasting a screenshot
+    // worked once per page load and silently never again. A remover parked on the
+    // parent window is the one handle that outlives the realm it came from.
     function addPasteHandler() {
         var input = doc.querySelector('[data-testid="stChatInput"]');
-        if (!input || input.dataset.sagePaste) return;
-        input.dataset.sagePaste = '1';
-        input.addEventListener('paste', function (event) {
+        if (!input) return;
+        if (view.__sagePasteOff) {
+            try { view.__sagePasteOff(); } catch (err) { /* node already gone */ }
+        }
+        var onPaste = function (event) {
             var data = event.clipboardData;
             if (!data) return;
+            // Text wins. A clipboard from Word, Excel, Sheets or Preview carries
+            // text/plain AND an image, and taking the file branch on those pasted a
+            // screenshot of the selection while throwing the text away.
+            var types = data.types ? [].slice.call(data.types) : [];
+            if (types.indexOf('text/plain') !== -1) return;
             var files = [];
             // `items` rather than `files`: a screenshot on the clipboard is an item
             // of kind 'file' and shows up in both, but some browsers only populate
@@ -433,24 +475,41 @@
                 }
             }
             if (!files.length) return;
-            // Only now: a paste of plain text has to go on behaving like a paste of
-            // plain text, and calling this earlier would swallow it.
-            event.preventDefault();
+            // The uploader is looked up BEFORE the paste is cancelled. The other order
+            // meant that when the input was missing — mid-rebuild, or the widget key
+            // being swapped — the paste was swallowed and nothing happened at all.
             var target = doc.querySelector(
                 '[data-testid="stFileUploader"] input[type="file"]');
             if (!target) return;
+            event.preventDefault();
             var transfer = new view.DataTransfer();
-            files.forEach(function (file) {
+            // Seeded with what the widget already holds, because assigning
+            // `input.files` REPLACES the list. Without this, pasting a screenshot
+            // silently dropped every file picked before it from the widget's own
+            // record — the chips stayed, so nothing looked wrong.
+            for (var f = 0; f < (target.files || []).length; f++) {
+                transfer.items.add(target.files[f]);
+            }
+            files.forEach(function (file, index) {
                 // A clipboard image arrives as "image.png" or with no name at all, so
                 // several pastes would collide on the (name, size) pair app.py
-                // identifies a file by. The size makes them distinct in practice; the
-                // index makes them distinct on purpose.
-                var name = file.name || 'pasted-image.png';
+                // identifies a file by — two screenshots of the same size would be one
+                // attachment. The index makes them distinct, which the comment here
+                // claimed before the code did it.
+                var stamp = pasteCount + (index ? '-' + index : '');
+                var name = file.name
+                    ? file.name.replace(/(\.[^.]*)?$/, '-' + stamp + '$1')
+                    : 'pasted-image-' + stamp + '.png';
                 transfer.items.add(new view.File([file], name, {type: file.type}));
             });
+            pasteCount += 1;
             target.files = transfer.files;
             target.dispatchEvent(new view.Event('change', {bubbles: true}));
-        });
+        };
+        input.addEventListener('paste', onPaste);
+        view.__sagePasteOff = function () {
+            input.removeEventListener('paste', onPaste);
+        };
     }
 
     // Close the model picker once a model has been picked.
@@ -463,27 +522,57 @@
     // Delegated from the document, because the panel is rendered in a portal that
     // Streamlit rebuilds on every rerun: a listener bound to the panel itself would
     // be attached to a node that no longer exists by the time it is needed.
+    //
+    // Two selectors, because Streamlit moved the panel. Up to 1.58 it was a Base Web
+    // popover; 1.59 removed Base Web and renders the body into a floating-ui portal
+    // on `document.body` instead. This shipped matching only `[data-baseweb=popover]`,
+    // which on a current Streamlit matches nothing at all — so the Escape was never
+    // sent and the picker went on staying open, the exact bug it was added to fix.
+    // requirements.txt allows >=1.42, so both shapes are live and both are named.
+    var PANEL = '[data-testid="stPopoverBody"], [data-baseweb="popover"]';
+
     function closePickerOnPick() {
-        if (doc.documentElement.dataset.sagePicker) return;
-        doc.documentElement.dataset.sagePicker = '1';
-        doc.addEventListener('click', function (event) {
+        if (view.__sagePickerOff) {
+            try { view.__sagePickerOff(); } catch (err) { /* realm gone */ }
+        }
+        var onClick = function (event) {
             var button = event.target && event.target.closest
                 ? event.target.closest('button')
                 : null;
-            if (!button || !button.closest('[data-baseweb="popover"]')) return;
+            // Scoped to the model list, not to "any button in any popover". The wider
+            // rule was harmless only because the picker is currently the one popover
+            // in the app with buttons in it; a date picker or a multiselect added later
+            // would have inherited an Escape nobody asked for.
+            if (!button || !button.closest('.st-key-model-list')) return;
+            if (!button.closest(PANEL)) return;
             // After the click has been delivered, not instead of it.
             view.setTimeout(function () {
-                doc.dispatchEvent(new view.KeyboardEvent('keydown', {
-                    key: 'Escape', code: 'Escape', keyCode: 27, which: 27,
-                    bubbles: true, cancelable: true
-                }));
+                // Both events, with the same init. Base Web's popover has bound its
+                // dismissal to `keyup` in some versions and `keydown` in others, and
+                // which one is installed is not visible from this repo — sending one
+                // and hoping is how a feature becomes a silent no-op.
+                ['keydown', 'keyup'].forEach(function (kind) {
+                    doc.dispatchEvent(new view.KeyboardEvent(kind, {
+                        key: 'Escape', code: 'Escape', keyCode: 27, which: 27,
+                        bubbles: true, cancelable: true
+                    }));
+                });
             }, 0);
-        }, true);
+        };
+        doc.addEventListener('click', onClick, true);
+        view.__sagePickerOff = function () {
+            doc.removeEventListener('click', onClick, true);
+        };
     }
 
     function copyText(text) {
-        if (navigator.clipboard && navigator.clipboard.writeText) {
-            return navigator.clipboard.writeText(text);
+        // The PARENT's clipboard. This iframe is never focused — the click that gets
+        // here happened in the page around it — so Chromium rejects the iframe's own
+        // `writeText` with NotAllowedError, which the caller's empty `.catch` then
+        // swallowed: a copy button that looked fine and copied nothing.
+        var nav = view.navigator || navigator;
+        if (nav.clipboard && nav.clipboard.writeText) {
+            return nav.clipboard.writeText(text);
         }
         // Fallback for insecure (http) origins without the async clipboard API.
         return new Promise(function (resolve, reject) {
@@ -617,16 +706,23 @@
     /* --- scheduling ------------------------------------------------------ */
 
     function sync() {
+        // Measurement FIRST. It used to run after the injectors, all of them inside
+        // one try/catch, so a single throw anywhere above cost the whole pass its
+        // layout: `--bar-h` went unpublished and the frame rendered on the
+        // stylesheet's fallback. `addPaperclip` could not even recover, because it
+        // guards on the element it had failed to create, so it threw at the same
+        // place forever and the bar was never measured again.
+        //
+        // Order among the three below still matters: the bar's height is what the
+        // page reserves for it, the slack above a short conversation is measured
+        // against that reservation, and autoScroll measures the gap they leave.
+        measureChrome();
         addPaperclip();
         addPasteHandler();
         closePickerOnPick();
         addCodeCopyButtons();
         addAnswerCopyButtons();
         blockSendWhileProcessing();
-        // Order matters both times: the bar's height is what the page reserves
-        // for it, the slack above a short conversation is measured against that
-        // reservation, and autoScroll measures the gap the two of them leave.
-        measureChrome();
         // `scroller()` first, because it is the one that asks which element actually
         // scrolls instead of assuming. This line named stMain outright while
         // `autoScroll()` two lines down asked `scroller()` — two functions in one file

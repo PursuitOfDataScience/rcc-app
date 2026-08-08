@@ -91,13 +91,18 @@
      * which are pinned to the first and counted in the second — see `measureChrome`
      * for why those cannot be one number.
      *
-     * The two fallbacks are tuned in opposite directions on purpose. `--bar-h` is a
+     * The two are tuned in opposite directions on purpose. `--bar-h` is a
      * reservation, so generous is safe: extra is dead space app.js takes back on the
      * first frame, missing hides an answer. `--bar-band` is a *position*, so generous
      * is not safe — at 12rem against a measured 134px it floated the chips 58px above
      * the box they belong to, which the `attached` screens caught the moment they
-     * existed. 8.5rem is 136px: just past the measurement, not past the box. */
-    --bar-band: 8.5rem;
+     * existed.
+     *
+     * Derived from `--strip-h` rather than guessed, because the bar's band IS the
+     * strip it reserves plus the input and its padding. Two hand-tuned numbers agreed
+     * with each other by luck and were both ~20px under the real first-frame band;
+     * this way one of them changing cannot silently break the other. */
+    --bar-band: calc(var(--strip-h) + 5.25rem);
     --bar-h: 12rem;
     /* What is left between the last message and the bar. Also how far the page
      * can scroll past its last message, so it is dead space, one gap's worth. */
@@ -306,8 +311,6 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
  * ellipsed past that, so switching models changes the text and nothing else. */
 .st-key-composer-strip [data-testid="stPopover"] button {
     width: 15rem !important;
-    max-width: 15rem;
-    justify-content: space-between;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -329,11 +332,18 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
  * builds its popover on Base Web, the attribute is Base Web's own contract, and it is
  * the one name here that does not belong to an unversioned internal. The test id is
  * matched too, for the version that carries it, but the rule does not depend on it. */
+/* Colour on every wrapper, because any of them can be the one painting white; the
+ * border and shadow on the body ALONE. Applied to the wrapper too, they drew a ring
+ * inside a ring 2px apart with the shadow rendered twice, whenever Streamlit's portal
+ * was three divs deep instead of two — and how deep it is is not visible from here. */
 [data-baseweb="popover"] [data-testid="stPopoverBody"],
 [data-baseweb="popover"] > div > div,
 [data-testid="stPopoverBody"] {
     background: var(--popover-bg) !important;
     color: var(--text-primary) !important;
+}
+
+[data-testid="stPopoverBody"] {
     border: 1px solid var(--popover-border) !important;
     border-radius: var(--radius-md) !important;
     box-shadow: var(--shadow-lg) !important;
@@ -352,21 +362,10 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
     color: var(--text-muted) !important;
 }
 
-/* The model buttons inside it. Full width, left-aligned, and quiet: they are a list
- * to read down, not six calls to action. */
-[data-testid="stPopoverBody"] .stButton button {
-    width: 100% !important;
-    justify-content: flex-start !important;
-    text-align: left !important;
-    background: transparent !important;
-    border: 1px solid transparent !important;
-    color: var(--text-primary) !important;
-}
-
-[data-testid="stPopoverBody"] .stButton button:hover {
-    background: var(--control-bg-hover) !important;
-    border-color: var(--control-border) !important;
-}
+/* The model buttons inside the panel are already styled, by `.st-key-model-list`
+ * further down. A copy of those rules lived here and was one class more specific, so
+ * its neutral hover border silently replaced the maroon one that was intended. Deleted
+ * rather than reconciled: one owner per control. */
 
 .st-key-composer-strip button {
     background: var(--control-bg) !important;
@@ -476,9 +475,15 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
  * the cards and the composer are the same column, which is the alignment a reader
  * reads as deliberate. */
 .st-key-examples {
+    /* `width` as well as `max-width`, and this is the load-bearing half. This is a
+     * flex item of the page's vertical block, and `margin: 0 auto` suppresses the
+     * cross-axis stretch that would otherwise give it the line — so without a width
+     * it collapses to fit-content. Measured: 585px instead of 780px, and every one of
+     * the six labels wrapping to two lines at every width. The raised max-width did
+     * nothing at all until this line existed. */
+    width: 100%;
     max-width: var(--input-max);
     margin: 0 auto;
-    padding: 0 var(--space-md);
 }
 
 .st-key-examples [data-testid="stHorizontalBlock"] {
@@ -505,10 +510,13 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
     background: var(--card-bg) !important;
     border: 1px solid var(--card-border) !important;
     border-radius: var(--radius-md) !important;
-    /* Up with the height. The ceiling stays a ceiling because the label has to hold
-     * one line at every width — tools/render_check.py fails the whole run if any card
-     * wraps, which is what keeps this honest rather than a guess. */
-    font-size: clamp(0.9rem, 2vw, 1.05rem) !important;
+    /* Ceiling raised, floor left where it was. The floor is what holds the tightest
+     * width — just above the 640px mobile breakpoint, where the grid is two columns
+     * and "Set up a Python environment" has about 233px to fit in. Raising the floor
+     * to 0.9rem wrapped it, in a band no render covered until 660px was added to the
+     * width list. `2vw` reaches the ceiling by ~1050px, so wide windows get the
+     * bigger type and narrow ones keep the line. */
+    font-size: clamp(0.84rem, 2vw, 1.05rem) !important;
     font-weight: 500 !important;
     line-height: 1.3 !important;
     color: var(--text-primary) !important;
@@ -618,6 +626,16 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
 .stChatInput > div { padding-right: 56px !important; }
 .stChatInput textarea { padding-right: 0 !important; }
 
+/* The paperclip follows it down. Both buttons used to be centred by the box's own
+ * `align-items: center`; pinning only the send button to `bottom: 10px` left them
+ * 67px apart once a paragraph was typed, one at the vertical middle and one at the
+ * floor. They are a pair — the same row of the same box. */
+#paperclip-btn {
+    top: auto !important;
+    bottom: 10px !important;
+    transform: none !important;
+}
+
 /* Paperclip injected by app.js — styled here so it follows the theme. */
 #paperclip-btn {
     position: absolute;
@@ -673,10 +691,10 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
  * them to the band cannot feed back into the number that positions them. An earlier
  * version of that loop, in a different rule, ran away by 42px a frame. */
 .st-key-attachments {
-    position: fixed;
-    bottom: calc(var(--bar-band, 12rem) + 0.35rem);
-    left: 50%;
-    transform: translateX(-50%);
+    position: fixed !important;
+    bottom: calc(var(--bar-band) + 0.35rem) !important;
+    left: 50% !important;
+    transform: translateX(-50%) !important;
     width: var(--input-max) !important;
     max-width: 100% !important;
     /* Above Streamlit's own chrome, for the same reason the controls strip below the
@@ -713,9 +731,20 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
 }
 
 /* The "this model cannot read images" line, which is the one thing in here that is
- * not a chip. Given the whole width so it sits under them rather than beside one. */
-.st-key-attachments [data-testid="stCaptionContainer"] {
+ * not a chip. It needs the whole width so it sits under the chips rather than beside
+ * one — and the width has to go on the flex ITEM, which is the element container the
+ * rule above pins to `flex: 0 0 auto`. Set on the caption inside it instead, the item
+ * still sized to max-content and the row overflowed the window by 439px at 500px,
+ * with the text simply running off the right edge. */
+.st-key-attachments .element-container:has([data-testid="stCaptionContainer"]),
+.st-key-attachments
+    [data-testid="stElementContainer"]:has([data-testid="stCaptionContainer"]) {
     flex: 1 1 100% !important;
+    width: 100% !important;
+    min-width: 0 !important;
+}
+
+.st-key-attachments [data-testid="stCaptionContainer"] {
     font-size: 0.7rem !important;
 }
 
@@ -1072,7 +1101,7 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
      * from, and they only have to hold for the first frame — but they still have
      * to hold, and to agree with each other, so --bar-h covers this --strip-h
      * plus the input and the bar's padding. */
-    :root { --strip-h: 6rem; --bar-band: 10rem; --bar-h: 14rem; }
+    :root { --strip-h: 6rem; --bar-h: 14rem; }
     .welcome { margin-top: 4vh; }
 }
 

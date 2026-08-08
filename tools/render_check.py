@@ -259,6 +259,19 @@ body {{ margin: 0; background: {BACKGROUNDS[scheme]}; color: {FOREGROUNDS[scheme
 .input-column .chat-actions {{ display: flex; justify-content: flex-end;
    align-items: center; padding: 4px 8px; }}
 .stChatMessage {{ display: flex; }}
+/* The overlay portal Streamlit renders popovers into, at the end of <body>. Modelled
+   with BOTH of the things Streamlit gives it, because the app's own rules only matter
+   in contrast to them:
+     - it is positioned (floating-ui anchors the panel to its trigger), so it takes no
+       space in the flow. Left static it added a slab to the end of the page and the
+       slack above the conversation was measured against it — 476px of dead space that
+       had nothing to do with the panel;
+     - the body has a light background and dark text of Streamlit's own. That is the
+       white slab a dark-mode reader saw, and a stylesheet that fails to override it
+       has to LOSE here, or this screen proves nothing. */
+#stFloatingOverlayPortal {{ position: fixed; right: 1rem; bottom: 8rem; z-index: {HOST_Z + 5}; }}
+[data-testid="stPopoverBody"] {{ background: #ffffff; color: #31333F;
+   padding: 0.75rem; border-radius: 8px; }}
 /* A popover trigger is a button, and Streamlit gives it the same base styling as
    st.button. Modelled explicitly because the markup is not `.stButton`, so the
    rule above does not reach it — and an unstyled button would measure smaller
@@ -287,6 +300,44 @@ def _cards_html() -> str:
     <div class="stButton"><button><p>{CARDS[b]}</p></button></div></div></div>
 </div>"""
     return rows
+
+
+def panel(legacy: bool = False) -> str:
+    """The model picker with its panel OPEN, in the portal Streamlit renders it into.
+
+    Modelled because it was not, and the stylesheet had a whole section aimed at an
+    element no render had ever contained: the panel came out white on a dark page and
+    nothing here could see it. It is not a descendant of anything else in the app —
+    Streamlit portals it to the end of `<body>` — so a rule written as a descendant
+    selector reaches nothing, which is exactly the failure this screen exists to catch.
+
+    `legacy` is the pre-1.59 shape, when Streamlit was built on Base Web and the panel
+    sat inside `[data-baseweb="popover"]`. 1.59 removed Base Web and renders into
+    `#stFloatingOverlayPortal` instead. requirements.txt allows >=1.42, so both are
+    live, and a stylesheet that only names one of them is half a fix.
+    """
+    rows = "".join(
+        f'<div class="element-container"><div class="stButton">'
+        f"<button><p>{label}</p></button></div></div>"
+        for label in (
+            "● Mistral · small-latest",
+            "○ Mistral · medium-latest",
+            "○ Zen · deepseek-v4-flash-free",
+            "○ Zen · claude-opus-4-6",
+        )
+    )
+    body = (
+        '<div data-testid="stPopoverBody">'
+        '<div data-testid="stCaptionContainer">'
+        "Answering model · Zen models are free</div>"
+        f"{rows}</div>"
+    )
+    if legacy:
+        body = f'<div data-baseweb="popover"><div><div>{body}</div></div></div>'
+    return (
+        '<div id="stFloatingOverlayPortal" data-st-overlay-root="true">'
+        f"{body}</div>"
+    )
 
 
 def chips(wrapped: bool = True) -> str:
@@ -400,13 +451,30 @@ SHORT_ANSWER = """
   deepseek-v4-flash-free answered instead. Pick a different one from the model button
   under the input box.</div></div></div>"""
 
-LANDING = f"""
+def landing(wrapped: bool = True) -> str:
+    """The hero and the starter cards.
+
+    The cards' container is rendered in the two shapes `st.container(key=…)` really
+    produces — the key on a wrapper around the vertical block, or on the block itself.
+    It used to be modelled as `.element-container`, which Streamlit never emits and
+    which carries `width: 100%` in this replica: exactly the declaration the grid was
+    missing. So the grid measured 780px here and collapsed to 585px in the app, with
+    every card label wrapping to two lines, and no render could see it.
+    """
+    grid = _cards_html()
+    if wrapped:
+        cards = ('<div class="st-key-examples">'
+                 f'<div data-testid="stVerticalBlock">{grid}</div></div>')
+    else:
+        cards = ('<div class="st-key-examples" data-testid="stVerticalBlock">'
+                 f"{grid}</div>")
+    return f"""
 <div class="element-container"><div class="stMarkdown">
   <div class="welcome">
     <h1 class="welcome-title">What can I help you with?</h1>
     <p class="welcome-subtitle">{SUBTITLE}</p>
   </div></div></div>
-<div class="st-key-examples element-container">{_cards_html()}</div>"""
+{cards}"""
 
 def _check_balanced(scenarios: dict) -> None:
     """Every fixture must close every div it opens.
@@ -433,12 +501,17 @@ def _check_balanced(scenarios: dict) -> None:
 # across the scenarios rather than doubling every render: both ways of pinning it
 # are then audited at every width, in both themes, in every state. Whichever
 # Streamlit is doing, one of these screens is looking at it.
-STICKY_BAR = {"landing-flat", "answer", "long-chat"}
+STICKY_BAR = {"landing-flat", "answer", "long-chat", "attached-flat"}
 
 # Which screens put the scrollbar on the document rather than on stMain. Kept to
 # one screen for the same reason as above: it costs a screen, not a doubling, and
 # every state and width still passes through the shape.
 DOC_SCROLL = {"doc-scroll"}
+
+# Which screens render the model picker's panel open, and in which of the two shapes
+# Streamlit has portalled it into. One screen each: the panel does not change with the
+# conversation, so states and widths are what matter, not the page behind it.
+OPEN_PICKER = {"picker-open": False, "picker-open-legacy": True}
 
 # Which screens render the input with something in it rather than on its placeholder.
 TYPED_INPUT = {"composing", "composing-column"}
@@ -478,8 +551,8 @@ IN_FLIGHT = """
 # The strip's container shape alternates across the screens, so both shapes are
 # audited at every width, in both themes, in every state.
 SCENARIOS = {
-    "landing": LANDING + strip(clear=False, wrapped=True),
-    "landing-flat": LANDING + strip(clear=False, wrapped=False),
+    "landing": landing(wrapped=True) + strip(clear=False, wrapped=True),
+    "landing-flat": landing(wrapped=False) + strip(clear=False, wrapped=False),
     "answer": CHAT_MARKER + answer_block(0) + strip(wrapped=False),
     "short-answer": CHAT_MARKER + SHORT_ANSWER + strip(),
     "long-chat": CHAT_MARKER
@@ -503,6 +576,10 @@ SCENARIOS = {
     # answer — which nothing here could have caught, because nothing here had a chip.
     "attached": CHAT_MARKER + SHORT_ANSWER + chips() + strip(),
     "attached-flat": CHAT_MARKER + SHORT_ANSWER + chips(wrapped=False) + strip(),
+    # The picker, open. The page behind it is an ordinary answer; what is under test
+    # is the panel, which lives outside every container this stylesheet reaches.
+    "picker-open": CHAT_MARKER + SHORT_ANSWER + strip(),
+    "picker-open-legacy": CHAT_MARKER + SHORT_ANSWER + strip(),
     "in-flight": CHAT_MARKER + IN_FLIGHT + strip(wrapped=False),
     "error": CHAT_MARKER
     + """
@@ -662,7 +739,13 @@ function snapshot() {
   // Re-resolved rather than reused from the pin above: app.js has run by now, and
   // the slack it added can be what made something start scrolling.
   var port = scrollport();
+  // The popover panel's own background. Reported as a colour rather than folded into
+  // the contrast numbers because the failure was not unreadable text — it was a white
+  // slab on a dark page, which contrasts beautifully and looks awful.
+  var panelEl = document.querySelector('[data-testid="stPopoverBody"]');
+  var panelBg = panelEl ? getComputedStyle(panelEl).backgroundColor : '';
   var out = {viewport: {w: innerWidth, h: innerHeight}, hostBar: HOSTBAR,
+           panelBg: panelBg,
            scrolled: port ? Math.round(port.scrollTop) : 0,
            // Whether there is anywhere to scroll to. A conversation shorter than
            // the window sits at the bottom of the space reserved for it, so if
@@ -712,6 +795,12 @@ SEND = '.stChatInput button:not(#paperclip-btn)'
 # The attachment chips. `fixed` above the input, so they are part of the composer's
 # footprint: whatever the page reserves at its end has to cover them too.
 CHIPS = ".st-key-attachments"
+# The popover panel and what is in it. Named because the panel is portalled to the end
+# of <body>, so its colours come from nothing it is nested inside — if the stylesheet
+# does not state them, Streamlit's default does, and on a dark page that was white.
+PANEL = '[data-testid="stPopoverBody"]'
+PANEL_BUTTON = '[data-testid="stPopoverBody"] button p'
+PANEL_CAPTION = '[data-testid="stPopoverBody"] [data-testid="stCaptionContainer"]'
 
 SELECTORS = [
     ".welcome-title", ".welcome-subtitle", ".user-bubble", "last:.user-bubble",
@@ -720,6 +809,7 @@ SELECTORS = [
     ".source-chip", ".st-key-answer-5", ".st-key-answer-0", ".stChatMessage pre",
     ".stChatMessage code", '[data-testid="stBottomBlockContainer"]',
     STRIP, INPUT, INPUT_BOX, SEND, CHIPS, ".st-key-attachments button",
+    PANEL, PANEL_BUTTON, PANEL_CAPTION,
     ".st-key-composer-strip button",
     # The rightmost control in the strip, so the row is measured end to end: with
     # a model name in it, it is the widest thing under the input.
@@ -737,7 +827,7 @@ SELECTORS = [
 # textarea, and "the box will not take a click" is the worst bug in the app.
 INTERACTIVE = {
     PICKER, ".st-key-composer-strip button", "last:.st-key-composer-strip button", INPUT,
-    SEND,
+    SEND, PANEL_BUTTON,
     ".st-key-retry button p", ".st-key-switch-model button p",
     *(f".st-key-example-card-{i} button p" for i in range(6)),
 }
@@ -771,7 +861,7 @@ MAX_CHIP_GAP = 40
 def page(body: str, scheme: str, scroll: bool, generating: bool = False,
          pin: bool = False, script: bool = True, sticky: bool = False,
          doc_scroll: bool = False, typed: bool = False,
-         column_input: bool = False) -> str:
+         column_input: bool = False, portal: str = "") -> str:
     """The replica, with or without app.js, and with the bar pinned either way.
 
     `script=False` is the app's first frame: the stylesheet's own fallback for how
@@ -795,6 +885,10 @@ def page(body: str, scheme: str, scroll: bool, generating: bool = False,
     `typed` fills the input with a paragraph instead of leaving it on its placeholder.
     An empty box is one line tall and hides everything about how a full one behaves.
 
+    `portal` is markup appended at the very end of `<body>`, where Streamlit renders
+    overlays. Anything in there is outside every container this app styles, which is
+    the whole reason it needs modelling separately.
+
     `column_input` stacks the send button under the textarea instead of beside it. In
     the row shape a full box has 2px under its last line; in the column shape it has
     46px, and 46px under what you just typed is what got reported as "an empty space
@@ -814,7 +908,11 @@ def page(body: str, scheme: str, scroll: bool, generating: bool = False,
             "<p>↑</p></button>")
     bar = ('<div data-testid="stBottom">'
            '<div data-testid="stBottomBlockContainer">'
-           '<div class="stChatInput"><div>'
+           '<div class="stChatInput" data-testid="stChatInput"><div>'
+           # The paperclip app.js injects. Without the test id above, `addPaperclip`
+           # never fired here, so neither the button nor the `:not(#paperclip-btn)`
+           # exclusion that keeps it out of the send button's corner was ever rendered.
+           '<button id="paperclip-btn" type="button">📎</button>'
            + ('<textarea rows="6">' + TYPED + "</textarea>" if typed else
               '<textarea rows="1" placeholder="Ask anything about RCC…"></textarea>')
            + (f'<div class="chat-actions">{send}</div>' if column_input else send)
@@ -830,6 +928,7 @@ def page(body: str, scheme: str, scroll: bool, generating: bool = False,
     {bar if sticky else ''}</div>
   {'' if sticky else bar}</div>
 {'<div id="processing-signal" hidden></div>' if generating else ''}
+{portal}
 <script>window.__scrollBottom = {str(scroll).lower()}; window.__pinLast = {str(pin).lower()};</script>
 {'<script>' + JS + '</script>' if script else ''}
 {MEASURE.replace("HOSTBAR", str(HOST_BAR)).replace("TOPGAP", str(TOP_GAP)).replace("SELECTORS", json.dumps(SELECTORS))}
@@ -1018,6 +1117,26 @@ def audit(data, scenario, scheme, width, state: str) -> list[str]:
                 f"the composer, not of the page)"
             )
 
+    # The popover panel must belong to the page it is drawn over. It is portalled to
+    # the end of <body>, so it inherits nothing from the app — and when the stylesheet
+    # aimed only at a Base Web wrapper Streamlit had removed, what a dark-mode reader
+    # got was a white slab: "completely white… very sharp and uncomfortable".
+    panel_bg = data.get("panelBg", "")
+    if panel_bg:
+        rgb = [int(part) for part in re.findall(r"\d+", panel_bg)[:3]]
+        if rgb:
+            lightness = sum(rgb) / 3
+            if scheme == "dark" and lightness > 90:
+                problems.append(
+                    f"{where}: the popover panel is {panel_bg} on a dark page "
+                    f"(unthemed — it is portalled outside everything, so its colour "
+                    f"has to be stated, not inherited)"
+                )
+            if scheme == "light" and lightness < 160:
+                problems.append(
+                    f"{where}: the popover panel is {panel_bg} on a light page"
+                )
+
     # Inside the box: how much of it is neither text nor the room the text sits in.
     # With the send button in the flow it is a flex item beside the textarea, and once
     # the text passes one line it wraps onto a row of its own — leaving a band of
@@ -1070,7 +1189,17 @@ def audit(data, scenario, scheme, width, state: str) -> list[str]:
                 f"its answer generates (want no lower than {ceiling})"
             )
 
-    for sel in INTERACTIVE:
+    # An OPEN popover is meant to cover the page: that is what an overlay is, and
+    # clicking the thing underneath is how a reader dismisses it. So on the screens
+    # that render one, the composer being covered is the feature, and what has to stay
+    # reachable is the panel's own buttons — which are in INTERACTIVE and are checked.
+    covered_by_overlay = (
+        {INPUT, SEND, PICKER, STRIP, ".st-key-composer-strip button",
+         "last:.st-key-composer-strip button"}
+        if scenario.startswith("picker-open")
+        else set()
+    )
+    for sel in INTERACTIVE - covered_by_overlay:
         b = els.get(sel)
         # 'offscreen' is covered by the geometry checks above and is expected for
         # in-flow content once the page is scrolled. What this is here to catch is
@@ -1172,7 +1301,11 @@ def main() -> int:
     # than an honest one: this list said 414px for a year and rendered 500px. 500 is
     # still under the 640px mobile breakpoint, so the mobile rules are exercised — what
     # is not covered is a real 414px screen, and saying so is the point.
-    widths = [(1440, 1080), (1263, 900), (966, 626), (768, 900),
+    # 660 is here because it is the tightest width for the starter cards: two
+    # columns, just above the 640px breakpoint that would stack them, so the
+    # longest label has the least room it ever gets. Without it the one-line rule
+    # was unenforced across the whole 641-760 band.
+    widths = [(1440, 1080), (1263, 900), (966, 626), (768, 900), (660, 900),
               (VIEWPORT["min_w"], PHONE_H)]
     failures: list[str] = []
     checked = 0
@@ -1186,6 +1319,10 @@ def main() -> int:
                 # pin left behind).
                 if scenario.startswith("landing"):
                     states = ["unmeasured", "rest"]   # no turn to be in the middle of
+                elif scenario.startswith("picker-open"):
+                    # The panel is the same whatever the conversation behind it is
+                    # doing, so scrolling and generating would re-measure one slab.
+                    states = ["unmeasured", "rest"]
                 elif scenario.startswith("composing"):
                     # What these two are for is the inside of the input box, and that
                     # is the same whether the page is scrolled or an answer is in
@@ -1207,7 +1344,9 @@ def main() -> int:
                                 sticky=scenario in STICKY_BAR,
                                 doc_scroll=scenario in DOC_SCROLL,
                                 typed=scenario in TYPED_INPUT,
-                                column_input=scenario in COLUMN_INPUT)
+                                column_input=scenario in COLUMN_INPUT,
+                                portal=(panel(OPEN_PICKER[scenario])
+                                        if scenario in OPEN_PICKER else ""))
                     data = render(name, html, width, height,
                                   shot=(scheme == "dark" and width == 1263
                                         and state == "rest"))
