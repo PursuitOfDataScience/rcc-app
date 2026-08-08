@@ -895,8 +895,10 @@ if st.session_state.processing:
                 "role": "assistant",
                 # Stored stripped, not merely rendered stripped: this text is also what
                 # goes back upstream next turn, and a footer in the history is a worked
-                # example teaching the model to write another one.
-                "text": links.strip_source_footer(final_text),
+                # example teaching the model to write another one. Handed the strip's
+                # own contents, so an unlabelled list of links can be checked against
+                # what the reader is already being shown rather than guessed at.
+                "text": links.strip_source_footer(final_text, CORPUS, sources),
                 "sources": sources,
                 "rating": None,
                 "model": MODEL.key,
@@ -916,6 +918,13 @@ if st.session_state.processing:
         )
         if runner.queries and not sources:
             feedback.record_miss(runner.queries, st.session_state.messages[-2]["text"])
+        # A path the corpus does not have is a model inventing a citation. The renderer
+        # no longer dresses it up as a working link, which means the only trace it
+        # leaves is this line — and a deployment tuning its prompt wants to see it.
+        invented = links.unresolved(final_text, CORPUS)
+        if invented:
+            logger.warning("%s cited %d path(s) that do not exist: %s",
+                           MODEL.key, len(invented), ", ".join(invented[:5]))
 
     except llm.AssistantError as exc:
         status.empty()

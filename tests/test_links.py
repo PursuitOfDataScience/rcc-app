@@ -82,9 +82,23 @@ def test_in_page_anchors_are_unlinked():
     assert links.fix_links("jump to [that part](#later)", CORPUS) == "jump to that part"
 
 
-def test_unresolvable_targets_fall_back_to_the_guide_root():
+def test_an_unresolvable_target_is_not_linked_at_all():
+    """It used to become a live link to the guide root, indistinguishable by eye from
+    a citation that worked, and landing the reader on the front page of the user guide
+    while they believed they had reached the cited section."""
     out = links.fix_links("[mystery](docs/nope/missing.md)", CORPUS)
-    assert out == f"[mystery]({config.DOCS_BASE_URL})"
+    assert out == "mystery"
+    assert config.DOCS_BASE_URL not in out
+
+
+def test_invented_paths_are_reported_not_only_hidden():
+    text = "See [a](docs/slurm/sbatch.md) and [b](docs/nope/missing.md)."
+    assert links.unresolved(text, CORPUS) == ["docs/nope/missing.md"]
+
+
+def test_external_and_anchor_targets_are_not_counted_as_invented():
+    text = "[RCC](https://rcc.uchicago.edu/) and [up there](#top)"
+    assert links.unresolved(text, CORPUS) == []
 
 
 def test_leaked_kramdown_attributes_are_stripped_from_answers():
@@ -176,4 +190,75 @@ class TestSourceFooter:
         answer = (
             "Sources:\n- [A](docs/a.md)\n\n## Next steps\nSubmit the job and watch it."
         )
+        assert links.strip_source_footer(answer) == answer
+
+
+class TestUnlabelledSourceFooter:
+    """The second screenshot. Told not to write a "Sources" list, the model dropped
+    the word and left the links: two of them, on their own line, directly above the
+    strip listing the same two pages. Shape alone is too thin to cut on here, so
+    these come off only when every link is provably already a chip."""
+
+    @staticmethod
+    def two_chunks(corpus):
+        chunks = [chunk for chunk in corpus.chunks if "storage" in chunk.path][:2]
+        sources = [
+            {"id": c.id, "label": c.label, "url": c.url, "source": c.source}
+            for c in chunks
+        ]
+        return chunks, sources
+
+    def test_a_bare_paragraph_of_links_is_removed(self, real_corpus):
+        chunks, sources = self.two_chunks(real_corpus)
+        answer = (
+            "Run `rcchelp usage` to see what is left.\n\n"
+            f"[{chunks[0].heading}]({chunks[0].id}) [{chunks[1].heading}]({chunks[1].id})"
+        )
+        out = links.strip_source_footer(answer, real_corpus, sources)
+        assert out == "Run `rcchelp usage` to see what is left."
+
+    def test_the_whole_list_goes_not_its_last_line(self, real_corpus):
+        """Cutting one line off a bulleted list leaves a half-eaten list, which
+        reads worse than the duplicate it was meant to remove."""
+        chunks, sources = self.two_chunks(real_corpus)
+        answer = f"Answer.\n\n- [a]({chunks[0].id})\n- [b]({chunks[1].id})"
+        assert links.strip_source_footer(answer, real_corpus, sources) == "Answer."
+
+    def test_a_link_the_strip_is_not_showing_survives(self, real_corpus):
+        """The gate is "the reader loses nothing", not "this looks like a footer"."""
+        chunks, sources = self.two_chunks(real_corpus)
+        elsewhere = next(c for c in real_corpus.chunks if "slurm" in c.path)
+        answer = f"Answer.\n\n- [a]({chunks[0].id})\n- [b]({elsewhere.id})"
+        assert links.strip_source_footer(answer, real_corpus, sources) == answer
+
+    def test_links_a_sentence_introduces_are_the_answer(self, real_corpus):
+        """A colon above them means they are the object of a sentence. Cutting them
+        leaves the sentence pointing at nothing."""
+        chunks, sources = self.two_chunks(real_corpus)
+        answer = (
+            "Here is what the documentation covers:\n\n"
+            f"- [a]({chunks[0].id})\n- [b]({chunks[1].id})"
+        )
+        assert links.strip_source_footer(answer, real_corpus, sources) == answer
+
+    def test_prose_that_ends_on_links_is_untouched(self, real_corpus):
+        chunks, sources = self.two_chunks(real_corpus)
+        answer = (
+            f"That's it. For full details, see [GPU jobs]({chunks[0].id}) and "
+            f"[PyTorch]({chunks[1].id})."
+        )
+        assert links.strip_source_footer(answer, real_corpus, sources) == answer
+
+    def test_nothing_is_cut_without_a_strip_to_cut_against(self, real_corpus):
+        """No `sources` means the app is drawing no chips, so the footer is the only
+        citation the reader has."""
+        chunks, _ = self.two_chunks(real_corpus)
+        answer = f"Answer.\n\nSources: [a]({chunks[0].id})"
+        assert links.strip_source_footer(answer, real_corpus, []) == answer
+
+    def test_shape_alone_does_not_cut_it(self, real_corpus):
+        """Called without the strip's contents — as the module's own tests above do
+        — an unlabelled list cannot be proven duplicate and stays."""
+        chunks, _ = self.two_chunks(real_corpus)
+        answer = f"Answer.\n\n[a]({chunks[0].id}) [b]({chunks[1].id})"
         assert links.strip_source_footer(answer) == answer
