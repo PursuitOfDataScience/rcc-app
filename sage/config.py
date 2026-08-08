@@ -168,7 +168,46 @@ WEB_CHUNK_OVERLAP = _env_int("SAGE_WEB_CHUNK_OVERLAP", 240)
 # --- search ----------------------------------------------------------------
 
 SEARCH_RESULTS = _env_int("SAGE_SEARCH_RESULTS", 6)
+# Sections of a single page allowed in one result set. A third of the golden-set
+# questions used to come back with all of the top three from one page, so a search
+# asking for six sections really returned two pages and the model saw one page's view.
+#
+# 2 rather than "off", and rather than 1, from the numbers. Measured on the 34 golden
+# cases, changing nothing else (depth = sections of the *right* page among the six the
+# model is handed, which page-level recall cannot see):
+#
+#     cap    recall@5  recall@3   p@1    MRR    depth
+#      1       100%      100%    82.4%  0.897   1.18
+#      2       100%     97.1%    82.4%  0.893   2.15
+#      3      97.1%     97.1%    82.4%  0.892   2.88
+#     off     97.1%     97.1%    82.4%  0.887   3.56
+#
+# 2 is where "which queue should I submit to" — the repository's one recorded lexical
+# gap — first reaches the top five, against its strict two-page expectation. It costs
+# 1.4 sections of depth on average to get there. 1 buys recall@3 as well and takes
+# depth down to almost nothing, which is too much to pay: a model handed one section
+# per page has pointers, not evidence.
+MAX_PER_PAGE = _env_int("SAGE_MAX_PER_PAGE", 2)
 SNIPPET_CHARS = _env_int("SAGE_SNIPPET_CHARS", 240)
+
+# When retrieval should admit it is weak, so the model can decline instead of
+# answering from whatever happened to match. Two thresholds, because one cannot do it:
+# measured over the 34 golden-set questions and a set of labelled out-of-scope probes,
+# answerable questions run down to a top score of 22.8 and out-of-scope ones run up to
+# 23.9, so the score alone overlaps.
+#
+# What separates them is the score *together with* whether the query contains a word
+# the corpus has never seen. Below MIN_CONFIDENT_SCORE retrieval is weak whatever the
+# words; between the two, an unseen word decides it; above STRONG_SCORE the evidence
+# outweighs the unseen word, which is what stops "my CNetID is jsmith and I cannot log
+# in" (40.0) and "why did job 41235567 fail" (28.3) from being told the documentation
+# does not cover them.
+#
+# Both are pinned by tests/test_search.py::TestAssessment, on the labelled queries the
+# numbers came from. Moving either constant fails them, which is the point: the last
+# version of this idea shipped a threshold that no test constrained at all.
+MIN_CONFIDENT_SCORE = _env_float("SAGE_MIN_CONFIDENT_SCORE", 20.0)
+STRONG_SCORE = _env_float("SAGE_STRONG_SCORE", 26.0)
 
 BM25_K1 = _env_float("SAGE_BM25_K1", 1.5)
 BM25_B = _env_float("SAGE_BM25_B", 0.75)
