@@ -1088,7 +1088,8 @@ class TestFreshnessIsShown:
         stub, _module = run_app(monkeypatch)
         html = " ".join("\n".join(stub.markdown_html).split())
         if stamp:
-            assert "synced" in html
+            # Case-insensitive: the stamp leads the subtitle, so it is capitalised.
+            assert "synced" in html.lower()
             assert stamp.split("-")[0] in html      # the year
 
     def test_a_missing_snapshot_does_not_break_the_hero(self, monkeypatch):

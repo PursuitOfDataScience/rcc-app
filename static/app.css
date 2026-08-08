@@ -1037,6 +1037,18 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
     border: 1px solid var(--chip-border);
     border-radius: var(--radius-sm);
     text-decoration: none;
+    /* These two labels are the widest text in an answer, and at 500px the pair
+     * overflowed the answer container by 15px. Bounded and allowed to wrap rather
+     * than clipped, because `overflow-x: hidden` on the ancestors means clipped
+     * content is unreachable by any means. */
+    max-width: 100%;
+    overflow-wrap: break-word;
+}
+
+/* Stacked below the breakpoint, so two labels side by side can never be the thing
+ * that overflows the answer. */
+@media (max-width: 640px) {
+    .gap-action { display: block; margin-right: 0; }
 }
 
 .gap-action:hover {

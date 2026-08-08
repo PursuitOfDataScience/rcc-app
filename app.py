@@ -396,7 +396,7 @@ def render_ungrounded_notice(position: int, message: dict) -> None:
             st.markdown(
                 f'<a class="gap-action" href="{html.escape(issue, quote=True)}" '
                 'target="_blank" rel="noopener noreferrer">'
-                "＋ Tell the docs maintainers this is missing</a>",
+                "＋ Report a missing page</a>",
                 unsafe_allow_html=True,
             )
 
@@ -787,7 +787,7 @@ def freshness() -> str:
         pretty = f"{parsed.day} {parsed.strftime('%B %Y')}"
     except ValueError:
         pretty = date
-    return f", synced {pretty}"
+    return f"Synced {pretty}. "
 
 
 if not has_messages:
@@ -800,8 +800,8 @@ if not has_messages:
         f"""
         <div class="welcome">
             <h1 class="welcome-title">Ask the RCC docs</h1>
-            <p class="welcome-subtitle">RCC user guide and
-            website{freshness()}. Sage can't see your account.</p>
+            <p class="welcome-subtitle">{freshness()}Sage can't see your account,
+            jobs or files.</p>
         </div>
         """,
         unsafe_allow_html=True,

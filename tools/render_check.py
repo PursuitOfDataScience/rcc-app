@@ -133,7 +133,7 @@ def _subtitle() -> str:
     # The subtitle interpolates the docs snapshot date. Substituting a realistic one
     # rather than measuring the literal `{freshness()}` — a placeholder is four
     # characters where the real string is twenty, and the subtitle is held to one line.
-    return text.replace("{freshness()}", ", synced 6 July 2026")
+    return text.replace("{freshness()}", "Synced 6 July 2026. ")
 
 
 def _card_labels() -> list[str]:
@@ -495,7 +495,7 @@ GAP_ANSWER = """
  above is not grounded in the RCC User Guide. Treat it with care.</div>
  <div class="st-key-gap-0 element-container">
   <a class="gap-action" href="#">✉ Email the Help Desk — draft ready</a>
-  <a class="gap-action" href="#">＋ Tell the docs maintainers this is missing</a>
+  <a class="gap-action" href="#">＋ Report a missing page</a>
  </div>
  <div class="st-key-reason-0 element-container">
   <div data-testid="stVerticalBlock">
@@ -512,23 +512,36 @@ GAP_ANSWER = """
 # The history fold and a stale attachment badge. Both are new surfaces that report
 # what the model was actually sent, and the fold's rules use ::before/::after
 # flex fillers, which is exactly the kind of thing that collapses at a narrow width.
-FOLDED = """
-<div class="element-container"><div class="stMarkdown">
-  <div class="user-message"><div class="user-bubble"><div class="attachment-badge
-  is-stale">📝 slurm-48123456.out</div>Why did this job die?</div></div>
-</div></div>
+def folded() -> str:
+    """A trimmed conversation: four turns, the fold, then two more.
+
+    Long on purpose, twice over. The fold only ever appears on a conversation that
+    outgrew the history budget, so a two-turn version models a state the app cannot
+    reach — and a short page puts `fill()` in play, which reported 166–274px of "dead
+    space" that was the fixture being short rather than the CSS being wrong.
+
+    The fold also goes *between* complete turns rather than immediately before the
+    first answer, because `GAP_QUESTION_TO_ANSWER` measures the first `.user-bubble`
+    to `.st-key-answer-0` and expects them adjacent — which they are in the app.
+    """
+    return (
+        "".join(answer_block(i) for i in range(4))
+        + """
 <div class="element-container"><div class="stMarkdown">
   <div class="fold"><span>Earlier turns are no longer being sent to the model ·
   6 messages</span></div>
 </div></div>
 <div class="element-container"><div class="stMarkdown">
-  <div class="user-message"><div class="user-bubble">And on Midway2?</div></div>
+  <div class="user-message"><div class="user-bubble"><div class="attachment-badge
+  is-stale">📝 slurm-48123456.out</div>And on Midway2?</div></div>
 </div></div>
-<div class="st-key-answer-0 element-container"><div class="stChatMessage">
+<div class="st-key-answer-4 element-container"><div class="stChatMessage">
  <div></div>
  <div class="stMarkdown"><p>On Midway2 the equivalent partition is
  <code>broadwl</code>.</p></div>
 </div></div>"""
+        + answer_block(5)
+    )
 
 
 CHAT_MARKER = ('<div class="element-container"><div class="stMarkdown">'
@@ -692,7 +705,7 @@ SCENARIOS = {
     # A trimmed conversation: the fold marker between the dropped turns and the sent
     # ones, plus a struck-through attachment badge. The fold uses ::before/::after
     # flex fillers, which is the kind of rule that collapses at a narrow width.
-    "folded": CHAT_MARKER + FOLDED + strip(wrapped=False),
+    "folded": CHAT_MARKER + folded() + strip(wrapped=False),
     "in-flight": CHAT_MARKER + IN_FLIGHT + strip(wrapped=False),
     "error": CHAT_MARKER
     + """
@@ -989,7 +1002,7 @@ TARGET_SIZE = {
     ".st-key-composer-strip button",
     "last:.st-key-composer-strip button",
     SEND,
-    PANEL_BUTTON,
+    '[data-testid="stPopoverBody"] button',
     ".st-key-attachments button",
 }
 
