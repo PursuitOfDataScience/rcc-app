@@ -1,4 +1,4 @@
-"""Rewrite the internal paths a model emits into real, clickable URLs.
+"""The citations a model emits: point them at real URLs, drop the duplicate list.
 
 The previous version sent *every* `web/` citation to the user-guide root on the
 stated grounds that "website pages have no stable per-page docs URL". They do —
@@ -67,3 +67,103 @@ def fix_links(text: str, corpus: Corpus) -> str:
         return f"[{label}]({url})" if url else f"[{label}]({config.DOCS_BASE_URL})"
 
     return _MARKDOWN_LINK.sub(replace, text)
+
+
+# `Sources:`, `**References:**`, `**Citations**:`, `## Sources` — every decoration a
+# model puts round the word, matched by treating `*_#` and space as noise either side
+# of it. Both spellings of the bold form turn up, which is why the colon is allowed to
+# fall on either side of the markup rather than in one fixed place.
+_LABEL = r"(?:sources?|references?|citations?)"
+_MARKUP = r"[*_#\s]*"
+_LABEL_LINE = re.compile(
+    rf"^\s{{0,3}}{_MARKUP}{_LABEL}{_MARKUP}(?P<colon>:?){_MARKUP}(?P<rest>.*)$",
+    re.IGNORECASE,
+)
+_LIST_ITEM = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+")
+_BARE_LINK = re.compile(r"^\s*\[[^\]]+\]\([^)]*\)[\s,;.]*$")
+_FENCE = re.compile(r"^\s*(?:`{3,}|~{3,})")
+_RULE = re.compile(r"^\s*(?:-{3,}|\*{3,}|_{3,})\s*$")
+
+
+def _footer_label(line: str) -> str | None:
+    """The text after a `Sources:`-style label, `None` if this is not such a line.
+
+    A payload without a colon is prose — "Sources of variation include …" opens with
+    the word and is a sentence, not a footer — so the colon is what licenses cutting
+    anything that sits on the same line.
+    """
+    match = _LABEL_LINE.match(line)
+    if not match:
+        return None
+    rest = match.group("rest").strip()
+    if rest and not match.group("colon"):
+        return None
+    return rest
+
+
+def _is_citation_line(line: str) -> bool:
+    """A line that could only be part of a citation list, never of an answer.
+
+    Deliberately narrow. `- Run \\`sbatch job.sh\\`` is a step, not a citation, so a
+    code span disqualifies a line; so does the length of a real paragraph. What is
+    left is bullets of titles and bare links, which is what the footer is made of.
+    """
+    if _FENCE.match(line) or "`" in line:
+        return False
+    stripped = line.strip()
+    if stripped.startswith("#"):
+        return False
+    if _BARE_LINK.match(line) or _LIST_ITEM.match(line):
+        return True
+    return len(stripped) <= 120
+
+
+def strip_source_footer(text: str) -> str:
+    """Remove a trailing "Sources:" list the model wrote for itself.
+
+    Every answer already gets a Sources strip built from the chunks that were
+    actually retrieved, so a model that also signs off with `Sources: A, B` prints
+    the same citations twice, three lines apart. The system prompt asks for inline
+    links and no footer; across nine models that holds on most turns and not all of
+    them, so the footer comes off here too. Prompt and strip together are what makes
+    the duplicate stop.
+
+    Only a *trailing* block goes, and only one labelled Sources / References /
+    Citations. The inline `[Section title](path)` links inside the prose are the
+    citation format this app wants and are untouched.
+    """
+    if not text or not text.strip():
+        return text
+
+    lines = text.splitlines()
+    last = len(lines) - 1
+    while last >= 0 and not lines[last].strip():
+        last -= 1
+
+    cut = None
+    if _footer_label(lines[last]):
+        # The whole list sits on the label's own line: that one line is the footer.
+        cut = last
+    else:
+        # Otherwise the list is underneath a label of its own. Only the last such
+        # label is considered — scanning further back to find a block that happens
+        # to look like citations is how a strip like this eats half an answer.
+        for idx in range(last, -1, -1):
+            if _footer_label(lines[idx]) is None:
+                continue
+            if all(_is_citation_line(line) for line in lines[idx + 1 : last + 1]):
+                cut = idx
+            break
+
+    if cut is None:
+        return text
+
+    kept = lines[:cut] + lines[last + 1 :]
+    # Models fence the footer off with a rule; without the footer it leads nowhere.
+    while kept and (not kept[-1].strip() or _RULE.match(kept[-1])):
+        kept.pop()
+    # An answer that was *only* a footer is a failure of the model, not something to
+    # blank out: a duplicate Sources strip beats an empty bubble.
+    if not any(line.strip() for line in kept):
+        return text
+    return "\n".join(kept)

@@ -546,66 +546,150 @@
     // Hijacked ONLY when the caret is at the very start of the box and there is no
     // selection. Anywhere else, Up means "move up a line", and a multi-line question
     // being retyped is exactly when stealing that would be most annoying.
+    // Puts a value into a React-controlled field so React believes it.
+    //
+    // Assigning `.value` directly does not work: React caches the last value it wrote
+    // on the node and compares against it, so a plain assignment plus an `input` event
+    // is discarded as "no change". The field then LOOKS updated — the text is on
+    // screen — while Streamlit still holds the old value, which is why a recalled
+    // prompt could not be sent until something was typed after it: the send button
+    // stayed disabled because, as far as Streamlit knew, the box was still empty.
+    //
+    // Going through the prototype's own setter is what React's value tracker hooks,
+    // so the change is seen and the widget updates.
+    function setFieldValue(field, text) {
+        var proto = view.HTMLTextAreaElement && view.HTMLTextAreaElement.prototype;
+        var descriptor = proto
+            ? Object.getOwnPropertyDescriptor(proto, 'value')
+            : null;
+        if (descriptor && descriptor.set) {
+            descriptor.set.call(field, text);
+        } else {
+            field.value = text;   // no prototype setter: better than nothing
+        }
+        field.dispatchEvent(new view.Event('input', {bubbles: true}));
+    }
+
+    // What the reader has already asked, most recent first.
+    //
+    // Read from the page rather than passed in from Python: the questions are already
+    // in the DOM, one `.user-bubble` per turn. Attachment badges are nested INSIDE
+    // that bubble, and `textContent` concatenates without a separator, so the raw
+    // reading of a turn with a file on it came out as
+    // "🖼️ pasted-image-1.pngHow do I read this log?" — the filename recalled into the
+    // box as if it had been typed. The badges are removed from a clone instead.
+    function askedBefore() {
+        var out = [];
+        doc.querySelectorAll('.user-bubble').forEach(function (node) {
+            var copy = node.cloneNode(true);
+            copy.querySelectorAll('.attachment-badge').forEach(function (badge) {
+                badge.remove();
+            });
+            var text = copy.textContent.replace(/^\s+|\s+$/g, '');
+            if (text) out.push(text);
+        });
+        return out.reverse();
+    }
+
+    // Up recalls what you asked before; Down comes back toward the present and, one
+    // step past the newest question, leaves the box as it found it.
+    //
+    // The browse position lives on the PARENT window, not in this closure. sync()
+    // rebuilds these handlers on every mutation frame, so a closure variable was reset
+    // by any DOM change between two keypresses — which made repeated Up stick on the
+    // most recent question instead of walking back through the conversation.
     function addPromptHistory() {
         var box = doc.querySelector('.stChatInput textarea');
         if (!box) return;
         if (view.__sageHistoryOff) {
             try { view.__sageHistoryOff(); } catch (err) { /* node gone */ }
         }
-        // -1 means "not browsing"; 0 is the most recent question.
-        var cursor = -1;
-        var draft = '';
+        if (typeof view.__sageHistoryAt !== 'number') view.__sageHistoryAt = -1;
 
         var onKey = function (event) {
             if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
+            // Never mid-composition: the arrow keys belong to the IME while a Chinese,
+            // Japanese or Korean candidate is being chosen.
+            if (event.isComposing) return;
+            var at = view.__sageHistoryAt;
+            // Up only from the very start of the box, so it still moves the caret in a
+            // multi-line question. Once browsing, both keys are ours.
             var atStart = box.selectionStart === 0 && box.selectionEnd === 0;
-            if (event.key === 'ArrowUp' && !atStart && cursor === -1) return;
+            if (event.key === 'ArrowUp' && at === -1 && !atStart) return;
+            if (event.key === 'ArrowDown' && at === -1) return;
 
-            var asked = [];
-            doc.querySelectorAll('.user-bubble').forEach(function (node) {
-                var text = node.textContent.replace(/\s+$/, '');
-                if (text) asked.push(text);
-            });
+            var asked = askedBefore();
             if (!asked.length) return;
-            asked.reverse();   // most recent first
 
             if (event.key === 'ArrowUp') {
-                if (cursor === -1) draft = box.value;   // keep what was half-typed
-                if (cursor + 1 >= asked.length) { event.preventDefault(); return; }
-                cursor += 1;
+                if (at === -1) view.__sageHistoryDraft = box.value;
+                if (at + 1 >= asked.length) { event.preventDefault(); return; }
+                view.__sageHistoryAt = at + 1;
             } else {
-                if (cursor === -1) return;             // Down does nothing at the end
-                cursor -= 1;
+                // Down always advances toward the present, even after the recalled
+                // question has been edited. Editing used to end the browse, which left
+                // Down doing nothing at all — the reader was stuck on a prompt they had
+                // changed with no way forward.
+                view.__sageHistoryAt = at - 1;
             }
             event.preventDefault();
-            var text = cursor === -1 ? draft : asked[cursor];
-            box.value = text;
-            // React owns this field, so the value has to be announced or Streamlit
-            // sends the old one when Enter is pressed.
-            box.dispatchEvent(new view.Event('input', {bubbles: true}));
-            // Caret at the end, so Enter sends and typing appends.
+            var next = view.__sageHistoryAt;
+            // Past the newest question: back to whatever was in the box before the
+            // first Up, which is empty in the ordinary case.
+            var text = next === -1 ? (view.__sageHistoryDraft || '') : asked[next];
+            setFieldValue(box, text);
             box.selectionStart = box.selectionEnd = text.length;
             box.style.height = 'auto';
         };
 
-        // Typing anything by hand ends the browse, so the next Up starts again from
-        // the most recent question rather than from wherever the last one left off.
-        var onInput = function () {
-            if (!browsing) cursor = -1;
-            browsing = false;
-        };
-        var browsing = false;
-        var onKeyWrapped = function (event) {
-            browsing = event.key === 'ArrowUp' || event.key === 'ArrowDown';
-            onKey(event);
+        // Sending resets the browse: the next Up starts from the newest question
+        // rather than from wherever the last walk stopped.
+        var onSubmit = function (event) {
+            if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
+                view.__sageHistoryAt = -1;
+                view.__sageHistoryDraft = '';
+            }
         };
 
-        box.addEventListener('keydown', onKeyWrapped);
-        box.addEventListener('input', onInput);
+        box.addEventListener('keydown', onKey);
+        box.addEventListener('keydown', onSubmit);
         view.__sageHistoryOff = function () {
-            box.removeEventListener('keydown', onKeyWrapped);
-            box.removeEventListener('input', onInput);
+            box.removeEventListener('keydown', onKey);
+            box.removeEventListener('keydown', onSubmit);
         };
+    }
+
+    // Empty the composer when the conversation is cleared.
+    //
+    // Clearing wipes the transcript from Python, but the text in Streamlit's chat input
+    // is client-side state that Python only ever reads on submit — so the last question
+    // stayed in the box, sitting over the starter cards on a freshly emptied landing
+    // screen as though it were still about to be sent.
+    //
+    // Driven by a token app.py renders rather than by "the conversation looks empty":
+    // the token says a clear HAPPENED, which is different from the transcript being
+    // empty, and only the first tells us the box should be emptied. Compared against
+    // the last token acted on, so a reader who starts typing straight after clearing
+    // does not have it taken away again on the next mutation frame.
+    function resetComposerOnClear() {
+        var marker = doc.getElementById('composer-reset');
+        if (!marker) return;
+        var token = marker.getAttribute('data-token') || '';
+        if (view.__sageClearToken === undefined) {
+            // First sight of the page: adopt the token without clearing, or a reload
+            // would wipe a question the reader had already typed.
+            view.__sageClearToken = token;
+            return;
+        }
+        if (view.__sageClearToken === token) return;
+        view.__sageClearToken = token;
+        var box = doc.querySelector('.stChatInput textarea');
+        if (box && box.value) {
+            setFieldValue(box, '');
+            box.style.height = 'auto';
+        }
+        view.__sageHistoryAt = -1;
+        view.__sageHistoryDraft = '';
     }
 
     // Close the model picker once a model has been picked.
@@ -816,6 +900,7 @@
         addPaperclip();
         addPasteHandler();
         addPromptHistory();
+        resetComposerOnClear();
         closePickerOnPick();
         addCodeCopyButtons();
         addAnswerCopyButtons();
