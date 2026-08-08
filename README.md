@@ -1,6 +1,11 @@
 # 🌱 Sage — RCC User Guide Assistant
 
-A chat assistant for the University of Chicago's [Research Computing Center](https://rcc.uchicago.edu/). Ask about accounts, SSH, Slurm jobs, storage and software; every answer is retrieved from the **official RCC User Guide** and website, and links the sections it used.
+A grounded, citation-first chat assistant. It ships as two deployments from one
+codebase: the University of Chicago [Research Computing Center](https://rcc.uchicago.edu/)
+User Guide assistant, and an assistant for a personal blog. This README leads with
+the first; see [Two assistants, one codebase](#two-assistants-one-codebase).
+
+The RCC assistant answers questions for the [Research Computing Center](https://rcc.uchicago.edu/). Ask about accounts, SSH, Slurm jobs, storage and software; every answer is retrieved from the **official RCC User Guide** and website, and links the sections it used.
 
 Built with [Streamlit](https://streamlit.io/), answered by [Mistral](https://mistral.ai/) or the free models on [OpenCode Zen](https://opencode.ai/docs/zen/). **Read-only and RAG-only** — it reads documentation and never touches the cluster.
 
@@ -25,6 +30,46 @@ streamlit run app.py              # → http://localhost:8501
 At least one key is needed; set both and the picker offers both. OpenCode Zen keys
 are free, which is a way to keep working once a paid quota runs out. Either can go
 in `.streamlit/secrets.toml` (gitignored) instead of the environment.
+
+## Two assistants, one codebase
+
+Sage runs against more than one corpus. `SAGE_PROFILE` picks which:
+
+| Profile | Corpus | What it answers |
+|---|---|---|
+| `rcc` *(default)* | `docs/` + `web/` — the RCC User Guide and website | HPC, Slurm, storage, software |
+| `site` | `site/` — a synced snapshot of [youzhi.netlify.app](https://youzhi.netlify.app/) | the blog: its articles, methods and author |
+
+```bash
+SAGE_PROFILE=site streamlit run app.py
+```
+
+A [`Profile`](sage/profile.py) carries everything that differs — source trees and
+their weights, the URL rule for citations, the search synonyms, the system prompt,
+the tool descriptions, the starter cards and a brand palette. Nothing else in the
+package names a particular deployment, so a third corpus is one file in
+[`sage/profiles/`](sage/profiles/) rather than an edit to nine.
+
+### Refreshing the website corpus
+
+`site/` is committed, for the same reason `docs/` and `web/` are: a Streamlit
+deployment has no checkout of the website to read from.
+
+```bash
+python tools/build_site_corpus.py --site ../personal-website
+```
+
+It converts each rendered article to markdown, keeping **pandoc's own heading ids**
+so a citation deep-links to the section a reader can actually scroll to, and records
+the permalink Hugo published. The slug rule is verified against the site's own
+`public/sitemap.xml` on every run rather than trusted — an earlier version stripped
+the dots from `2021-09-27-u.s.-prison-analysis` and produced a dead link that nothing
+would have noticed. Articles newer than the committed `public/` build are reported as
+unverified; `--strict` makes that fatal.
+
+Hand-written ground truth about the author lives in [`site_notes/`](site_notes/) and
+is indexed alongside the articles. It is in this repo rather than the website's so
+that adding the assistant changes nothing about how the site is built.
 
 ## Providers
 
@@ -59,6 +104,7 @@ Environment-driven; defaults in [`sage/config.py`](sage/config.py).
 | `SAGE_ZEN_FREE_MARKS` | `-free,big-pickle` | How a free Zen model is recognised |
 | `SAGE_MAX_TOKENS` | `8000` | Response cap. Generous: 1600 cut answers off mid-sentence |
 | `SAGE_TEMPERATURE` | `0.2` | Sampling temperature |
+| `SAGE_PROFILE` | `rcc` | Which assistant to be: `rcc` or `site` |
 | `RCC_DOCS_PATH` | `./docs` | User Guide markdown source |
 | `RCC_WEB_PATH` | `./web` | Scraped website text source |
 | `SAGE_EXCLUDE_HOSTS` | radiology + vislab hosts | Scraped hosts to keep out of the index (`SAGE_EXCLUDE_HOSTS=` indexes everything) |
@@ -68,6 +114,8 @@ Environment-driven; defaults in [`sage/config.py`](sage/config.py).
 | `SAGE_HISTORY_CHAR_BUDGET` | `48000` | History size before oldest turns are trimmed |
 | `SAGE_MAX_UPLOAD_BYTES` | `10485760` | Upload size limit, per file |
 | `SAGE_MAX_ATTACHED_BYTES` | `20971520` | Upload size limit, across one turn |
+| `SAGE_SITE_PATH` | `./site` | Website snapshot, for `SAGE_PROFILE=site` |
+| `SAGE_SITE_BASE_URL` | `https://youzhi.netlify.app/` | Base URL for website citations |
 | `SAGE_FEEDBACK_LOG` | *(unset)* | JSONL sink for 👍/👎 and zero-result queries. Unset = nothing recorded |
 | `LOG_LEVEL` | `WARNING` | Python log level |
 
@@ -87,8 +135,11 @@ Paths are repo-relative and overridable with `RCC_USER_GUIDE_REPO`, `RCC_WEB_MIR
 ## Layout
 
 ```
-app.py                  # Streamlit UI: layout, session state, the tool loop
+app.py                  # Streamlit UI: layout, session state, event rendering
 sage/
+  engine.py             # the agent loop, as an event stream — no Streamlit
+  profile.py            # what makes one deployment differ from another
+  profiles/             # rcc.py, site.py — the instances
   config.py             # environment-driven settings
   normalize.py          # mkdocs/kramdown -> clean text
   corpus.py             # discovery, heading-level chunking, citation URLs
@@ -101,12 +152,16 @@ sage/
   llm.py                # turn assembly, streaming, typed errors
   prompts.py            # system prompt
   feedback.py           # optional 👍/👎 sink
+  sitehtml.py           # rendered blog HTML -> markdown, keeping pandoc anchors
 static/app.css          # all styling
 static/app.js           # DOM touch-ups Streamlit cannot express
 tests/                  # unit tests, app smoke tests, retrieval eval
 tools/render_check.py   # renders app.css in headless Chromium and measures it
+tools/build_site_corpus.py  # personal website -> site/
 refresh-docs.sh         # pull upstream docs -> docs/ + web/
 docs/                   # RCC User Guide (markdown)
 web/                    # scraped RCC website (text)
+site/                   # website snapshot (markdown)  [SAGE_PROFILE=site]
+site_notes/             # hand-written notes indexed with the website
 docs_snapshot.json      # source commit + sync date
 ```

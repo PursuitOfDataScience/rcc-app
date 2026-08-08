@@ -16,9 +16,8 @@ import os
 import streamlit as st
 import streamlit.components.v1 as components
 
-from sage import config, engine, feedback, files, history, links, llm, providers
+from sage import config, engine, feedback, files, history, links, llm, profiles, providers
 from sage import corpus as corpus_mod
-from sage.prompts import SYSTEM_PROMPT
 from sage.search import Index
 
 logging.basicConfig(
@@ -30,20 +29,18 @@ logger = logging.getLogger("sage.app")
 
 STATIC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 
+# Which assistant this is: corpus, prompt, tool copy, starter cards and brand.
+# `SAGE_PROFILE=site` is the personal-website deployment; unset is RCC.
+PROFILE = profiles.active()
+SYSTEM_PROMPT = PROFILE.system_prompt
+
 # (icon, card label, question actually sent). The label is kept short so every
 # card is a single line; the question stays conversational for the model.
-EXAMPLES = [
-    ("🚀", "Connect to Midway via SSH", "How do I connect to Midway via SSH?"),
-    ("💾", "Storage quotas", "What are the storage quotas on Midway?"),
-    ("⚙️", "Submit a batch job", "How do I submit a batch job with sbatch?"),
-    ("🐍", "Set up a Python environment", "How do I set up a Python environment?"),
-    ("🎮", "Run PyTorch on GPUs", "How do I run PyTorch on GPUs?"),
-    ("📊", "Check my allocation", "How do I check my allocation balance?"),
-]
+EXAMPLES = list(PROFILE.examples)
 
 st.set_page_config(
-    page_title="Sage — RCC Assistant",
-    page_icon="🌱",
+    page_title=PROFILE.page_title,
+    page_icon=PROFILE.page_icon,
     layout="wide",
     initial_sidebar_state="collapsed",
 )
@@ -62,16 +59,20 @@ def load_asset(name: str) -> str:
         return ""
 
 
-st.markdown(f"<style>{load_asset('app.css')}</style>", unsafe_allow_html=True)
+# The profile's brand comes after the stylesheet so its custom properties win.
+st.markdown(
+    f"<style>{load_asset('app.css')}\n{PROFILE.brand_css}</style>",
+    unsafe_allow_html=True,
+)
 components.html(f"<script>{load_asset('app.js')}</script>", height=0)
 
 
 # --- resources -------------------------------------------------------------
 
 
-@st.cache_resource(show_spinner="Indexing RCC documentation…")
+@st.cache_resource(show_spinner=PROFILE.index_spinner)
 def get_index() -> Index:
-    built = corpus_mod.build()
+    built = corpus_mod.build(profile=PROFILE)
     index = Index(built)
     logger.info("Index ready: %s", corpus_mod.summarize(built))
     return index
@@ -471,11 +472,10 @@ def render_controls() -> None:
 
 if not has_messages:
     st.markdown(
-        """
+        f"""
         <div class="welcome">
-            <h1 class="welcome-title">What can I help you with?</h1>
-            <p class="welcome-subtitle">Answers from the official UChicago RCC
-            documentation, with citations.</p>
+            <h1 class="welcome-title">{html.escape(PROFILE.welcome_title)}</h1>
+            <p class="welcome-subtitle">{html.escape(PROFILE.welcome_subtitle)}</p>
         </div>
         """,
         unsafe_allow_html=True,

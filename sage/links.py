@@ -10,8 +10,9 @@ from __future__ import annotations
 
 import re
 
-from . import config
-from .corpus import Corpus, docs_url
+from . import profiles
+from .corpus import Corpus
+from .profile import MARKDOWN
 
 _MARKDOWN_LINK = re.compile(r"\[([^\]]+)\]\(\s*([^)\s]+)(?:\s+\"[^\"]*\")?\s*\)")
 _ATTR_LIST = re.compile(r"\{:[^}]*\}")
@@ -49,9 +50,12 @@ def resolve(target: str, corpus: Corpus) -> str | None:
 
     if document is None:
         return None
-    if document.source == "web":
-        return document.url
-    return docs_url(document.path, anchor)
+    profile = corpus.profile or profiles.active()
+    # A page that carries its own URL (a scraped page, a synced blog post) keeps
+    # it; anything else is mapped from its path by the profile.
+    if document.url and profile.kind(document.source) != MARKDOWN:
+        return f"{document.url}#{anchor}" if anchor else document.url
+    return profile.url_for(document.source, document.path, anchor)
 
 
 def fix_links(text: str, corpus: Corpus) -> str:
@@ -64,7 +68,10 @@ def fix_links(text: str, corpus: Corpus) -> str:
             # A bare in-page anchor has nowhere to go in a chat transcript.
             return label if target.startswith("#") else match.group(0)
         url = resolve(target, corpus)
-        return f"[{label}]({url})" if url else f"[{label}]({config.DOCS_BASE_URL})"
+        if url:
+            return f"[{label}]({url})"
+        home = (corpus.profile or profiles.active()).home_url
+        return f"[{label}]({home})" if home else label
 
     return _MARKDOWN_LINK.sub(replace, text)
 

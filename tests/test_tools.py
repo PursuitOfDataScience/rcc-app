@@ -1,4 +1,7 @@
+import pytest
+
 from sage import tools
+from sage.profiles import rcc, site
 from sage.search import Index
 
 
@@ -80,14 +83,26 @@ def test_unknown_tool_name_is_reported(real_index):
     assert "Unknown tool" in runner(real_index).run("rm_rf", {})
 
 
-def test_tool_schemas_are_well_formed():
-    names = {schema["function"]["name"] for schema in tools.TOOL_SCHEMAS}
+@pytest.mark.parametrize("profile", [rcc.PROFILE, site.PROFILE])
+def test_tool_schemas_are_well_formed(profile):
+    schemas = tools.tool_schemas(profile)
+    names = {schema["function"]["name"] for schema in schemas}
     assert names == {tools.SEARCH_DOCS, tools.READ_DOC}
-    for schema in tools.TOOL_SCHEMAS:
+    for schema in schemas:
         function = schema["function"]
         assert schema["type"] == "function"
         assert function["description"]
         assert function["parameters"]["required"]
+
+
+def test_each_profile_describes_its_own_corpus_to_the_model():
+    """The description is the only thing telling the model what it is searching
+    before it has searched it."""
+    rcc_search, site_search = (
+        tools.tool_schemas(p)[0]["function"]["description"] for p in (rcc.PROFILE, site.PROFILE)
+    )
+    assert "RCC" in rcc_search and "RCC" not in site_search
+    assert "blog" in site_search.lower()
 
 
 def test_runner_works_on_an_empty_index():

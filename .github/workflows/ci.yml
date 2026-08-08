@@ -39,6 +39,10 @@ jobs:
       # space above the input bar, or low contrast — see the docstring in
       # tools/render_check.py. Every UI bug that has shipped from this repo was
       # pure CSS, and this runner's Chrome has caught one this sandbox's did not.
+      # Once per profile: each supplies its own welcome copy, starter-card labels
+      # and brand palette, and all three are things that clip or fail contrast.
+      # The site profile's first palette rendered inline code at 2.62:1 in dark
+      # mode, and its first card labels wrapped from 966px down.
       - name: Check the layout renders correctly
         env:
           SAGE_CHROME: /usr/bin/google-chrome
@@ -47,7 +51,11 @@ jobs:
             echo "::warning::No Chrome on the runner; skipping the layout check."
             exit 0
           fi
-          python tools/render_check.py
+          for profile in rcc site; do
+            echo "::group::layout ($profile)"
+            SAGE_PROFILE="$profile" python tools/render_check.py
+            echo "::endgroup::"
+          done
 
   deps:
     name: Dependencies resolve
@@ -77,15 +85,19 @@ jobs:
           print("imports OK")
           PY
 
+      # Both corpora, because a profile that cannot be indexed is a deployment
+      # that boots to an empty assistant rather than to an error.
       - name: Build the documentation index
         run: |
           python - <<'PY'
           import logging
           logging.basicConfig(level=logging.INFO)
-          from sage import corpus, search
-          built = corpus.build()
-          index = search.Index(built)
-          assert built.chunks, "no chunks indexed"
-          assert index.search("storage quota"), "search returned nothing"
-          print("index:", corpus.summarize(built))
+          from sage import corpus, profiles, search
+          for key, probe in (("rcc", "storage quota"), ("site", "argonne pretraining")):
+              profile = profiles.get(key)
+              built = corpus.build(profile=profile)
+              index = search.Index(built)
+              assert built.chunks, f"{key}: no chunks indexed"
+              assert index.search(probe), f"{key}: search returned nothing"
+              print(f"{key}:", corpus.summarize(built))
           PY

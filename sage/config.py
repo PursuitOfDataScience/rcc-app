@@ -124,6 +124,18 @@ REQUEST_RETRIES = _env_int("SAGE_REQUEST_RETRIES", 2)
 DOCS_PATH = os.getenv("RCC_DOCS_PATH", "./docs")
 WEB_PATH = os.getenv("RCC_WEB_PATH", "./web")
 
+# Which assistant this deployment is. `sage/profiles/` owns what each one means;
+# everything below is only the environment plumbing. Unset is the RCC assistant,
+# so an existing deployment sees no change.
+PROFILE = os.getenv("SAGE_PROFILE", "rcc").strip().lower() or "rcc"
+
+# The `site` profile: a synced snapshot of the personal website, written by
+# tools/build_site_corpus.py.
+SITE_PATH = os.getenv("SAGE_SITE_PATH", "./site")
+SITE_BASE_URL = os.getenv("SAGE_SITE_BASE_URL", "https://youzhi.netlify.app/")
+
+# Retained so an existing deployment's `corpus.build()` call and the old env vars
+# keep working; the source list, extensions and weights now live on the profile.
 SOURCES = {"docs": DOCS_PATH, "web": WEB_PATH}
 SOURCE_EXTENSIONS = {"docs": (".md",), "web": (".txt",)}
 

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import logging
 
-from . import config
+from . import config, profiles
 from .corpus import Chunk
 from .search import Index
 
@@ -19,69 +19,62 @@ logger = logging.getLogger(__name__)
 SEARCH_DOCS = "search_docs"
 READ_DOC = "read_doc"
 
-TOOL_SCHEMAS = [
-    {
-        "type": "function",
-        "function": {
-            "name": SEARCH_DOCS,
-            "description": (
-                "Search the official RCC User Guide and website for sections relevant "
-                "to the user's question. Returns ranked results, each with a `path`, a "
-                "section title and a snippet. Call this FIRST for any RCC question "
-                "about accounts, connecting, Slurm, storage, software, GPUs or policy, "
-                "then read the most promising result with read_doc."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "query": {
-                        "type": "string",
-                        "description": (
-                            "Keywords or a natural-language question, e.g. "
-                            "'sbatch GPU job' or 'scratch quota purge policy'."
-                        ),
-                    }
+def tool_schemas(profile) -> list[dict]:
+    """The two tools, described in the profile's own words.
+
+    The descriptions are not decoration: they are the only place the model is told
+    what the corpus contains before it has searched it, and an RCC description in
+    front of a blog corpus sends the first search after Slurm partitions.
+    """
+    return [
+        {
+            "type": "function",
+            "function": {
+                "name": SEARCH_DOCS,
+                "description": profile.search_description,
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": (
+                                "Keywords or a natural-language question, e.g. "
+                                "'sbatch GPU job' or 'scratch quota purge policy'."
+                            ),
+                        }
+                    },
+                    "required": ["query"],
                 },
-                "required": ["query"],
             },
         },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": READ_DOC,
-            "description": (
-                "Read one documentation section in full. Pass the exact `path` from a "
-                "search_docs result (for example 'docs/slurm/sbatch.md#gpu-jobs'). "
-                "Dropping the '#section' part returns the whole page, or its outline "
-                "if the page is very long."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "path": {
-                        "type": "string",
-                        "description": "The exact `path` value from a search_docs result.",
-                    }
+        {
+            "type": "function",
+            "function": {
+                "name": READ_DOC,
+                "description": profile.read_description,
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": {
+                            "type": "string",
+                            "description": (
+                                "The exact `path` value from a search_docs result."
+                            ),
+                        }
+                    },
+                    "required": ["path"],
                 },
-                "required": ["path"],
             },
         },
-    },
-]
-
-_NO_RESULTS = (
-    "No matching RCC documentation was found. Try different or broader keywords. "
-    "If the topic genuinely is not covered, say so plainly and point the user at "
-    f"the RCC Help Desk ({config.HELP_DESK_EMAIL}) rather than guessing specifics."
-)
+    ]
 
 
-def format_search_results(results) -> str:
+def format_search_results(results, profile=None) -> str:
+    profile = profile or profiles.active()
     if not results:
-        return _NO_RESULTS
+        return profile.no_results
     lines = [
-        "Top matching RCC documentation sections. "
+        f"Top matching sections of {profile.corpus_description}. "
         "Call read_doc with the exact `path` to read one in full.",
         "",
     ]
@@ -119,6 +112,7 @@ class ToolRunner:
 
     def __init__(self, index: Index) -> None:
         self.index = index
+        self.profile = index.corpus.profile or profiles.active()
         self.sources: list[Chunk] = []
         self.queries: list[str] = []
         self.last_read: str = ""
@@ -132,7 +126,7 @@ class ToolRunner:
             query = (arguments.get("query") or "").strip()
             self.queries.append(query)
             logger.info("search_docs(%r)", query)
-            return format_search_results(self.index.search(query))
+            return format_search_results(self.index.search(query), self.profile)
         if name == READ_DOC:
             return self._read(str(arguments.get("path") or "").strip())
         return f"Unknown tool: {name}"

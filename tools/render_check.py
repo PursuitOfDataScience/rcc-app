@@ -124,51 +124,57 @@ CSS = _read("static", "app.css")
 JS = _read("static", "app.js")
 APP = _read("app.py")
 
+# The welcome copy and the starter cards used to be literals in app.py and were
+# scraped back out of it here. They are a profile's now, so they are read from the
+# profile — the same principle, one indirection later. Scraping app.py for an
+# `EXAMPLES = [` that no longer exists is how this harness spent a release
+# crashing on import instead of measuring anything.
+sys.path.insert(0, REPO)
+from sage import profiles  # noqa: E402
 
-def _subtitle() -> str:
-    match = re.search(r'class="welcome-subtitle">(.*?)</p>', APP, re.S)
-    return re.sub(r"\s+", " ", match.group(1)).strip() if match else "(missing)"
-
-
-def _card_labels() -> list[str]:
-    block = re.search(r"EXAMPLES = \[(.*?)\n\]", APP, re.S).group(1)
-    return [
-        f"{icon} {label}"
-        for icon, label, _q in re.findall(
-            r'\(\s*"([^"]+)",\s*"([^"]+)",\s*"([^"]+)"\s*\)', block
-        )
-    ]
-
+# Which deployment's copy to render. Every profile has to survive the same layout,
+# and the site profile's cards are markedly longer than the RCC ones — exactly the
+# kind of string that clips silently.
+PROFILE = profiles.get(os.getenv("SAGE_PROFILE", "rcc"))
 
 # There was a `_disclaimer()` here that read the caveat line out of app.py so the two
 # could not drift apart. The caveat line is gone from the app, so it is gone from here
 # — not left pointing at nothing, which is how a check comes to pass on a placeholder.
-# The lesson it taught is kept in `_subtitle()`'s neighbours: read the real string, or
-# do not claim to be measuring it.
+# The lesson it taught survives: read the real string, or do not claim to measure it.
 
-SUBTITLE = _subtitle()
-CARDS = _card_labels()
+WELCOME = PROFILE.welcome_title
+SUBTITLE = PROFILE.welcome_subtitle
+CARDS = [f"{icon} {label}" for icon, label, _question in PROFILE.examples]
+# Layered after app.css in the app, so layered after it here too.
+BRAND_CSS = PROFILE.brand_css
 # Read from app.js so the two can never drift apart.
 TOP_GAP = int(re.search(r"var TOP_GAP = (\d+)", JS).group(1))
 
 
-def theme_css(scheme: str) -> str:
-    """Force one colour scheme, since the CLI cannot emulate prefers-color-scheme."""
+def force_scheme(source: str, scheme: str) -> str:
+    """Force one colour scheme, since the CLI cannot emulate prefers-color-scheme.
+
+    Applied to the profile's brand overrides as well as to app.css. It was applied
+    to app.css alone at first, which left the brand's dark block behind a media
+    query nothing here matches — so the site palette rendered its *light* inline-code
+    colour on a near-black page and the harness reported 2.62:1 against a rule that
+    was, in a real browser, never going to apply.
+    """
     marker = "@media (prefers-color-scheme: dark) {"
     if scheme == "light":
         # Drop every dark block; light is the base.
         out, index = [], 0
         while True:
-            start = CSS.find(marker, index)
+            start = source.find(marker, index)
             if start == -1:
-                out.append(CSS[index:])
+                out.append(source[index:])
                 break
-            out.append(CSS[index:start])
+            out.append(source[index:start])
             depth, pos = 0, start
-            while pos < len(CSS):
-                if CSS[pos] == "{":
+            while pos < len(source):
+                if source[pos] == "{":
                     depth += 1
-                elif CSS[pos] == "}":
+                elif source[pos] == "}":
                     depth -= 1
                     if depth == 0:
                         break
@@ -176,7 +182,15 @@ def theme_css(scheme: str) -> str:
             index = pos + 1
         return "".join(out)
     # Dark: make the block unconditional.
-    return CSS.replace(marker, "@media all {")
+    return source.replace(marker, "@media all {")
+
+
+def theme_css(scheme: str) -> str:
+    return force_scheme(CSS, scheme)
+
+
+def brand_css(scheme: str) -> str:
+    return force_scheme(BRAND_CSS, scheme)
 
 
 BACKGROUNDS = {"dark": "#0e1117", "light": "#ffffff"}
@@ -474,7 +488,7 @@ def landing(wrapped: bool = True) -> str:
     return f"""
 <div class="element-container"><div class="stMarkdown">
   <div class="welcome">
-    <h1 class="welcome-title">What can I help you with?</h1>
+    <h1 class="welcome-title">{WELCOME}</h1>
     <p class="welcome-subtitle">{SUBTITLE}</p>
   </div></div></div>
 {cards}"""
@@ -933,7 +947,8 @@ def page(body: str, scheme: str, scroll: bool, generating: bool = False,
            + (f'<div class="chat-actions">{send}</div>' if column_input else send)
            + "</div></div></div></div>")
     return f"""<!doctype html><html><head><meta charset="utf-8">
-<style>{base_css(scheme)}</style><style>{theme_css(scheme)}</style></head>
+<style>{base_css(scheme)}</style><style>{theme_css(scheme)}</style>
+<style>{brand_css(scheme)}</style></head>
 <body class="{'bar-sticky' if sticky else 'bar-fixed'}{' doc-scroll' if doc_scroll else ''}{' input-column' if column_input else ''}">
 <div data-testid="stHeader"></div><div id="host-bar"></div>
 <div data-testid="stAppViewContainer">

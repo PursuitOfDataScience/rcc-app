@@ -13,21 +13,28 @@ import re
 from dataclasses import dataclass, field
 from urllib.parse import urlsplit
 
-from . import config
+from . import config, profiles
 from .normalize import (
     collapse_blank_lines,
     normalize_markdown,
+    parse_post_header,
     parse_scraped,
     plain_heading,
     pretty_title,
     slugify,
 )
+from .profile import POST, SCRAPED, Profile
 
 logger = logging.getLogger(__name__)
 
-_HEADING = re.compile(r"^(?P<hashes>#{1,6})[ \t]+(?P<text>\S.*?)[ \t]*#*$")
+# An explicit anchor on a heading — pandoc's `## Title {#the-id}`. Synced blog
+# posts carry the id the rendered page actually uses, rather than letting
+# `slugify` guess at another tool's slug rule and produce a dead link.
+_HEADING = re.compile(
+    r"^(?P<hashes>#{1,6})[ \t]+(?P<text>\S.*?)"
+    r"(?:[ \t]*\{#(?P<anchor>[^}\s]+)\})?[ \t]*#*$"
+)
 _FENCE = re.compile(r"^[ \t]*(?P<ticks>`{3,}|~{3,})")
-_RCC_SITE = "https://rcc.uchicago.edu/"
 
 
 @dataclass
@@ -67,6 +74,10 @@ class Document:
 class Corpus:
     chunks: list[Chunk] = field(default_factory=list)
     documents: dict[str, Document] = field(default_factory=dict)
+    # Which deployment this corpus belongs to. It rides here because the corpus is
+    # what already reaches the index, the tool runner and the link resolver, so
+    # they get the profile without an argument threaded through every call.
+    profile: Profile | None = None
 
     def chunk(self, chunk_id: str) -> Chunk | None:
         return self._by_id.get(chunk_id)
@@ -76,19 +87,21 @@ class Corpus:
 
     def __post_init__(self) -> None:
         self._by_id = {chunk.id: chunk for chunk in self.chunks}
+        if self.profile is None:
+            self.profile = profiles.active()
 
 
 # --- helpers ---------------------------------------------------------------
 
 
 def docs_url(rel_path: str, anchor: str = "") -> str:
-    """Map `slurm/sbatch.md` to its published user-guide URL."""
-    slug = re.sub(r"\.md$", "", rel_path, flags=re.IGNORECASE).strip("/")
-    if slug in ("index", ""):
-        url = config.DOCS_BASE_URL
-    else:
-        url = f"{config.DOCS_BASE_URL.rstrip('/')}/{slug}/"
-    return f"{url}#{anchor}" if anchor else url
+    """Map `slurm/sbatch.md` to its published user-guide URL.
+
+    Kept as a module-level name because it is the RCC profile's URL rule and
+    several callers already knew it by this name; the rule itself lives in
+    `sage/profiles/rcc.py` now.
+    """
+    return profiles.rcc.docs_url(rel_path, anchor)
 
 
 def _host(url: str) -> str:
@@ -98,10 +111,12 @@ def _host(url: str) -> str:
         return ""
 
 
-def _is_excluded(source: str, rel_path: str, url: str) -> bool:
-    if any(rel_path.endswith(name) for name in config.EXCLUDED_FILES):
+def _is_excluded(profile: Profile, source: str, rel_path: str, url: str) -> bool:
+    if any(rel_path.endswith(name) for name in profile.excluded_files):
         return True
-    return source == "web" and bool(url) and _host(url) in config.EXCLUDED_HOSTS
+    if profile.kind(source) != SCRAPED or not url:
+        return False
+    return _host(url) in profile.excluded_hosts
 
 
 def _first_heading(text: str) -> str:
@@ -121,6 +136,8 @@ class _Section:
     heading: str
     trail: list[str]
     lines: list[str] = field(default_factory=list)
+    # Set when the heading carried `{#id}`; otherwise the anchor is slugified.
+    anchor: str = ""
 
     @property
     def body(self) -> str:
@@ -155,7 +172,12 @@ def _split_sections(text: str) -> list[_Section]:
         while stack and stack[-1][0] >= level:
             stack.pop()
         sections.append(
-            _Section(level=level, heading=title, trail=[name for _, name in stack])
+            _Section(
+                level=level,
+                heading=title,
+                trail=[name for _, name in stack],
+                anchor=heading.group("anchor") or "",
+            )
         )
         stack.append((level, title))
 
@@ -203,14 +225,36 @@ def _split_oversized(body: str, limit: int) -> list[str]:
     return [part for part in parts if part.strip()]
 
 
-def chunk_markdown(source: str, rel_path: str, raw: str) -> tuple[Document, list[Chunk]]:
+def chunk_markdown(
+    source: str,
+    rel_path: str,
+    raw: str,
+    profile: Profile | None = None,
+    page_url: str = "",
+    title: str = "",
+) -> tuple[Document, list[Chunk]]:
+    """Chunk a markdown document at its headings.
+
+    `page_url` is the page's own published URL when it carries one (a synced blog
+    post does); otherwise the profile computes it from the path. `title` is the
+    document's real title when something authoritative knows it — a post's front
+    matter — rather than the first heading, which on this blog is frequently the
+    first *section* and once is the author's name.
+    """
+    profile = profile or profiles.active()
     text = normalize_markdown(raw)
-    doc_title = _first_heading(text) or pretty_title(rel_path)
+    doc_title = title or _first_heading(text) or pretty_title(rel_path)
+
+    def url(anchor: str = "") -> str:
+        if not page_url:
+            return profile.url_for(source, rel_path, anchor)
+        return f"{page_url}#{anchor}" if anchor else page_url
+
     document = Document(
         source=source,
         path=rel_path,
         title=doc_title,
-        url=docs_url(rel_path) if source == "docs" else _RCC_SITE,
+        url=url(),
         text=text,
     )
 
@@ -227,7 +271,16 @@ def chunk_markdown(source: str, rel_path: str, raw: str) -> tuple[Document, list
         if not section.heading and len(body) < config.MIN_CHUNK_CHARS:
             continue
 
-        anchor = slugify(section.heading) if section.heading else ""
+        # An explicit `{#id}` wins: it is the anchor the rendered page really has.
+        anchor = section.anchor or (
+            slugify(section.heading) if section.heading else ""
+        )
+        # What the *citation* may point at. For a page that brought its own URL,
+        # only an explicit anchor is known to exist: slugifying a heading there is
+        # guessing at another renderer's id, and a guess that misses is a link that
+        # silently lands at the top of the page instead of the section cited.
+        # Chunk ids keep using `anchor` either way — they are internal.
+        link_anchor = (section.anchor if page_url else anchor)
         trail: list[str] = []
         for part in (doc_title, *section.trail, section.heading):
             # The page H1 usually repeats as the first section heading.
@@ -250,25 +303,45 @@ def chunk_markdown(source: str, rel_path: str, raw: str) -> tuple[Document, list
                     heading=heading_text,
                     breadcrumb=breadcrumb or doc_title,
                     text=part,
-                    url=docs_url(rel_path, anchor) if source == "docs" else _RCC_SITE,
+                    url=url(link_anchor),
                 )
             )
 
     return document, chunks
 
 
+def chunk_post(
+    source: str, rel_path: str, raw: str, profile: Profile | None = None
+) -> tuple[Document, list[Chunk]]:
+    """A synced blog post: a URL/title header, then markdown with real anchors.
+
+    The header is what lets a citation deep-link to the live page. Hugo's own
+    permalink is recorded at sync time rather than recomputed here, because
+    reimplementing another tool's slug rule produces dead links that no test in
+    this repo could notice.
+    """
+    profile = profile or profiles.active()
+    url, title, body = parse_post_header(raw)
+    return chunk_markdown(
+        source, rel_path, body, profile=profile, page_url=url, title=title
+    )
+
+
 # --- scraped-page chunking -------------------------------------------------
 
 
-def chunk_scraped(source: str, rel_path: str, raw: str) -> tuple[Document, list[Chunk]]:
+def chunk_scraped(
+    source: str, rel_path: str, raw: str, profile: Profile | None = None
+) -> tuple[Document, list[Chunk]]:
     """Scraped pages have no heading structure, so window them by paragraph."""
+    profile = profile or profiles.active()
     url, title, body = parse_scraped(raw)
     doc_title = title or pretty_title(rel_path)
     document = Document(
         source=source,
         path=rel_path,
         title=doc_title,
-        url=url or _RCC_SITE,
+        url=url or profile.url_for(source, rel_path, ""),
         text=body,
     )
 
@@ -305,19 +378,34 @@ def chunk_scraped(source: str, rel_path: str, raw: str) -> tuple[Document, list[
 
 # --- build -----------------------------------------------------------------
 
+_BUILDERS = {
+    SCRAPED: chunk_scraped,
+    POST: chunk_post,
+}
 
-def build(sources: dict[str, str] | None = None) -> Corpus:
-    """Scan the configured source trees and return a fully chunked corpus."""
-    sources = sources or config.SOURCES
+
+def build(
+    sources: dict[str, str] | None = None, profile: Profile | None = None
+) -> Corpus:
+    """Scan the profile's source trees and return a fully chunked corpus.
+
+    `sources` overrides only the *paths*; the kinds, extensions and weights come
+    from the profile either way. It is kept because callers and tests already pass
+    it, and because pointing a profile at a different checkout is a legitimate
+    thing to want.
+    """
+    profile = profile or profiles.active()
+    paths = sources or profile.paths
     chunks: list[Chunk] = []
     documents: dict[str, Document] = {}
     skipped = 0
 
-    for source, base in sources.items():
+    for source, base in paths.items():
         if not os.path.isdir(base):
             logger.warning("Source tree missing, skipping: %s", base)
             continue
-        extensions = config.SOURCE_EXTENSIONS.get(source, (".md", ".txt"))
+        declared = profile.source(source)
+        extensions = declared.extensions if declared else (".md", ".txt")
 
         for root, _dirs, names in os.walk(base):
             for name in sorted(names):
@@ -332,16 +420,17 @@ def build(sources: dict[str, str] | None = None) -> Corpus:
                     logger.warning("Unreadable document %s: %s", full, exc)
                     continue
 
-                if source == "web":
+                kind = profile.kind(source)
+                if kind == SCRAPED:
                     probe_url, _title, _body = parse_scraped(raw)
                 else:
                     probe_url = ""
-                if _is_excluded(source, rel, probe_url):
+                if _is_excluded(profile, source, rel, probe_url):
                     skipped += 1
                     continue
 
-                builder = chunk_scraped if source == "web" else chunk_markdown
-                document, page_chunks = builder(source, rel, raw)
+                builder = _BUILDERS.get(kind, chunk_markdown)
+                document, page_chunks = builder(source, rel, raw, profile)
                 if not page_chunks:
                     # Surfaces upstream gaps: docs/data_transfer/cloud/rclone.md is
                     # a 0-byte file in the User Guide, so nothing can cite it.
@@ -355,7 +444,7 @@ def build(sources: dict[str, str] | None = None) -> Corpus:
         len(documents),
         skipped,
     )
-    return Corpus(chunks=chunks, documents=documents)
+    return Corpus(chunks=chunks, documents=documents, profile=profile)
 
 
 def summarize(corpus: Corpus) -> str:

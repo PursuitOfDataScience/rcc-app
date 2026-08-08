@@ -15,107 +15,91 @@ import re
 from collections import Counter
 from dataclasses import dataclass
 
-from . import config
+from . import config, profiles
 from .corpus import Chunk, Corpus
 
 _WORD = re.compile(r"[a-z0-9]+")
 _ALNUM_SPLIT = re.compile(r"^([a-z]+)(\d+)$")
 
-# Stemming these would help nothing and hurt matching.
-_PROTECTED = frozenset(
-    {
-        "gres",
-        "globus",
-        "https",
-        "lammps",
-        "gromacs",
-        "dss",
-        "hpss",
-        "tmux",
-        "linux",
-        "emacs",
-    }
-)
-
-# Bidirectional groups. Members are expanded at query time only, at a reduced
-# weight, so an exact match always outranks a synonym match.
-_SYNONYM_GROUPS: tuple[tuple[str, ...], ...] = (
-    ("ssh", "login", "connect", "logon"),
-    ("thinlinc", "vdi", "desktop", "gui"),
-    ("sbatch", "batch", "submit", "script"),
-    ("sinteractive", "srun", "interactive", "salloc"),
-    ("squeue", "sacct", "status", "queue"),
-    ("partition", "queue", "qos"),
-    ("scavenge", "preemptible", "preempt"),
-    ("oom", "memory", "killed", "cancelled", "timeout"),
-    ("quota", "limit", "usage", "space"),
-    ("allocation", "su", "balance", "accounts"),
-    ("module", "software", "lmod", "package"),
-    ("conda", "venv", "environment", "virtualenv", "mamba"),
-    ("globus", "transfer", "scp", "rsync", "upload", "download"),
-    ("gpu", "cuda", "a100", "v100", "nvidia"),
-    ("scratch", "temporary", "purge"),
-    ("project", "shared", "group"),
-    ("cnetid", "account", "username"),
-    ("midway", "cluster", "hpc"),
-    ("snapshot", "backup", "restore", "recover"),
-)
+# The stemmer's protected terms and the synonym table are the profile's, not this
+# module's: they are the one part of retrieval that is entirely about *which*
+# corpus is being searched. `Analyzer` holds them so an `Index` built over the
+# blog posts does not expand "scavenge" into "preemptible".
 
 
-def _stem(token: str) -> str:
-    if token in _PROTECTED or len(token) < 4:
+class Analyzer:
+    """Tokenisation, stemming and synonym expansion for one profile."""
+
+    def __init__(self, protected=frozenset(), synonyms=()) -> None:
+        self.protected = frozenset(protected)
+        self.synonyms = self._build(synonyms)
+
+    def _build(self, groups) -> dict[str, set[str]]:
+        table: dict[str, set[str]] = {}
+        for group in groups:
+            stems = {self.stem(term) for term in group}
+            for stem in stems:
+                table.setdefault(stem, set()).update(stems - {stem})
+        return table
+
+    def stem(self, token: str) -> str:
+        if token in self.protected or len(token) < 4:
+            return token
+        if token.endswith("ies") and len(token) > 4:
+            return token[:-3] + "y"
+        if token.endswith("sses"):
+            return token[:-2]
+        if token.endswith("es") and len(token) > 4:
+            return token[:-1]
+        if token.endswith("s") and not token.endswith("ss"):
+            return token[:-1]
         return token
-    if token.endswith("ies") and len(token) > 4:
-        return token[:-3] + "y"
-    if token.endswith("sses"):
-        return token[:-2]
-    if token.endswith("es") and len(token) > 4:
-        return token[:-1]
-    if token.endswith("s") and not token.endswith("ss"):
-        return token[:-1]
-    return token
+
+    def tokenize(self, text: str) -> list[str]:
+        """Lowercase, stem, and additionally emit the split form of `midway3`.
+
+        Keeping both `midway3` and (`midway`, `3`) means an exact cluster reference
+        still wins on its own IDF while the bare name provides recall.
+        """
+        tokens: list[str] = []
+        for raw in _WORD.findall(text.lower()):
+            # Single characters are kept: `R` and `C` are languages users ask
+            # about, and IDF already drives genuinely ubiquitous letters towards
+            # zero weight.
+            tokens.append(self.stem(raw))
+            split = _ALNUM_SPLIT.match(raw)
+            if split:
+                tokens.append(self.stem(split.group(1)))
+                tokens.append(split.group(2))
+        return tokens
+
+    def expand_query(self, query: str) -> dict[str, float]:
+        """Query terms mapped to weights; synonyms enter at a reduced weight."""
+        weights: dict[str, float] = {}
+        for token in self.tokenize(query):
+            weights[token] = max(weights.get(token, 0.0), 1.0)
+        for token in list(weights):
+            for synonym in self.synonyms.get(token, ()):
+                if synonym not in weights:
+                    weights[synonym] = config.SYNONYM_WEIGHT
+        return weights
+
+
+def for_profile(profile) -> Analyzer:
+    return Analyzer(profile.protected_terms, profile.synonyms)
+
+
+def _active() -> Analyzer:
+    return for_profile(profiles.active())
 
 
 def tokenize(text: str) -> list[str]:
-    """Lowercase, stem, and additionally emit the split form of `midway3`.
-
-    Keeping both `midway3` and (`midway`, `3`) means an exact cluster reference
-    still wins on its own IDF while the bare name provides recall.
-    """
-    tokens: list[str] = []
-    for raw in _WORD.findall(text.lower()):
-        # Single characters are kept: `R` and `C` are languages users ask about,
-        # and IDF already drives genuinely ubiquitous letters towards zero weight.
-        tokens.append(_stem(raw))
-        split = _ALNUM_SPLIT.match(raw)
-        if split:
-            tokens.append(_stem(split.group(1)))
-            tokens.append(split.group(2))
-    return tokens
-
-
-def _build_synonyms() -> dict[str, set[str]]:
-    table: dict[str, set[str]] = {}
-    for group in _SYNONYM_GROUPS:
-        stems = {_stem(term) for term in group}
-        for stem in stems:
-            table.setdefault(stem, set()).update(stems - {stem})
-    return table
-
-
-_SYNONYMS = _build_synonyms()
+    """Module-level convenience, using the active profile's analyzer."""
+    return _active().tokenize(text)
 
 
 def expand_query(query: str) -> dict[str, float]:
-    """Query terms mapped to weights; synonyms enter at a reduced weight."""
-    weights: dict[str, float] = {}
-    for token in tokenize(query):
-        weights[token] = max(weights.get(token, 0.0), 1.0)
-    for token in list(weights):
-        for synonym in _SYNONYMS.get(token, ()):
-            if synonym not in weights:
-                weights[synonym] = config.SYNONYM_WEIGHT
-    return weights
+    return _active().expand_query(query)
 
 
 @dataclass
@@ -144,14 +128,18 @@ class Result:
 class Index:
     """In-memory BM25 index. Built once per process and cached by the UI layer."""
 
-    def __init__(self, corpus: Corpus) -> None:
+    def __init__(self, corpus: Corpus, analyzer: Analyzer | None = None) -> None:
         self.corpus = corpus
+        # The corpus knows its profile, so an index built over the blog posts is
+        # analysed with the blog's vocabulary without the caller saying so.
+        self.analyzer = analyzer or for_profile(corpus.profile or profiles.active())
         self._frequencies: list[Counter[str]] = []
         self._lengths: list[int] = []
         self._titles: list[set[str]] = []
         self._paths: list[set[str]] = []
         self._document_frequency: Counter[str] = Counter()
 
+        tokenize = self.analyzer.tokenize
         for chunk in corpus.chunks:
             counts = Counter(tokenize(chunk.text))
             self._frequencies.append(counts)
@@ -173,10 +161,11 @@ class Index:
 
     def search(self, query: str, limit: int | None = None) -> list[Result]:
         limit = config.SEARCH_RESULTS if limit is None else limit
-        weights = expand_query(query)
+        weights = self.analyzer.expand_query(query)
         if not weights or not self.total:
             return []
 
+        profile = self.corpus.profile or profiles.active()
         scored: list[tuple[float, int]] = []
         for position, chunk in enumerate(self.corpus.chunks):
             counts = self._frequencies[position]
@@ -206,7 +195,7 @@ class Index:
                     score += weight * idf * config.PATH_BOOST
 
             if matched and score > 0:
-                score *= config.SOURCE_WEIGHT.get(chunk.source, 1.0)
+                score *= profile.weight(chunk.source)
                 scored.append((score, position))
 
         scored.sort(key=lambda item: (-item[0], self.corpus.chunks[item[1]].id))

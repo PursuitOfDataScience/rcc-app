@@ -1,5 +1,6 @@
 from sage import config, search
 from sage.corpus import Chunk, Corpus
+from sage.profiles import rcc, site
 
 
 def make_corpus(*bodies: tuple[str, str, str]) -> Corpus:
@@ -50,13 +51,25 @@ class TestTokenize:
 
 class TestExpandQuery:
     def test_exact_terms_outweigh_synonyms(self):
-        weights = search.expand_query("scavenge")
-        assert weights[search._stem("scavenge")] == 1.0
-        assert weights[search._stem("preemptible")] == config.SYNONYM_WEIGHT
+        analyzer = search.for_profile(rcc.PROFILE)
+        weights = analyzer.expand_query("scavenge")
+        assert weights[analyzer.stem("scavenge")] == 1.0
+        assert weights[analyzer.stem("preemptible")] == config.SYNONYM_WEIGHT
 
     def test_symptom_language_reaches_mechanism_language(self):
-        weights = search.expand_query("my job was killed")
-        assert search._stem("memory") in weights
+        analyzer = search.for_profile(rcc.PROFILE)
+        weights = analyzer.expand_query("my job was killed")
+        assert analyzer.stem("memory") in weights
+
+    def test_a_profile_only_expands_its_own_vocabulary(self):
+        """The blog corpus must not turn "scavenge" into Slurm's preemption docs,
+        and the RCC corpus must not turn "pretraining" into anything at all."""
+        blog = search.for_profile(site.PROFILE)
+        assert "preemptible" not in blog.expand_query("scavenge")
+        rcc_analyzer = search.for_profile(rcc.PROFILE)
+        assert set(rcc_analyzer.expand_query("pretraining")) == {
+            rcc_analyzer.stem("pretraining")
+        }
 
     def test_empty_query_expands_to_nothing(self):
         assert search.expand_query("   ") == {}

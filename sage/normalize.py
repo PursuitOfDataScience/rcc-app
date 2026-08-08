@@ -214,6 +214,44 @@ def parse_scraped(text: str) -> tuple[str, str, str]:
     return url, title, collapse_blank_lines(body)
 
 
+def parse_post_header(text: str) -> tuple[str, str, str]:
+    """Split a synced blog post into (url, title, markdown body).
+
+    Written by `tools/build_site_corpus.py`, which records the permalink Hugo
+    actually published rather than recomputing it from the slug:
+
+        URL: https://youzhi.netlify.app/post/2026-07-23-pretraining-argonne/…/
+        Title: Pretraining a Language Model From Scratch: Argonne 1.0 to 3.0
+        Date: 2026-07-23
+        ---
+
+    Unlike `parse_scraped` the title is kept whole: a post called "rapiDU: A
+    Faster du" loses its subtitle to a `|` split, and blog titles carry meaning
+    after the punctuation in a way that a scraped "page | Site Name" suffix
+    does not.
+    """
+    url = ""
+    title = ""
+    lines = text.splitlines()
+    cursor = 0
+
+    for idx, line in enumerate(lines[:8]):
+        stripped = line.strip()
+        if stripped.startswith("URL:"):
+            url = stripped[4:].strip()
+            cursor = idx + 1
+        elif stripped.startswith("Title:"):
+            title = stripped[6:].strip()
+            cursor = idx + 1
+        elif stripped.startswith("Date:"):
+            cursor = idx + 1
+        elif stripped == "---":
+            cursor = idx + 1
+            break
+
+    return url, title, "\n".join(lines[cursor:]).lstrip("\n")
+
+
 _INLINE_LINK = re.compile(r"\[([^\]]*)\]\([^)]*\)")
 
 

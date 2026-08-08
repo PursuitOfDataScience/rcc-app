@@ -32,9 +32,33 @@ Three of them are available and two of them hide:
 - **Tests**: pytest cannot be installed (no package index). There is a working shim in
   the session scratchpad that handles fixtures, `parametrize`, `raises(...).value` and
   `xfail`; without those four it silently runs 2 test files out of 11.
-- **Layout**: `python tools/render_check.py`, ~4 minutes locally for ~576 renders.
+- **Layout**: `python tools/render_check.py`, ~4 minutes locally for ~576 renders —
+  and it is **once per profile** now (`SAGE_PROFILE=site python tools/render_check.py`).
+  Each profile brings its own welcome copy, card labels and brand palette; the site
+  palette shipped inline code at 2.62:1 in dark mode and card labels that wrapped
+  from 966px down, and only the second run found either.
 
 Run all three before pushing. Each has failed CI at least once for want of being run.
+
+## Two profiles
+
+`SAGE_PROFILE` selects the corpus, prompt, tool copy, starter cards and palette;
+`rcc` is the default and `site` is the personal-website assistant. Anything that
+names a particular deployment belongs in `sage/profiles/`, not in the package.
+
+`site/` is generated — edit `tools/build_site_corpus.py` or `site_notes/`, never the
+snapshot. Regenerate with `python tools/build_site_corpus.py --site ../personal-website`.
+
+Two traps that cost a round each here:
+
+- **Do not compute another renderer's anchors.** Blog citations use pandoc's own
+  `{#id}`, carried through the sync. Slugifying the heading instead is right most of
+  the time, and the times it is wrong are dead links no test can see. Where a page
+  has no explicit anchor, cite the bare page.
+- **Synonyms are not free.** Adding `("article", "post", "blog", …)` and `"about"` to
+  the site profile made the biography page outrank every article, because those words
+  appear in the *question* rather than the answer. `tests/test_site_retrieval_eval.py`
+  is what catches it; extend it before tuning.
 
 ## The UI
 

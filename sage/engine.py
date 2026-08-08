@@ -34,10 +34,10 @@ from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
-from . import config, feedback, links, llm
+from . import config, feedback, links, llm, profiles
 from .corpus import Corpus
 from .search import Index
-from .tools import READ_DOC, SEARCH_DOCS, TOOL_SCHEMAS, ToolRunner, gather_context
+from .tools import READ_DOC, SEARCH_DOCS, ToolRunner, gather_context, tool_schemas
 
 logger = logging.getLogger(__name__)
 
@@ -72,10 +72,11 @@ class Event:
 
 def describe(calls: list[dict], corpus: Corpus) -> str:
     """Say what is actually happening instead of a generic shimmer."""
+    noun = (corpus.profile or profiles.active()).searching_noun
     for call in calls:
         if call["name"] == SEARCH_DOCS:
             query = (call["input"].get("query") or "").strip()
-            return f"Searching the docs for “{query}”" if query else "Searching the docs"
+            return f"Searching {noun} for “{query}”" if query else f"Searching {noun}"
     for call in calls:
         if call["name"] == READ_DOC:
             path = (call["input"].get("path") or "").strip()
@@ -86,7 +87,7 @@ def describe(calls: list[dict], corpus: Corpus) -> str:
 
 
 def _grounded(
-    messages: list[dict], index: Index, question: str, runner: ToolRunner
+    messages: list[dict], index: Index, question: str, runner: ToolRunner, profile
 ) -> list[dict]:
     """Retrieve up front, for models that cannot call tools."""
     context, chunks = gather_context(index, question)
@@ -98,12 +99,7 @@ def _grounded(
         messages[0],
         {
             "role": "system",
-            "content": (
-                "Answer only from these RCC documentation sections. Cite them "
-                "inline as [Title](path) using the exact path in each header, and "
-                "do not end with a Sources list — one is printed for you. If they "
-                "do not cover the question, say so.\n\n" + context
-            ),
+            "content": profile.grounding_instruction + "\n\n" + context,
         },
         *messages[1:],
     ]
@@ -165,6 +161,8 @@ def run_turn(
     """
     rounds = config.MAX_TOOL_ROUNDS if max_rounds is None else max_rounds
     corpus = index.corpus
+    profile = corpus.profile or profiles.active()
+    schemas = tool_schemas(profile)
     runner = ToolRunner(index)
     messages = list(messages)
     final_text = ""
@@ -174,7 +172,7 @@ def run_turn(
     use_tools = tools
     if use_tools:
         try:
-            turn = llm.start(provider, model.id, messages, TOOL_SCHEMAS)
+            turn = llm.start(provider, model.id, messages, schemas)
         except llm.AssistantError as exc:
             if not llm.rejects_tools(exc.original or exc):
                 raise
@@ -182,7 +180,7 @@ def run_turn(
             logger.info("%s rejected tools; using single-pass retrieval", model.id)
             use_tools = False
     if not use_tools:
-        messages = _grounded(messages, index, question, runner)
+        messages = _grounded(messages, index, question, runner, profile)
         turn = llm.start(provider, model.id, messages, None)
 
     for round_number in range(rounds + 1):
@@ -206,7 +204,7 @@ def run_turn(
             messages.append(
                 llm.tool_result_message(call, runner.run(call["name"], call["input"]))
             )
-        turn = llm.start(provider, model.id, messages, TOOL_SCHEMAS)
+        turn = llm.start(provider, model.id, messages, schemas)
 
     sources = _sources(runner)
     if runner.queries and not sources:
