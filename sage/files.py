@@ -117,13 +117,18 @@ class Attachment:
 
     @property
     def summary(self) -> str:
-        if self.kind == "pdf":
-            detail = f"{self.pages} page{'s' if self.pages != 1 else ''}"
-        elif self.kind == "image":
-            detail = f"{len(self.data) / 1024:,.0f} KB image"
-        else:
-            detail = f"{len(self.text):,} characters"
-        return f"{detail}{', truncated' if self.truncated else ''}"
+        """What the chip says beyond the filename — usually nothing.
+
+        It used to read "19,280 characters" or "58 pages, truncated". Four attached
+        files made four chips of arithmetic nobody asked for: the reader chose the file
+        and knows what is in it, so a count is a number to read past on the way to the
+        name. Empty is the right answer for almost every attachment.
+
+        Truncation is the exception and stays, because it is not a measurement — it
+        says the model was given part of the file, which changes what its answer is
+        worth. Nothing else here earns a place on the chip.
+        """
+        return "truncated" if self.truncated else ""
 
     def as_data_url(self) -> str:
         import base64  # noqa: PLC0415  (only images need it)

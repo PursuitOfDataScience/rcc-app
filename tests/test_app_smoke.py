@@ -247,9 +247,9 @@ class TestModelPicker:
                            session=self.session(), opencode=True)
         offered = " | ".join(self._offered(stub).values())
         assert offered, "expected a model picker"
-        assert "Mistral · small-latest" in offered
-        assert "Zen · deepseek-v4-flash-free" in offered
-        assert "Zen · big-pickle" in offered
+        assert "mistral-small-latest" in offered
+        assert "deepseek-v4-flash-free" in offered
+        assert "big-pickle" in offered
 
     def test_the_trigger_names_the_model_in_use(self, monkeypatch):
         """Otherwise the only way to see which model answers is to open the menu."""
@@ -257,7 +257,7 @@ class TestModelPicker:
         zen = ScriptedProvider([], name="opencode", models=("deepseek-v4-flash-free",))
         stub, _m = run_app(monkeypatch, client=mistral, extra={"opencode": zen},
                            session=self.session(), opencode=True)
-        assert ("popover", "Mistral · small-latest") in stub.events
+        assert ("popover", "mistral-small-latest") in stub.events
 
     def test_it_is_not_a_selectbox(self, monkeypatch):
         """A selectbox kept its own value and clobbered an automatic failover on
@@ -359,7 +359,7 @@ class TestComposerStrip:
         """Reported from the running app: the picker did not show up on the
         landing page at all — not until a prompt had been entered."""
         stub, _m = self.two_providers(monkeypatch, {"messages": [], "processing": False})
-        assert ("popover", "Mistral · small-latest") in stub.events
+        assert ("popover", "mistral-small-latest") in stub.events
         assert [key for key in stub.button_labels if str(key).startswith("pick-")]
 
     def test_the_picker_is_still_there_mid_conversation(self, monkeypatch):
@@ -368,7 +368,7 @@ class TestComposerStrip:
             "processing": False,
         }
         stub, _m = self.two_providers(monkeypatch, session)
-        assert ("popover", "Mistral · small-latest") in stub.events
+        assert ("popover", "mistral-small-latest") in stub.events
 
     def test_clear_appears_only_once_there_is_something_to_clear(self, monkeypatch):
         stub, _m = self.two_providers(monkeypatch, {"messages": [], "processing": False})
@@ -524,9 +524,9 @@ class TestQuotaFailover:
         zen = ScriptedProvider([], name="opencode", models=("z1",))
         stub, _m = run_app(monkeypatch, client=mistral, extra={"opencode": zen},
                            session=self.session(), opencode=True)
-        assert "Retrying with Zen · z1" in stub.session_state["notice"]
+        assert "Retrying with z1" in stub.session_state["notice"]
         assert "came from" not in stub.session_state["notice"]
-        assert stub.session_state["switched_from"] == ("Mistral · m1", "quota")
+        assert stub.session_state["switched_from"] == ("m1", "quota")
 
     def test_the_notice_turns_past_tense_once_the_answer_lands(self, monkeypatch):
         """The state a failover rerun arrives in: switched, and about to answer."""
@@ -543,7 +543,7 @@ class TestQuotaFailover:
                            session=session, opencode=True)
         notice = stub.session_state["notice"]
         assert "was unavailable (out of credit)" in notice
-        assert "Zen · z1 answered instead" in notice
+        assert "z1 answered instead" in notice
         # And it points at where the picker actually is. It said "the button at
         # the top left" for as long as there was a top left to point at.
         assert "under the input box" in notice
@@ -588,7 +588,7 @@ class TestQuotaFailover:
         }
         stub, _m = run_app(monkeypatch, client=mistral, extra={"opencode": zen},
                            session=session, opencode=True)
-        assert stub.button_labels.get("switch-model") == "→ Use Zen · z1"
+        assert stub.button_labels.get("switch-model") == "→ Use z1"
 
     def test_taking_that_switch_reruns_the_question_on_the_new_model(self, monkeypatch):
         mistral = ScriptedProvider([], name="mistral", models=("m1",))

@@ -420,7 +420,6 @@ def render_model_picker() -> None:
     if len(MODELS) < 2:
         return
     with st.popover(MODEL.label):
-        st.caption("Answering model · Zen models are free")
         with st.container(key="model-list"):
             for index, option in enumerate(MODELS):
                 mark = "●" if option.key == MODEL.key else "○"
@@ -692,7 +691,13 @@ def render_attachments() -> None:
     with st.container(key="attachments"):
         for index, item in enumerate(st.session_state.attachments):
             if st.button(
-                f"{item.icon} {item.filename} · {item.summary}  ✕",
+                # Filename and the ✕, and a truncation warning if there is one. The
+                # character and page counts that used to sit here were four chips of
+                # arithmetic on a four-file turn, none of it telling the reader
+                # anything they did not already know about a file they chose.
+                f"{item.icon} {item.filename}"
+                + (f" · {item.summary}" if item.summary else "")
+                + "  ✕",
                 key=f"drop-attachment-{index}",
                 help="Remove this attachment",
             ):

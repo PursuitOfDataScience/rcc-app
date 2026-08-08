@@ -147,7 +147,9 @@ class TestPdfExtraction:
         assert attachment.kind == "pdf"
         assert attachment.pages == 1
         assert attachment.text == "Slurm job guide"
-        assert "1 page" in attachment.summary
+        # No page count on the chip. It was "58 pages, truncated" and four attachments
+        # made four chips of arithmetic about files the reader had just chosen.
+        assert attachment.summary == ""
 
     def test_a_scanned_pdf_asks_for_ocr(self, monkeypatch):
         class Reader:
@@ -214,7 +216,6 @@ def test_a_png_is_accepted_as_an_image():
     assert attachment.kind == "image"
     assert attachment.mime == "image/png"
     assert attachment.icon == "🖼️"
-    assert "image" in attachment.summary
     assert attachment.as_data_url().startswith("data:image/png;base64,")
 
 
@@ -238,3 +239,25 @@ def test_an_image_with_a_misleading_name_is_still_an_image():
     attachment, error = files.process("notes.txt", b"\x89PNG\r\n\x1a\n" + b"z" * 40)
     assert error is None
     assert attachment.kind == "image"
+
+
+def test_a_chip_says_the_filename_and_nothing_else():
+    """The counts are gone. "19,280 characters" told the reader nothing they did not
+    already know about a file they had just picked, and four attachments made four
+    lines of it."""
+    text, _ = files.process("notes.md", b"# hi\n" * 400)
+    pdf = files.Attachment("guide.pdf", "pdf", "body", pages=58)
+    image, _ = files.process("shot.png", b"\x89PNG\r\n\x1a\n" + b"x" * 4000)
+    for attachment in (text, pdf, image):
+        assert attachment.summary == "", f"{attachment.filename}: {attachment.summary!r}"
+
+
+def test_truncation_is_the_one_thing_a_chip_still_reports():
+    """Not a measurement: it says the model was given part of the file, which changes
+    what its answer is worth."""
+    attachment, error = files.process(
+        "huge.log", b"a" * (config.MAX_FILE_TEXT_CHARS + 10)
+    )
+    assert error is None
+    assert attachment.truncated
+    assert attachment.summary == "truncated"

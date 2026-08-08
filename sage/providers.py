@@ -39,12 +39,14 @@ class Model:
 
     @property
     def label(self) -> str:
-        """Short enough to fit the picker without being ellipsed."""
-        short = self.id
-        if self.provider == MISTRAL and short.startswith("mistral-"):
-            short = short[len("mistral-") :]  # "Mistral · mistral-small" reads badly
-        prefix = "Mistral" if self.provider == MISTRAL else "Zen"
-        return f"{prefix} · {short}"
+        """The model's own name, and nothing else.
+
+        There was a provider prefix — "Zen · deepseek-v4-flash-free" — which spent a
+        third of the picker's width restating what the rest of the row already said,
+        on every line. The id alone identifies the model, and `mistral-` on the front
+        of the Mistral ones does the same job the prefix was doing.
+        """
+        return self.id
 
     @property
     def supports_tools(self) -> bool:
@@ -204,6 +206,20 @@ class OpenAICompatProvider:
                 for entry in payload.get("data", [])
                 if isinstance(entry, dict) and entry.get("id")
             ]
+            # The endpoint serves this deployment's paid lineup alongside the free
+            # one, and offering a model there is no balance for is offering a button
+            # that returns a 402. Filtered here rather than in the picker so nothing
+            # downstream — failover included — can select one.
+            if found and config.ZEN_FREE_ONLY:
+                free = [name for name in found if config.is_free_zen_model(name)]
+                if free:
+                    found = free
+                else:
+                    logger.warning(
+                        "%s served %d models and none looked free; offering all of "
+                        "them. Check SAGE_ZEN_FREE_MARKS against the current lineup.",
+                        self.name, len(found),
+                    )
             if found:
                 return [Model(self.name, model_id) for model_id in self._order(found)]
             logger.warning("%s returned no models; using the configured list", self.name)
