@@ -16,17 +16,10 @@ import os
 import streamlit as st
 import streamlit.components.v1 as components
 
-from sage import config, feedback, files, history, links, llm, providers
+from sage import config, engine, feedback, files, history, links, llm, providers
 from sage import corpus as corpus_mod
 from sage.prompts import SYSTEM_PROMPT
 from sage.search import Index
-from sage.tools import (
-    READ_DOC,
-    SEARCH_DOCS,
-    TOOL_SCHEMAS,
-    ToolRunner,
-    gather_context,
-)
 
 logging.basicConfig(
     level=getattr(logging, config.LOG_LEVEL, logging.WARNING),
@@ -358,21 +351,6 @@ def clearing(stream, slot):
         yield delta
     if not cleared:
         slot.empty()
-
-
-def describe(calls: list[dict]) -> str:
-    """Say what is actually happening instead of a generic shimmer."""
-    for call in calls:
-        if call["name"] == SEARCH_DOCS:
-            query = (call["input"].get("query") or "").strip()
-            return f"Searching the docs for “{query}”" if query else "Searching the docs"
-    for call in calls:
-        if call["name"] == READ_DOC:
-            path = (call["input"].get("path") or "").strip()
-            chunk = CORPUS.chunk(path)
-            label = chunk.label if chunk else path.split("/")[-1]
-            return f"Reading {label}" if label else "Reading documentation"
-    return "Working"
 
 
 def start_new_turn(question: str, attachments=None) -> None:
@@ -786,8 +764,6 @@ if st.session_state.processing:
     show_status(status, "Thinking")
 
     answer = st.empty()
-    runner = ToolRunner(INDEX)
-    final_text = ""
     question = st.session_state.messages[-1].get("text", "")
     # Set only when Streamlit aborts this run from underneath us. The `finally` below
     # must then leave `processing` alone and not issue a rerun of its own: the abort
@@ -806,27 +782,6 @@ if st.session_state.processing:
         st.session_state.notice = ""
         st.session_state.switched_from = None
 
-    def grounded(messages: list[dict]) -> list[dict]:
-        """Retrieve up front, for models that cannot call tools."""
-        context, chunks = gather_context(INDEX, question)
-        for chunk in chunks:
-            runner.sources.append(chunk)
-        if not context:
-            return messages
-        return [
-            messages[0],
-            {
-                "role": "system",
-                "content": (
-                    "Answer only from these RCC documentation sections. Cite them "
-                    "inline as [Title](path) using the exact path in each header, and "
-                    "do not end with a Sources list — one is printed for you. If they "
-                    "do not cover the question, say so.\n\n" + context
-                ),
-            },
-            *messages[1:],
-        ]
-
     try:
         provider = get_provider(MODEL.provider)
         messages = history.build(
@@ -834,70 +789,38 @@ if st.session_state.processing:
             SYSTEM_PROMPT,
             vision=config.sees_images(MODEL.id),
         )
-        use_tools = MODEL.supports_tools
 
-        if use_tools:
-            try:
-                turn = llm.start(provider, MODEL.id, messages, TOOL_SCHEMAS)
-            except llm.AssistantError as exc:
-                if not llm.rejects_tools(exc.original or exc):
-                    raise
-                # The model does not do tool calls; retrieve up front instead.
-                logger.info("%s rejected tools; using single-pass retrieval", MODEL.id)
-                use_tools = False
-        if not use_tools:
-            messages = grounded(messages)
-            turn = llm.start(provider, MODEL.id, messages, None)
-
-        for round_number in range(config.MAX_TOOL_ROUNDS + 1):
-            with answer.container(), st.chat_message("assistant"):
-                streamed = st.write_stream(clearing(turn.deltas(), status))
-            # write_stream returns a list when chunks are not all strings.
-            if isinstance(streamed, list):
-                streamed = "".join(str(part) for part in streamed)
-            if streamed:
-                final_text = streamed
-
-            if not turn.tool_calls or not use_tools:
-                break
-            if round_number == config.MAX_TOOL_ROUNDS:
-                logger.warning("Tool-round limit reached without a final answer")
-                final_text = final_text or (
-                    "I wasn't able to finish looking that up. Please try rephrasing "
-                    "your question."
-                )
-                break
-
-            answer.empty()
-            show_status(status, describe(turn.tool_calls))
-            messages.append(turn.as_message())
-            for call in turn.tool_calls:
-                messages.append(
-                    llm.tool_result_message(call, runner.run(call["name"], call["input"]))
-                )
-            turn = llm.start(provider, MODEL.id, messages, TOOL_SCHEMAS)
+        # `run_turn` raises on failure rather than yielding it, so the failover
+        # ladder below is unchanged: this loop only renders. Provider failover is
+        # still done by rerunning, not by `engine.run_conversation`, because a
+        # rerun is what repaints the notice above a fresh attempt.
+        answered: dict | None = None
+        for event in engine.run_turn(
+            index=INDEX,
+            messages=messages,
+            model=MODEL,
+            provider=provider,
+            question=question,
+            tools=MODEL.supports_tools,
+        ):
+            if event.kind == engine.STATUS:
+                show_status(status, event.text)
+            elif event.kind == engine.STREAM:
+                with answer.container(), st.chat_message("assistant"):
+                    st.write_stream(clearing(event.deltas, status))
+            elif event.kind == engine.RESET:
+                answer.empty()
+            elif event.kind == engine.ANSWER:
+                answered = event.data
 
         status.empty()
-        sources = [
-            {
-                "id": chunk.id,
-                "label": chunk.label,
-                "url": chunk.url,
-                "source": chunk.source,
-            }
-            for chunk in runner.sources
-        ]
-
         # Re-render once with links resolved, so a raw `docs/...md` target never flashes.
         answer.empty()
         st.session_state.messages.append(
             {
                 "role": "assistant",
-                # Stored stripped, not merely rendered stripped: this text is also what
-                # goes back upstream next turn, and a footer in the history is a worked
-                # example teaching the model to write another one.
-                "text": links.strip_source_footer(final_text),
-                "sources": sources,
+                "text": answered["text"] if answered else "",
+                "sources": answered["sources"] if answered else [],
                 "rating": None,
                 "model": MODEL.key,
             }
@@ -914,9 +837,6 @@ if st.session_state.processing:
             if switched
             else ""
         )
-        if runner.queries and not sources:
-            feedback.record_miss(runner.queries, st.session_state.messages[-2]["text"])
-
     except llm.AssistantError as exc:
         status.empty()
         answer.empty()
