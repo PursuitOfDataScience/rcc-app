@@ -845,8 +845,9 @@ if st.session_state.processing:
                 "content": (
                     "Answer only from these RCC documentation sections. Cite them "
                     "inline as [Title](path) using the exact path in each header, and "
-                    "do not end with a Sources list — one is printed for you. If they "
-                    "do not cover the question, say so.\n\n" + context
+                    "do not restate them at the end — no Sources list and no 'Cited "
+                    "from' sentence, because one is printed for you. If they do not "
+                    "cover the question, say so.\n\n" + context
                 ),
             },
             *messages[1:],

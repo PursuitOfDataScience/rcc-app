@@ -120,6 +120,27 @@ _ONLY_LINKS = re.compile(
     rf"^\s*(?:[-*+]\s+|\d+[.)]\s+)?{_LINK_PART}(?:[\s,;·|]*{_LINK_PART})*[\s,;.·]*$"
 )
 
+# The third shape, and the one a model reaches for when told not to write the word
+# "Sources": a *sentence* of citations. "Cited from [A] and [B]." is a footer with
+# grammar, so neither the label rule nor the bare-links rule sees it.
+#
+# Split into scaffolding — words a citation sentence is built from — and the signal
+# words that say it IS one. Both are required: without a signal, "See [Batch jobs](…)
+# and [Partitions](…)." is a pointer inside an answer and stays. With any word outside
+# the set, it is prose: "For full details, see [GPU jobs](…) and [PyTorch](…)." keeps
+# `details`, so it stays too.
+_CITE_SIGNAL = frozenset({
+    "cited", "citing", "citation", "citations", "source", "sources", "sourced",
+    "reference", "references", "referenced", "per", "based", "according", "drawn",
+    "taken",
+})
+_CITE_SCAFFOLD = _CITE_SIGNAL | frozenset({
+    "and", "from", "on", "to", "of", "in", "the", "this", "these", "those", "above",
+    "see", "i", "my", "we", "you", "it", "is", "are", "was", "were", "all", "both",
+    "they", "them", "information", "info", "answer",
+})
+_WORDS = re.compile(r"[A-Za-z']+")
+
 
 def _footer_label(line: str) -> str | None:
     """The text after a `Sources:`-style label, `None` if this is not such a line.
@@ -234,9 +255,23 @@ def strip_source_footer(
             if item.get("url")
         }
 
+        def citation_sentence(line: str) -> bool:
+            """A sentence whose only content is "these came from here".
+
+            Every word outside the links has to be scaffolding, and at least one has to
+            say the line is a citation. That is what separates `Cited from A and B.`
+            from `For full details, see A and B.`, which is an answer pointing somewhere
+            and keeps its `details`.
+            """
+            without_links = _MARKDOWN_LINK.sub(" ", line)
+            words = [word.lower() for word in _WORDS.findall(without_links)]
+            if not words or not any(word in _CITE_SIGNAL for word in words):
+                return False
+            return all(word in _CITE_SCAFFOLD for word in words)
+
         def duplicate(line: str) -> bool:
-            """Nothing but links, all of them pages the strip is already showing."""
-            if not _ONLY_LINKS.match(line):
+            """Links the strip is already showing, and nothing else worth keeping."""
+            if not (_ONLY_LINKS.match(line) or citation_sentence(line)):
                 return False
             pages = _pages(line, corpus)
             return bool(pages) and pages <= shown

@@ -262,3 +262,69 @@ class TestUnlabelledSourceFooter:
         chunks, _ = self.two_chunks(real_corpus)
         answer = f"Answer.\n\n[a]({chunks[0].id}) [b]({chunks[1].id})"
         assert links.strip_source_footer(answer) == answer
+
+
+class TestCitationSentenceFooter:
+    """The third shape, and the one that arrived after the prompt was told not to write
+    the word "Sources": a footer with grammar. "Cited from A and B." is a sentence, so
+    neither the label rule nor the bare-links rule could see it."""
+
+    @staticmethod
+    def two_chunks(corpus):
+        chunks = [chunk for chunk in corpus.chunks if "storage" in chunk.path][:2]
+        sources = [
+            {"id": c.id, "label": c.label, "url": c.url, "source": c.source}
+            for c in chunks
+        ]
+        return chunks, sources
+
+    @pytest.mark.parametrize(
+        "closing",
+        [
+            "Cited from [a]({a}) and [b]({b}).",
+            "Cited from [a]({a}).",
+            "Based on [a]({a}) and [b]({b}).",
+            "Sourced from [a]({a}), [b]({b}).",
+            "According to [a]({a}) and [b]({b}).",
+        ],
+    )
+    def test_a_closing_citation_sentence_is_removed(self, real_corpus, closing):
+        chunks, sources = self.two_chunks(real_corpus)
+        answer = "Run `rcchelp balance` to see what is left."
+        text = f"{answer}\n\n" + closing.format(a=chunks[0].id, b=chunks[1].id)
+        assert links.strip_source_footer(text, real_corpus, sources) == answer
+
+    @pytest.mark.parametrize(
+        ("closing", "why"),
+        [
+            (
+                "For full details, see [GPU jobs]({a}) and [PyTorch]({b}).",
+                "prose: 'details' is not citation scaffolding",
+            ),
+            (
+                "See [a]({a}) for the quota table.",
+                "a pointer into a page is not a restatement of the citations",
+            ),
+            (
+                "Check the limits in [a]({a}) before submitting.",
+                "an instruction that happens to contain a link",
+            ),
+        ],
+    )
+    def test_a_sentence_that_is_doing_work_survives(self, real_corpus, closing, why):
+        chunks, sources = self.two_chunks(real_corpus)
+        text = "Answer.\n\n" + closing.format(a=chunks[0].id, b=chunks[1].id)
+        assert links.strip_source_footer(text, real_corpus, sources) == text, why
+
+    def test_a_citation_sentence_naming_a_page_not_shown_survives(self, real_corpus):
+        """Same gate as the other shapes: removal has to be provably lossless."""
+        chunks, sources = self.two_chunks(real_corpus)
+        elsewhere = next(c for c in real_corpus.chunks if "slurm" in c.path)
+        text = f"Answer.\n\nCited from [x]({elsewhere.id})."
+        assert links.strip_source_footer(text, real_corpus, sources) == text
+
+    def test_signal_words_without_links_are_just_words(self, real_corpus):
+        _chunks, sources = self.two_chunks(real_corpus)
+        text = "Answer.\n\nThe quota is set per source, and cited limits vary."
+        assert links.strip_source_footer(text, real_corpus, sources) == text
+

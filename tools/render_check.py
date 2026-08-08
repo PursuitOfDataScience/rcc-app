@@ -1374,18 +1374,20 @@ def check_follow(widths) -> tuple[list[str], int]:
                                 f"mid-answer must keep the page"
                             )
                         continue
-                    # Pinned means AT the top gap, not merely past it: a question
-                    # above the top of the window is off screen, not pinned.
-                    pinned = step["questionTop"] is not None and (
-                        -FOLLOW_SLACK <= step["questionTop"] <= TOP_GAP + FOLLOW_SLACK
-                    )
-                    if step["hiddenBelow"] > FOLLOW_SLACK and not pinned:
+                    # The newest text has to be on screen, full stop. This used to
+                    # accept "the question is pinned at the top of the window" as an
+                    # alternative resting place, and that is what shipped as the page
+                    # freezing: the view arrived on send and then every token after the
+                    # first screenful streamed in below the fold with nothing moving.
+                    # The only turn where the reader may be left behind is one where the
+                    # reader chose it, which the hand-off branch above handles.
+                    if step["hiddenBelow"] > FOLLOW_SLACK:
                         problems.append(
                             f"{name}/{step['at']}: the newest content runs "
-                            f"{step['hiddenBelow']}px past the composer while the "
-                            f"question sits {step['questionTop']}px down, so the view "
-                            f"stopped following the answer (scrollTop "
-                            f"{step['scrollTop']} of {step['maxScroll']})"
+                            f"{step['hiddenBelow']}px past the composer (question "
+                            f"{step['questionTop']}px down, scrollTop "
+                            f"{step['scrollTop']} of {step['maxScroll']}), so the view "
+                            f"stopped following the answer as it streamed"
                         )
     return problems, checked
 
@@ -1537,14 +1539,40 @@ def audit(data, scenario, scheme, width, state: str) -> list[str]:
         )
 
     if generating:
-        # The question must stay on screen while its answer streams in. Pinning to
-        # the document bottom used to scroll it clean off the top.
+        # The question may leave the top of the window — but only because the answer
+        # needed the room.
+        #
+        # This used to require it on screen unconditionally, written against a version
+        # that pinned to the DOCUMENT's bottom: the document reserves a bar's height
+        # plus a gap below the last message, so that scroll pushed the question off the
+        # top *and* left a third of the window empty above the composer. Following the
+        # tail instead cannot do that — it stops at one gap above the composer — and
+        # requiring the question on screen forbade following a reply longer than the
+        # window at all. That shipped, and it read as the page freezing: the view
+        # arrived on send, then every token after the first screenful streamed in below
+        # the fold with nothing moving.
+        #
+        # So the two are told apart by what is at the BOTTOM. A question above the fold
+        # with the newest text against the composer is a reader watching an answer
+        # arrive; a question above the fold with a screenful of nothing under the text
+        # is the old bug, and that is what this now catches.
         asked = els.get("last:.user-bubble")
+        finished = max(
+            (b for sel, b in els.items()
+             if b and sel in (".st-key-answer-5", ".st-key-answer-0", ".stChatMessage")),
+            key=lambda b: b["bottom"], default=None,
+        )
+        composer = els.get('[data-testid="stBottomBlockContainer"]')
         if asked and asked["top"] < data["hostBar"]:
-            problems.append(
-                f"{where}: the question is {data['hostBar'] - asked['top']}px above "
-                "the fold while its answer generates"
-            )
+            slack = (composer["top"] - finished["bottom"]
+                     if composer and finished else None)
+            if slack is None or slack > MAX_TAIL_GAP:
+                problems.append(
+                    f"{where}: the question is {data['hostBar'] - asked['top']}px above "
+                    f"the fold while its answer generates, and the text under it stops "
+                    f"{slack}px short of the composer — so the view scrolled past the "
+                    f"answer rather than following it"
+                )
         # And not below it either. Sending a follow-up from halfway up a long
         # conversation left the reader where they were, with the question and the answer
         # arriving off the bottom of the screen — "i have to scroll down myself". The
