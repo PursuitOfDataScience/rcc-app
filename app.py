@@ -220,13 +220,17 @@ def escape(text: str) -> str:
 
 
 def render_user(message: dict) -> None:
-    badge = "".join(
+    badges = "".join(
         f'<div class="attachment-badge">{item.icon} '
         f"{html.escape(item.filename)}</div>"
         for item in (message.get("attachments") or [])
     )
+    # Wrapped in a row of their own. Loose in the bubble they were inline boxes, so the
+    # question ran straight on from the last filename with no space at all.
+    if badges:
+        badges = f'<div class="attachment-badges">{badges}</div>'
     st.markdown(
-        f'<div class="user-message"><div class="user-bubble">{badge}'
+        f'<div class="user-message"><div class="user-bubble">{badges}'
         f'{escape(message.get("text", ""))}</div></div>',
         unsafe_allow_html=True,
     )
@@ -251,24 +255,45 @@ def related_sections(sources: list[dict], limit: int = 3) -> list[dict]:
 
 
 def render_sources(sources: list[dict], related: list[dict]) -> None:
+    """The citations under an answer, and the sibling sections worth a look.
+
+    Two lists rather than two rows of identical chips. They used to share every class,
+    which left the reader unable to tell what the answer was built from ("Sources")
+    from what it merely suggests next ("Related") — and as wrapping chip rows they were
+    ragged: a flex row whose first item is the label indents its first line only, so
+    every later line dropped back to the container edge, 66px to the left of the line
+    above it, measured with six real citations at the 820px content width.
+
+    Sources are numbered, one per line, the way a paper cites: the number is what makes
+    a reference list readable, and it lets an answer say "see 2" if it wants to. Related
+    is a plain vertical list of leads, no numbers and no source badge, which is the
+    difference in kind said in the layout instead of in a heading.
+    """
     if not sources:
         return
-    chips = "".join(
-        f'<a class="source-chip" href="{html.escape(source["url"], quote=True)}" '
-        f'target="_blank" rel="noopener noreferrer">{html.escape(source["label"])}'
-        f'<span class="source-kind">{html.escape(source["source"])}</span></a>'
+    items = "".join(
+        f'<div class="source-item">'
+        f'<a class="source-link" href="{html.escape(source["url"], quote=True)}" '
+        f'target="_blank" rel="noopener noreferrer">{html.escape(source["label"])}</a>'
+        f'<span class="source-kind">{html.escape(source["source"])}</span></div>'
         for source in sources
     )
-    strip = f'<div class="sources"><span class="sources-label">Sources</span>{chips}</div>'
+    strip = (
+        '<div class="sources"><span class="sources-label">Sources</span>'
+        f'<div class="source-list">{items}</div></div>'
+    )
 
     if related:
-        more = "".join(
-            f'<a class="source-chip" href="{html.escape(item["url"], quote=True)}" '
+        leads = "".join(
+            f'<div class="related-item">'
+            f'<a class="related-link" href="{html.escape(item["url"], quote=True)}" '
             f'target="_blank" rel="noopener noreferrer">{html.escape(item["label"])}</a>'
+            "</div>"
             for item in related
         )
         strip += (
-            f'<div class="sources"><span class="sources-label">Related</span>{more}</div>'
+            '<div class="sources related"><span class="sources-label">Related</span>'
+            f'<div class="related-list">{leads}</div></div>'
         )
     st.markdown(strip, unsafe_allow_html=True)
 

@@ -103,7 +103,14 @@
      * with each other by luck and were both ~20px under the real first-frame band;
      * this way one of them changing cannot silently break the other. */
     --bar-band: calc(var(--strip-h) + 5.25rem);
-    --bar-h: 12rem;
+    /* Raised from 12rem when the Sources strip became a numbered list: a heading on
+     * its own line is ~30px taller than the chip row it replaced, and the first frame
+     * — before app.js has measured anything — put the newest content 5px under the
+     * input bar at 966px, where the old strip cleared it by 12px purely by luck. The
+     * real bar with text in the composer measures 296px there. Stays a plain `rem`
+     * value on purpose: the harness detects "app.js never ran" by this property still
+     * ending in `rem`, so a calc() here would silence that check. */
+    --bar-h: 19rem;
     /* What is left between the last message and the bar. Also how far the page
      * can scroll past its last message, so it is dead space, one gap's worth. */
     --tail-gap: 1.75rem;
@@ -794,6 +801,17 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
     overflow-wrap: break-word;
 }
 
+/* A row of its own above the question, not inline with it. The badges were inline-flex
+ * with only a bottom margin, so the question text began immediately after the last one
+ * — "🖼️ pasted-image-1.pngHow do I…" — and two badges butted against each other with
+ * no gap. */
+.attachment-badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 8px;
+}
+
 .attachment-badge {
     display: inline-flex;
     align-items: center;
@@ -802,7 +820,6 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
     padding: 4px 10px;
     border-radius: 12px;
     font-size: 0.78rem;
-    margin-bottom: 8px;
 }
 
 /* Assistant turns live in a keyed container; the old wrapper <div> never actually
@@ -884,12 +901,25 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
 .rcc-copy-btn:hover { background: var(--control-bg-hover); color: var(--text-primary); }
 .rcc-copy-btn[data-copied="true"] { color: var(--ok); border-color: var(--ok); }
 
-/* ===== SOURCES ===== */
+/* ===== SOURCES AND RELATED =====
+ *
+ * Two columns, not a wrapping row. These were `display: flex; flex-wrap: wrap` with
+ * the label as the first flex item, and `justify-content` applies per line in a
+ * multi-line flex container: the label indented line one and every later line started
+ * at the container's own edge. Measured against this stylesheet with six citations of
+ * real length (labels are "Page title — Heading", and RCC headings are often whole
+ * questions) at the 820px content width: line 1 began at x=86 and lines 2 and 3 at
+ * x=20. A grid puts the label in a column of its own so every row of every list shares
+ * one left edge, at any width, however many sources there are.
+ *
+ * `minmax(0, 1fr)` rather than `1fr`: a grid item's automatic minimum size is its
+ * content, so a single unbreakable long title would otherwise widen the column past
+ * the answer and scroll the page sideways. */
 .sources {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 6px;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: start;
+    column-gap: 10px;
     margin: 0.55rem 0 0;
 }
 
@@ -899,32 +929,114 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
     letter-spacing: 0.06em;
     text-transform: uppercase;
     color: var(--text-muted);
-    margin-right: 2px;
+    /* The label's cap height against the first line of the list beside it. Both are
+     * small type on different line heights, so this is optical, not arithmetic. */
+    padding-top: 3px;
 }
 
-.source-chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    max-width: 100%;
-    padding: 3px 10px;
-    border-radius: 12px;
+/* Sources: a numbered reference list, one per line. The number is what makes a
+ * reference list scannable and what lets an answer point at one.
+ *
+ * Built from divs rather than an `<ol>`, deliberately. Streamlit styles markdown
+ * lists, and a rule like `[data-testid="stMarkdownContainer"] ol` outranks a single
+ * class — so `list-style: none; padding: 0` here could lose in the app while the
+ * replica, which has no list rules at all, renders it perfectly. A counter numbers a
+ * div just as well and inherits nothing. */
+.source-list {
+    counter-reset: source;
+    display: grid;
+    row-gap: 2px;
+}
+
+/* A hanging indent, not a grid of columns. Each row is its own formatting context, so
+ * a three-column grid sized its columns per row: the `docs` badge landed at a
+ * different x on every line and stretched to fill whatever was left. Indenting the
+ * block and pulling the first line back by the same amount puts the number in the
+ * margin, aligns every wrapped line under the title above it, and leaves the badge
+ * inline where it belongs — immediately after the title it describes. */
+.source-item {
+    counter-increment: source;
+    padding-left: 2.2em;
+    text-indent: -2.2em;
+    font-size: 0.76rem;
+    line-height: 1.55;
+}
+
+.source-item::before {
+    content: counter(source) ".";
+    display: inline-block;
+    /* Wide enough for two digits: sources accumulate over tool rounds, so a tenth
+     * citation is reachable and "10." must not push its own title out of line. */
+    width: 1.8em;
+    margin-right: 0.4em;
+    text-indent: 0;
+    text-align: right;
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+}
+
+.source-link {
+    color: var(--chip-fg) !important;
+    text-decoration: none !important;
+    border-bottom: 1px solid transparent;
+    transition: color var(--transition), border-color var(--transition);
+    overflow-wrap: anywhere;
+}
+
+.source-link:hover {
+    color: var(--brand-text) !important;
+    border-bottom-color: var(--card-border-hover);
+}
+
+.source-kind {
+    margin-left: 6px;
+    font-size: 0.66rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--text-muted);
     background: var(--chip-bg);
     border: 1px solid var(--chip-border);
-    color: var(--chip-fg) !important;
+    border-radius: 4px;
+    padding: 0 5px;
+    white-space: nowrap;
+}
+
+/* Related: leads, not citations. No numbers, no badge, and a marker instead — the
+ * difference in kind stated in the layout rather than in the label alone. */
+.related-list {
+    display: grid;
+    row-gap: 2px;
+}
+
+.related-item {
+    padding-left: 1.7em;
+    text-indent: -1.7em;
     font-size: 0.74rem;
-    line-height: 1.5;
+    line-height: 1.55;
+}
+
+.related-item::before {
+    content: "›";
+    display: inline-block;
+    width: 1.3em;
+    margin-right: 0.4em;
+    text-indent: 0;
+    text-align: right;
+    color: var(--text-muted);
+}
+
+.related-link {
+    color: var(--text-muted) !important;
     text-decoration: none !important;
-    transition: background var(--transition), border-color var(--transition), color var(--transition);
+    border-bottom: 1px solid transparent;
+    transition: color var(--transition), border-color var(--transition);
+    overflow-wrap: anywhere;
 }
 
-.source-chip:hover {
-    background: var(--card-bg-hover);
-    border-color: var(--card-border-hover);
+.related-link:hover {
     color: var(--brand-text) !important;
+    border-bottom-color: var(--card-border-hover);
 }
-
-.source-chip .source-kind { opacity: 0.65; font-size: 0.68rem; }
 
 /* ===== FEEDBACK ===== */
 [class*="st-key-rate-"] { margin-top: 0.3rem !important; }
@@ -1055,7 +1167,8 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
 /* ===== FOCUS ===== */
 #paperclip-btn:focus-visible,
 .rcc-copy-btn:focus-visible,
-.source-chip:focus-visible,
+.source-link:focus-visible,
+.related-link:focus-visible,
 .stChatInput button:focus-visible,
 .stButton button:focus-visible {
     outline: 2px solid var(--brand-line) !important;
@@ -1101,7 +1214,7 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
      * from, and they only have to hold for the first frame — but they still have
      * to hold, and to agree with each other, so --bar-h covers this --strip-h
      * plus the input and the bar's padding. */
-    :root { --strip-h: 6rem; --bar-h: 14rem; }
+    :root { --strip-h: 6rem; --bar-h: 20rem; }
     .welcome { margin-top: 4vh; }
 }
 
@@ -1136,5 +1249,5 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
     }
 
     .user-bubble { background: none !important; color: #000 !important; border: 1px solid #999; }
-    .stChatMessage, .source-chip { color: #000 !important; }
+    .stChatMessage, .source-link, .related-link { color: #000 !important; }
 }

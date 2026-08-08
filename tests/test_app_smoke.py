@@ -1006,3 +1006,100 @@ class TestComposerReset:
                    "clear_token": 7}
         stub, _m = self.app(monkeypatch, session)
         assert stub.session_state["clear_token"] == 7
+
+
+class TestCitationApparatus:
+    """Sources and Related used to be two rows of identical chips, which left the reader
+    unable to tell what an answer was built from from what it merely suggests next — and
+    as wrapping rows they were ragged, because a flex row whose first item is the label
+    indents its first line only."""
+
+    @staticmethod
+    def session(count=3):
+        return {
+            "messages": [
+                {"role": "user", "text": "what are the storage quotas", "attachments": []},
+                {
+                    "role": "assistant",
+                    "text": "Your /home quota is 30 GB.",
+                    "sources": [
+                        {
+                            "id": f"docs/storage/main.md#q{n}",
+                            "label": f"Storage System Layout — Quota rule {n}",
+                            "url": f"https://example.test/storage/#q{n}",
+                            "source": "docs" if n % 2 else "web",
+                        }
+                        for n in range(count)
+                    ],
+                    "rating": None,
+                },
+            ],
+            "processing": False,
+        }
+
+    @staticmethod
+    def markup(stub):
+        """The rendered markup only. `markdown_html` also carries the injected
+        stylesheet, and app.css names every class asserted on below — so an
+        unscoped search finds `.source-list` in the CSS and passes on a page that
+        rendered none."""
+        return "\n".join(
+            html for html in stub.markdown_html if "<style" not in html
+        )
+
+    def render(self, monkeypatch, count=3):
+        stub, _module = run_app(monkeypatch, session=self.session(count))
+        return self.markup(stub)
+
+    def test_sources_are_a_numbered_list_one_per_line(self, monkeypatch):
+        html = self.render(monkeypatch)
+        assert html.count('class="source-item"') == 3
+        assert 'class="source-list"' in html
+
+    def test_the_chip_layout_is_gone(self, monkeypatch):
+        """Not a shared class with a different label — the layout has to say it."""
+        html = self.render(monkeypatch)
+        assert "source-chip" not in html
+
+    def test_no_list_element_is_used(self, monkeypatch):
+        """Streamlit styles markdown lists, and a `[data-testid=…] ol` rule outranks a
+        single class — so an `<ol>` here would inherit Streamlit's list indent in the
+        app while the render harness, which has no list rules at all, showed it
+        perfectly. Divs inherit nothing and a CSS counter numbers them just as well."""
+        html = self.render(monkeypatch)
+        for tag in ("<ol", "<ul", "<li>", "<li "):
+            assert tag not in html, f"{tag} rendered in the citation markup"
+
+    def test_every_citation_link_opens_in_a_new_tab_safely(self, monkeypatch):
+        html = self.render(monkeypatch)
+        links = [m for m in html.split("<a ") if "source-link" in m[:40]]
+        assert links, "no citation links rendered"
+        for link in links:
+            head = link[: link.index(">")]
+            assert 'target="_blank"' in head
+            assert 'rel="noopener noreferrer"' in head
+
+    def test_the_source_kind_badge_survives(self, monkeypatch):
+        assert 'class="source-kind">docs<' in self.render(monkeypatch)
+
+    def test_a_label_is_escaped(self, monkeypatch):
+        session = self.session(1)
+        session["messages"][1]["sources"][0]["label"] = "<script>x</script>"
+        stub, _module = run_app(monkeypatch, session=session)
+        html = self.markup(stub)
+        assert "<script>x</script>" not in html
+        assert "&lt;script&gt;" in html
+
+    def test_related_is_absent_when_there_is_nothing_to_relate(self, monkeypatch):
+        """The Related block is optional; an empty one would render a bare label."""
+        html = self.render(monkeypatch)
+        if "related-list" in html:
+            assert 'class="related-item"' in html
+
+    def test_nothing_renders_without_citations(self, monkeypatch):
+        session = self.session(1)
+        session["messages"][1]["sources"] = []
+        stub, _module = run_app(monkeypatch, session=session)
+        html = self.markup(stub)
+        assert "source-list" not in html
+        assert "sources-label" not in html

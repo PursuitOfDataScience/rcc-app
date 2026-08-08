@@ -30,7 +30,8 @@
 
     /* --- scrolling ------------------------------------------------------- */
 
-    // The single element that actually scrolls.
+    // Every box between the conversation and the document that could be the one
+    // scrolling, innermost first.
     //
     // This used to force `overflow: auto` onto stAppViewContainer, stMain and body,
     // manufacturing three nested scrollports where Streamlit has one — and then
@@ -39,17 +40,95 @@
     // and slicing it in half. Forcing overflow also risked trapping content that
     // overflowed the welcome screen on a short window, so it is gone entirely:
     // Streamlit's own scrolling is left alone.
+    //
+    // What replaced it was a three-item list — `[data-testid="stMain"]`, the
+    // scrolling element, documentElement — and both halves of that were wrong.
+    //
+    // The first entry is an unversioned Streamlit test id, which is the one kind of
+    // rule this repo has written down not to write: Streamlit has put the app's
+    // scrollbar on `.appview-container`, on `section.main` and on
+    // `[data-testid="stMain"]` across the versions requirements.txt allows. This
+    // app's own stylesheet sharpens it — app.css sets `overflow-x: hidden` on html,
+    // body, stAppViewContainer and stMain, and CSS computes a `visible` axis to
+    // `auto` beside a non-visible one, so all four are scroll containers here and
+    // two of them were not on the list. On a page whose vertical overflow settles on
+    // one of those two the list matched nothing, `scroller()` returned null, and
+    // `autoScroll` returned on its first line: no per-turn pin, no settle, no
+    // landing reset, on every turn at every window size. That is "the page stays
+    // where it is after I send a prompt" — and it was invisible from the harness,
+    // which defines the scrollport to be stMain or the document.
+    //
+    // The second half was `scrollHeight > clientHeight`, which is equally true of a
+    // box that merely OVERFLOWS. `overflow: visible` reports the overflow and then
+    // ignores every assignment to scrollTop, so a list that only asks about overflow
+    // can pick a box that is never going to move and write into it all turn.
+    //
+    // So the chain is walked and the browser is asked which of them is a scroll
+    // container, the same way `overlays()` asks it about fixed versus sticky.
+    function ports() {
+        var out = [];
+        function add(el) { if (el && out.indexOf(el) === -1) out.push(el); }
+        // Whatever Streamlit calls the box, the scrollport is an ancestor of the
+        // conversation — so start at the conversation and walk out. The fallbacks are
+        // the landing screen (no conversation yet) and a page mid-rebuild.
+        var anchor = doc.querySelector('.chat-container')
+            || doc.querySelector('.stChatMessage')
+            || doc.querySelector('.welcome')
+            || doc.querySelector('[data-testid="stMainBlockContainer"]')
+            || doc.querySelector('.block-container')
+            || doc.querySelector('[data-testid="stMain"]')
+            || doc.body;
+        for (var node = anchor; node; node = node.parentElement) add(node);
+        add(doc.scrollingElement);
+        add(doc.documentElement);
+        return out;
+    }
+
+    // Does writing to this element's scrollTop move anything a reader can see? The
+    // document always scrolls; anything else has to say so in its computed overflow.
+    // `hidden` is deliberately not on the list: it takes a scrollTop, but it shows no
+    // scrollbar, so it is a clipping wrapper rather than the page — and scrolling one
+    // of those hides content with no way to bring it back.
+    function scrollable(el) {
+        if (el === doc.scrollingElement || el === doc.documentElement) return true;
+        var overflow = view.getComputedStyle(el).overflowY;
+        return overflow === 'auto' || overflow === 'scroll' || overflow === 'overlay';
+    }
+
+    // Move the view, now, whatever the stylesheet thinks about animation.
+    //
+    // `el.scrollTop = x` obeys `scroll-behavior`, and a `smooth` anywhere in the chain
+    // — Streamlit's own stylesheet is not visible from this repo, and one line of it
+    // would do — turns every scroll in this file into an animation that has not
+    // started when the next line reads the position back. The reader sees the page
+    // crawl, and this script reads its own unfinished scroll as a reader who has taken
+    // the page over. `behavior: 'instant'` overrides the declaration; the assignment
+    // stays as the fallback for anything without `scrollTo`.
+    function scrollView(el, top) {
+        if (el.scrollTo) {
+            try {
+                el.scrollTo({top: top, behavior: 'instant'});
+                return;
+            } catch (err) { /* older signature: fall through */ }
+        }
+        el.scrollTop = top;
+    }
+
+    // The single element that actually scrolls.
     function scroller() {
-        var candidates = [
-            doc.querySelector('[data-testid="stMain"]'),
-            doc.scrollingElement,
-            doc.documentElement
-        ];
+        var candidates = ports();
+        var overflowing = null;
         for (var i = 0; i < candidates.length; i++) {
             var el = candidates[i];
-            if (el && el.scrollHeight > el.clientHeight + 1) return el;
+            if (el.scrollHeight <= el.clientHeight + 1) continue;
+            if (scrollable(el)) return el;
+            // Remembered rather than returned. If nothing in the chain admits to
+            // being a scroll container, writing into the box that at least overflows
+            // is a guess — but the alternative is what shipped, which was to return
+            // null and do nothing at all, and doing nothing is the bug.
+            if (!overflowing) overflowing = el;
         }
-        return null;
+        return overflowing;
     }
 
     // Streamlit's header strip is 3.75rem — 60px, full width, and on top of the
@@ -86,10 +165,10 @@
         return top;
     }
 
-    // Which question the per-turn scroll has been spent on ('' = none yet).
-    var pinnedTurn = '';
-    // Where that scroll left the view, so the next pass can tell its own work from a
-    // reader who has scrolled somewhere else (-1 = nothing set yet this turn).
+    // Which question the chase is currently on ('' = none yet).
+    var chasing = '';
+    // Where the last scroll this script made left the view, so the next pass can tell
+    // its own work from a reader who has scrolled somewhere else (-1 = nothing yet).
     var pinnedAt = -1;
 
     /* --- chrome measurement ---------------------------------------------- */
@@ -342,7 +421,7 @@
         // returns above, a pass that found nothing to do would spend the turn's one
         // chance and a later pass with a real gap could not take it.
         doc.body.dataset.sageSettled = stamp;
-        el.scrollTop += move;
+        scrollView(el, el.scrollTop + move);
     }
 
     // A landing screen starts at the top. Streamlit keeps the scroll position
@@ -358,9 +437,16 @@
         }
         if (doc.body.dataset.sageAtTop !== 'done') {
             doc.body.dataset.sageAtTop = 'done';
-            if (el.scrollTop > 0) el.scrollTop = 0;
+            if (el.scrollTop > 0) scrollView(el, 0);
         }
         return true;
+    }
+
+    // Has the reader taken this turn's page over? Recorded on the parent document
+    // rather than in this realm, because Streamlit rebuilds this script's iframe and a
+    // flag that died with it would yank them back the moment it did.
+    function heldByReader(stamp) {
+        return doc.body.dataset.sageHeld === stamp;
     }
 
     function autoScroll() {
@@ -368,14 +454,15 @@
         if (!el) return;
         if (landing(el)) return;
         if (!isProcessing()) {
-            pinnedTurn = '';
+            chasing = '';
             pinnedAt = -1;
+            delete doc.body.dataset.sageHeld;
             settle(el);
             return;
         }
 
-        // Put the question at the TOP of the viewport once per turn and let the
-        // answer stream in beneath it, the way every chat UI behaves.
+        // Bring the question to the TOP of the viewport and let the answer stream in
+        // beneath it, the way every chat UI behaves.
         //
         // This used to pin to the document's absolute bottom on every frame. On
         // anything but a tall window that scrolls the question clean off the top —
@@ -387,65 +474,68 @@
         var latest = messages[messages.length - 1];
         if (!latest) return;
 
-        // Keyed on how many questions there are, not on a boolean, and the key is only
-        // spent once the scroll has actually landed.
-        //
-        // A plain flag set before the scroll was the bug behind "I have to scroll down
-        // myself": this script's realm outlives some reruns and dies on others, so the
-        // flag could still be set from the previous turn — and a pass that ran before
-        // Streamlit had rendered the new question pinned the *old* one and then latched,
-        // leaving the reader wherever they happened to be while the answer streamed in
-        // somewhere below the fold. Stamping after the fact means a pass that measured
-        // a half-built page simply tries again.
+        // A new question starts a new chase, so nothing below reads a position — or a
+        // hand-off — left over from the previous turn.
         var stamp = String(messages.length);
-        var box = latest.getBoundingClientRect();
-        // Off-screen entirely — above the top or below the bottom — is always worth a
-        // scroll, whatever the stamp says. This is the belt to the stamp's braces: it
-        // cannot latch, because it asks where the question IS rather than what has
-        // already been done to it.
-        var offscreen = box.bottom < 0 || box.top > view.innerHeight;
-        // A new question starts a new chase, so nothing below reads a position this
-        // script set during the previous turn.
-        if (pinnedTurn !== stamp) pinnedAt = -1;
-        // Has the view moved since this script last set it? Then the reader has taken
-        // the page over mid-answer, and following the tail would drag them back to it.
-        var reader = pinnedAt >= 0 && Math.abs(el.scrollTop - pinnedAt) > 4;
-        if (pinnedTurn !== stamp || offscreen) {
-            if (reader && !offscreen) {
-                pinnedTurn = stamp;
-                return;
-            }
-            var target = box.top + el.scrollTop - TOP_GAP;
-            var limit = Math.max(0, el.scrollHeight - el.clientHeight);
-            var landed = Math.max(0, Math.min(target, limit));
-            el.scrollTop = landed;
-            // Spent only if the scroller took it. It refuses while Streamlit is
-            // mid-rebuild, and a stamp spent on a refused scroll is a turn the reader
-            // has to chase by hand.
-            if (Math.abs(el.scrollTop - landed) < 2) {
-                pinnedAt = el.scrollTop;
-                // And only if the target was reachable. At the moment a question is
-                // appended the page has not grown an answer yet, so `limit` is a few
-                // hundred pixels short of putting it at the top: the scroll lands on
-                // the bottom of the page instead. Latching there is why "it doesn't
-                // move down when I send a question" survived a fix — the view stopped
-                // following on the very first pass and the answer streamed in below
-                // the fold for the rest of the turn. Measured on a 1263x700 window:
-                // the page grew to 1890 while the scroll stayed at 1084, leaving the
-                // tail 778px under the composer. Clamped means keep following; the
-                // chase ends by itself the moment the question can sit at TOP_GAP.
-                if (landed >= target - 2) pinnedTurn = stamp;
-            }
-            return;
+        if (chasing !== stamp) {
+            chasing = stamp;
+            pinnedAt = -1;
+            delete doc.body.dataset.sageHeld;
         }
 
-        // Then leave the view alone for the rest of the turn. Chasing the tail as
-        // tokens arrive re-scrolls the question straight back off the top on any
-        // window where the reply plus the input bar exceeds the viewport — and
-        // "am I near the bottom?" is always true on a short document, so the pin
-        // above would be undone on the very next frame. A reply longer than the
-        // screen is the reader's to scroll; nothing here should grab the viewport
-        // out from under them.
+        var limit = Math.max(0, el.scrollHeight - el.clientHeight);
+        // Has the reader scrolled away from where this script left the view? Then the
+        // page is theirs for the rest of the turn.
+        //
+        // Compared against the position CLAMPED to what the page can still offer, not
+        // against the raw one. A page that shrinks takes the scroll down with it — the
+        // tool round that wipes what streamed and starts the answer again does exactly
+        // that — and reading the browser's clamp as a reader would hand the turn over
+        // on a move nobody made, leaving the real answer to arrive below the fold.
+        //
+        // Either direction counts. While the chase is running there is no downward move
+        // to make — it leaves the view at the bottom of the page every pass — so a
+        // reader who has gone down is one who has gone down from the pinned question,
+        // to read the tail, and scrolling them back up to it is the same rudeness as
+        // dragging them forward.
+        if (pinnedAt >= 0
+                && Math.abs(el.scrollTop - Math.min(pinnedAt, limit)) > 4) {
+            doc.body.dataset.sageHeld = stamp;
+        }
+        if (heldByReader(stamp)) return;
+
+        var box = latest.getBoundingClientRect();
+        // Done when the question IS at the top of the window — a position, asked of the
+        // layout every pass, rather than a flag remembered from an earlier one.
+        //
+        // Two rounds of this bug were flags. First a boolean, which survived a rerun in
+        // a realm that outlived it, so a pass that ran before Streamlit had rendered
+        // the new question latched on the old one. Then a stamp spent once the scroll
+        // "landed", which latched on a scroll clamped by a page that had not grown an
+        // answer yet. Both left the reader on a still page with the reply arriving
+        // somewhere below it, and both were invisible to a check that reproduced the
+        // formula instead of running this function.
+        //
+        // A position cannot go stale that way. While the page is too short to lift the
+        // question that high the scroll clamps to the bottom, this stays false, and the
+        // view keeps up with the page as it grows — which is the "scroll down to the
+        // bottom" a reader asks for. The chase ends by itself on the first pass that
+        // can put the question at TOP_GAP, and from there a reply longer than the
+        // window is the reader's to scroll. It also self-corrects: `#processing-signal`
+        // and the new question are separate deltas, so a pass can see a generation in
+        // flight with the *previous* question still the newest one in the DOM, and
+        // whatever that pass does to the view is re-measured against the real question
+        // on the next one.
+        if (Math.abs(box.top - TOP_GAP) <= 2) return;
+
+        var target = box.top + el.scrollTop - TOP_GAP;
+        scrollView(el, Math.max(0, Math.min(target, limit)));
+        // Read back rather than assumed. The scroller refuses while Streamlit is
+        // mid-rebuild, and `scroll-behavior: smooth` anywhere in the chain turns the
+        // assignment into an animation that has not started yet — in both cases the
+        // view is still where it was, and recording the intended position instead
+        // would read as the reader having moved it on the very next pass.
+        pinnedAt = el.scrollTop;
     }
 
     /* --- injected controls ---------------------------------------------- */
