@@ -5,6 +5,13 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+# Pin the profile before anything imports `sage`. Most of this suite asserts RCC
+# behaviour — its URLs, its synonyms, its welcome copy — and `SAGE_PROFILE` in a
+# developer's shell or a CI job would otherwise decide, silently, whether those
+# tests are checking the thing they name. Tests that care about another profile
+# pass it explicitly (`profiles.get("site")`) or set the variable themselves.
+os.environ["SAGE_PROFILE"] = "rcc"
+
 from sage import corpus as corpus_mod  # noqa: E402
 from sage.search import Index  # noqa: E402
 

@@ -71,6 +71,39 @@ Hand-written ground truth about the author lives in [`site_notes/`](site_notes/)
 is indexed alongside the articles. It is in this repo rather than the website's so
 that adding the assistant changes nothing about how the site is built.
 
+### Deploying the website assistant
+
+The app is one Streamlit script, so the second deployment is the same repo with one
+setting changed. On [Streamlit Community Cloud](https://share.streamlit.io/):
+
+1. **New app** → this repo, branch of your choice, main file `app.py`.
+2. **Advanced settings → Secrets** — this is where the keys go. They are never
+   committed, and `app.py` reads `st.secrets` when the environment has nothing:
+
+   ```toml
+   MISTRAL_API_KEY = "..."
+   OPENCODE_API_KEY = "sk-zen-..."   # optional; free tier, and the failover target
+
+   SAGE_PROFILE = "site"
+   ```
+
+   One key is enough. With both, the model picker offers both and a spent quota
+   fails over on its own instead of ending the conversation.
+3. Deploy. The corpus is committed, so there is nothing to fetch at boot: the index
+   builds from `site/` in a few seconds and is cached for the life of the process.
+
+Both deployments can run at once from the same repo and branch — they differ only by
+`SAGE_PROFILE`, so the RCC app keeps working unchanged while the website one runs
+beside it.
+
+Two things worth knowing before pointing readers at it:
+
+- **Community Cloud apps sleep after about 12 hours without traffic**, and a sleeping
+  app shows an interstitial before it will answer. That is survivable for a link
+  people click deliberately; it is the reason this is not yet embedded in the site.
+- `SAGE_MAX_TOKENS` defaults to 8000, which is sized for long HPC walkthroughs. Blog
+  answers want far less — set it to about 1500 in the site deployment's secrets.
+
 ## Providers
 
 Both sit behind one interface in [`sage/providers.py`](sage/providers.py) and normalise onto the same streaming chunk, so nothing downstream knows which is in use.

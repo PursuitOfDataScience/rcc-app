@@ -474,8 +474,8 @@ if not has_messages:
     st.markdown(
         f"""
         <div class="welcome">
-            <h1 class="welcome-title">{html.escape(PROFILE.welcome_title)}</h1>
-            <p class="welcome-subtitle">{html.escape(PROFILE.welcome_subtitle)}</p>
+            <h1 class="welcome-title">{escape(PROFILE.welcome_title)}</h1>
+            <p class="welcome-subtitle">{escape(PROFILE.welcome_subtitle)}</p>
         </div>
         """,
         unsafe_allow_html=True,
