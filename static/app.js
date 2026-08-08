@@ -88,6 +88,9 @@
 
     // Which question the per-turn scroll has been spent on ('' = none yet).
     var pinnedTurn = '';
+    // Where that scroll left the view, so the next pass can tell its own work from a
+    // reader who has scrolled somewhere else (-1 = nothing set yet this turn).
+    var pinnedAt = -1;
 
     /* --- chrome measurement ---------------------------------------------- */
 
@@ -366,6 +369,7 @@
         if (landing(el)) return;
         if (!isProcessing()) {
             pinnedTurn = '';
+            pinnedAt = -1;
             settle(el);
             return;
         }
@@ -400,7 +404,17 @@
         // cannot latch, because it asks where the question IS rather than what has
         // already been done to it.
         var offscreen = box.bottom < 0 || box.top > view.innerHeight;
+        // A new question starts a new chase, so nothing below reads a position this
+        // script set during the previous turn.
+        if (pinnedTurn !== stamp) pinnedAt = -1;
+        // Has the view moved since this script last set it? Then the reader has taken
+        // the page over mid-answer, and following the tail would drag them back to it.
+        var reader = pinnedAt >= 0 && Math.abs(el.scrollTop - pinnedAt) > 4;
         if (pinnedTurn !== stamp || offscreen) {
+            if (reader && !offscreen) {
+                pinnedTurn = stamp;
+                return;
+            }
             var target = box.top + el.scrollTop - TOP_GAP;
             var limit = Math.max(0, el.scrollHeight - el.clientHeight);
             var landed = Math.max(0, Math.min(target, limit));
@@ -408,7 +422,20 @@
             // Spent only if the scroller took it. It refuses while Streamlit is
             // mid-rebuild, and a stamp spent on a refused scroll is a turn the reader
             // has to chase by hand.
-            if (Math.abs(el.scrollTop - landed) < 2) pinnedTurn = stamp;
+            if (Math.abs(el.scrollTop - landed) < 2) {
+                pinnedAt = el.scrollTop;
+                // And only if the target was reachable. At the moment a question is
+                // appended the page has not grown an answer yet, so `limit` is a few
+                // hundred pixels short of putting it at the top: the scroll lands on
+                // the bottom of the page instead. Latching there is why "it doesn't
+                // move down when I send a question" survived a fix — the view stopped
+                // following on the very first pass and the answer streamed in below
+                // the fold for the rest of the turn. Measured on a 1263x700 window:
+                // the page grew to 1890 while the scroll stayed at 1084, leaving the
+                // tail 778px under the composer. Clamped means keep following; the
+                // chase ends by itself the moment the question can sit at TOP_GAP.
+                if (landed >= target - 2) pinnedTurn = stamp;
+            }
             return;
         }
 
