@@ -170,13 +170,35 @@ WEB_CHUNK_OVERLAP = _env_int("SAGE_WEB_CHUNK_OVERLAP", 240)
 SEARCH_RESULTS = _env_int("SAGE_SEARCH_RESULTS", 6)
 SNIPPET_CHARS = _env_int("SAGE_SNIPPET_CHARS", 240)
 
+# At most this many sections from one page in a single set of results. Measured
+# before it existed: 53% of the six slots went to a page already in the list, so a
+# search asking for six sections effectively asked for two or three.
+MAX_PER_PAGE = _env_int("SAGE_MAX_PER_PAGE", 2)
+
+# Below this top score — or with any query word absent from the whole corpus —
+# retrieval reports itself as weak so the model can decline instead of answering
+# from whatever happened to match. 12.0 sits under every passing case in
+# tests/test_retrieval_eval.py and above the off-topic queries it checks; re-run
+# that eval if you change it.
+MIN_CONFIDENT_SCORE = _env_float("SAGE_MIN_CONFIDENT_SCORE", 12.0)
+
 BM25_K1 = _env_float("SAGE_BM25_K1", 1.5)
-BM25_B = _env_float("SAGE_BM25_B", 0.75)
+# 0.95, not the conventional 0.75. Once `_stem` collapsed verb inflections, common
+# HPC verbs (run/running, cancel/cancelled, request/requested) became high-frequency
+# terms, and long FAQ pages that repeat them started beating the focused page that
+# actually answers — nine of ten precision@1 misses had the right page at rank 2.
+# Stronger length normalization is what fixed it, and it took recall@3 from 94% to
+# 100%. Re-run tests/test_retrieval_eval.py if you change it.
+BM25_B = _env_float("SAGE_BM25_B", 0.95)
 TITLE_BOOST = _env_float("SAGE_TITLE_BOOST", 2.5)
-PATH_BOOST = _env_float("SAGE_PATH_BOOST", 1.2)
-# 0.8 measured best on tests/test_retrieval_eval.py (recall@3 94%→97%, p@1 76%→79%)
-# without raising scores for off-topic queries. Re-run that eval if you change it.
-SYNONYM_WEIGHT = _env_float("SAGE_SYNONYM_WEIGHT", 0.8)
+# 2.0, up from 1.2: with the stronger length normalization above, the path is a
+# more reliable topic signal than raw term frequency. Worth +3pp recall@3.
+PATH_BOOST = _env_float("SAGE_PATH_BOOST", 2.0)
+# 0.5, down from 0.8. Synonyms are what let "my job got killed" reach the OOM docs,
+# but at 0.8 they also let `cuda` pull software/compilers.md above slurm/sbatch.md
+# for "how do I request a GPU". Measured across 0.3–0.8 on the eval: 0.5 is where
+# recall@3 reaches 100% without giving up precision@1.
+SYNONYM_WEIGHT = _env_float("SAGE_SYNONYM_WEIGHT", 0.5)
 
 # --- conversation ----------------------------------------------------------
 
