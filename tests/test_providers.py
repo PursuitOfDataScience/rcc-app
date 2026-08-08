@@ -16,11 +16,15 @@ class TestModel:
         assert model.key == "opencode:deepseek-v4-flash-free"
         assert providers.parse_key(model.key) == model
 
-    def test_labels_name_the_provider_and_stay_short(self):
+    def test_labels_are_the_model_name_and_stay_short(self):
+        """No provider prefix. "Zen · deepseek-v4-flash-free" spent a third of the
+        picker's width restating what the rest of the row already said, on every line,
+        and `mistral-` on the front of the Mistral ids does that job for free."""
         mistral = providers.Model("mistral", "mistral-small-latest").label
         zen = providers.Model("opencode", "deepseek-v4-flash-free").label
-        assert mistral == "Mistral · small-latest", "the doubled prefix reads badly"
-        assert zen == "Zen · deepseek-v4-flash-free"
+        assert mistral == "mistral-small-latest"
+        assert zen == "deepseek-v4-flash-free"
+        assert "·" not in mistral + zen
         # Long labels get ellipsed in a 240px picker, so keep them under ~30 chars.
         assert max(len(mistral), len(zen)) <= 30
 
@@ -298,3 +302,77 @@ class TestTokenBudgetReachesTheRequest:
         streamed = "".join(c.text for c in provider.stream("z1", [], None))
         assert streamed == "ok"
         assert sent.get("max_tokens") == config.MAX_TOKENS
+
+
+class TestFreeZenModels:
+    """Zen serves its paid lineup from the same endpoint as its free one.
+
+    Discovery returned all of it — the whole Claude and GPT range — and the picker
+    offered every one as if this deployment had a balance for it. Each of those is a
+    button that returns a 402.
+    """
+
+    def endpoint(self, monkeypatch, served):
+        """An OpenCode provider whose /models call returns `served`.
+
+        httpx is imported inside the method under test and is not installed here, so
+        the module is stubbed the way the streaming tests above do it.
+        """
+        class Response:
+            status_code = 200
+
+            def raise_for_status(self):
+                pass
+
+            def json(self):
+                return {"data": [{"id": name} for name in served]}
+
+        fake = ModuleType("httpx")
+        fake.get = lambda *a, **k: Response()
+        monkeypatch.setitem(sys.modules, "httpx", fake)
+        return providers.OpenAICompatProvider(
+            "sk-zen-test", "https://opencode.ai/zen/v1",
+            preferred=("deepseek-v4-flash-free",),
+        )
+
+    def test_the_paid_lineup_is_not_offered(self, monkeypatch):
+        served = [
+            "deepseek-v4-flash-free", "big-pickle", "hy3-free",
+            "claude-opus-4-7", "claude-fable-5", "gpt-5.5", "claude-haiku-4-5",
+        ]
+        offered = [model.id for model in self.endpoint(monkeypatch, served).models()]
+        assert set(offered) == {"deepseek-v4-flash-free", "big-pickle", "hy3-free"}
+
+    def test_the_rule_is_a_convention_not_a_hardcoded_list(self, monkeypatch):
+        """Zen's free lineup changes without notice, so a model this repo has never
+        heard of must still be offered if it is named like a free one."""
+        served = ["something-brand-new-free", "claude-opus-9"]
+        offered = [model.id for model in self.endpoint(monkeypatch, served).models()]
+        assert offered == ["something-brand-new-free"]
+
+    def test_nothing_free_means_offer_everything_rather_than_nothing(
+        self, monkeypatch, caplog=None
+    ):
+        """If Zen renames its free tier, an empty picker is worse than a full one:
+        the reader can still pick something, and the log says to check the marks."""
+        served = ["claude-opus-4-7", "gpt-5.5"]
+        offered = [model.id for model in self.endpoint(monkeypatch, served).models()]
+        assert offered == served
+
+    def test_a_paid_deployment_can_see_its_whole_lineup(self, monkeypatch):
+        monkeypatch.setattr(config, "ZEN_FREE_ONLY", False)
+        served = ["deepseek-v4-flash-free", "claude-opus-4-7"]
+        offered = [model.id for model in self.endpoint(monkeypatch, served).models()]
+        assert offered == served
+
+
+def test_a_model_label_is_just_the_model_name():
+    """The provider prefix spent a third of the picker's width restating what the row
+    already said, on every line."""
+    assert providers.Model(providers.OPENCODE, "deepseek-v4-flash-free").label == (
+        "deepseek-v4-flash-free"
+    )
+    assert providers.Model(providers.MISTRAL, "mistral-small-latest").label == (
+        "mistral-small-latest"
+    )
+    assert "Zen" not in providers.Model(providers.OPENCODE, "big-pickle").label

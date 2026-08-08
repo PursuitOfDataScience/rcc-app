@@ -61,11 +61,35 @@ OPENCODE_MODELS = _env_list(
     (
         "deepseek-v4-flash-free",
         "big-pickle",
-        "mimo-v2.5",
-        "nemotron-3-ultra",
-        "north-mini-code",
+        "mimo-v2.5-free",
+        "nemotron-3-ultra-free",
+        "north-mini-code-free",
+        "hy3-free",
+        "laguna-s-2.1-free",
+        "ling-3.0-tiny-free",
+        "longcat-2.0-free",
     ),
 )
+
+# Zen serves paid models from the same endpoint as the free ones — the discovery call
+# came back with the whole Claude and GPT lineup, none of which this deployment has a
+# balance for, and every one of which was offered in the picker as if it worked.
+#
+# Filtered by a RULE rather than a list, because Zen's free lineup changes without
+# notice and a hardcoded set goes stale silently: every free model it serves is named
+# with a `-free` suffix, the exception being the stealth models it publishes under a
+# codename while they are free. Naming the convention keeps working when the list
+# changes; naming the list does not.
+ZEN_FREE_MARKS = _env_list("SAGE_ZEN_FREE_MARKS", ("-free", "big-pickle"))
+# Off for a deployment with a paid Zen balance, which should see everything it can use.
+ZEN_FREE_ONLY = os.getenv("SAGE_ZEN_FREE_ONLY", "1").strip().lower() not in (
+    "0", "false", "no", ""
+)
+
+
+def is_free_zen_model(model: str) -> bool:
+    lowered = (model or "").lower()
+    return any(mark and mark.lower() in lowered for mark in ZEN_FREE_MARKS)
 
 # Substrings marking models that cannot call tools. Those answer from a single
 # retrieval pass instead of the search/read loop. The app also falls back

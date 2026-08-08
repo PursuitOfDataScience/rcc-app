@@ -586,7 +586,13 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
 }
 
 .stChatInput textarea {
-    padding: 16px 24px !important;
+    /* 10px on the left, not 24. The box already insets the textarea past the
+     * paperclip, so the textarea's own padding is added on top of that: at 24px the
+     * cursor sat 26px clear of the clip, which reads as two unrelated things that
+     * happen to share a box. 10px puts it 12px away — the same inset the clip itself
+     * has from the edge — so the row is one thing. Right side is 0 because the box
+     * reserves the send button's corner instead. */
+    padding: 16px 0 16px 10px !important;
     min-height: 24px !important;
     height: auto !important;
     resize: none !important;
@@ -626,22 +632,16 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
 .stChatInput > div { padding-right: 56px !important; }
 .stChatInput textarea { padding-right: 0 !important; }
 
-/* The paperclip follows it down. Both buttons used to be centred by the box's own
- * `align-items: center`; pinning only the send button to `bottom: 10px` left them
- * 67px apart once a paragraph was typed, one at the vertical middle and one at the
- * floor. They are a pair — the same row of the same box. */
-#paperclip-btn {
-    top: auto !important;
-    bottom: 10px !important;
-    transform: none !important;
-}
-
-/* Paperclip injected by app.js — styled here so it follows the theme. */
+/* Paperclip injected by app.js — styled here so it follows the theme.
+ *
+ * Pinned to the bottom, like the send button across from it. Both used to be centred
+ * by the box's own `align-items: center`; pinning only the send button left them 67px
+ * apart once a paragraph was typed, one at the vertical middle and one at the floor.
+ * They are a pair — the same row of the same box. */
 #paperclip-btn {
     position: absolute;
     left: 12px;
-    top: 50%;
-    transform: translateY(-50%);
+    bottom: 10px;
     z-index: 1000;
     display: flex;
     align-items: center;

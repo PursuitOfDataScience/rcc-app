@@ -419,24 +419,23 @@ def render_model_picker() -> None:
     """
     if len(MODELS) < 2:
         return
-    with st.popover(MODEL.label):
-        st.caption("Answering model · Zen models are free")
-        with st.container(key="model-list"):
-            for index, option in enumerate(MODELS):
-                mark = "●" if option.key == MODEL.key else "○"
-                if st.button(
-                    f"{mark}  {option.label}",
-                    key=f"pick-{index}",
-                    use_container_width=True,
-                ):
-                    st.session_state.model = option.key
-                    # A deliberate choice clears the record of the automatic one,
-                    # so the next quota error can fail over again.
-                    st.session_state.failed_over = False
-                    st.session_state.switched_from = None
-                    st.session_state.notice = ""
-                    st.rerun()
-
+    # One `with`, not two nested: the caption that used to sit between them is gone,
+    # and ruff is right that a bare nest reads as if something belonged in the gap.
+    with st.popover(MODEL.label), st.container(key="model-list"):
+        for index, option in enumerate(MODELS):
+            mark = "●" if option.key == MODEL.key else "○"
+            if st.button(
+                f"{mark}  {option.label}",
+                key=f"pick-{index}",
+                use_container_width=True,
+            ):
+                st.session_state.model = option.key
+                # A deliberate choice clears the record of the automatic one,
+                # so the next quota error can fail over again.
+                st.session_state.failed_over = False
+                st.session_state.switched_from = None
+                st.session_state.notice = ""
+                st.rerun()
 
 def render_controls() -> None:
     """One line under the input: Clear and the model picker, in the right corner.
@@ -692,7 +691,13 @@ def render_attachments() -> None:
     with st.container(key="attachments"):
         for index, item in enumerate(st.session_state.attachments):
             if st.button(
-                f"{item.icon} {item.filename} · {item.summary}  ✕",
+                # Filename and the ✕, and a truncation warning if there is one. The
+                # character and page counts that used to sit here were four chips of
+                # arithmetic on a four-file turn, none of it telling the reader
+                # anything they did not already know about a file they chose.
+                f"{item.icon} {item.filename}"
+                + (f" · {item.summary}" if item.summary else "")
+                + "  ✕",
                 key=f"drop-attachment-{index}",
                 help="Remove this attachment",
             ):

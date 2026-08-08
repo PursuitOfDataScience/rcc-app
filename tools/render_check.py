@@ -320,10 +320,13 @@ def panel(legacy: bool = False) -> str:
         f'<div class="element-container"><div class="stButton">'
         f"<button><p>{label}</p></button></div></div>"
         for label in (
-            "● Mistral · small-latest",
-            "○ Mistral · medium-latest",
-            "○ Zen · deepseek-v4-flash-free",
-            "○ Zen · claude-opus-4-6",
+            # The model's own id, with no provider prefix — a third of the picker's
+            # width used to restate "Zen ·" on every line. All free: the paid lineup
+            # Zen serves from the same endpoint is filtered out before the picker.
+            "● mistral-small-latest",
+            "○ mistral-medium-latest",
+            "○ deepseek-v4-flash-free",
+            "○ nemotron-3-ultra-free",
         )
     )
     body = (
@@ -386,7 +389,7 @@ def strip(clear: bool = True, wrapped: bool = True) -> str:
     controls = f"""
     {trash}
     <div class="element-container"><div data-testid="stPopover"><div class="stPopover">
-      <button><p>Zen · deepseek-v4-flash-free</p></button>
+      <button><p>deepseek-v4-flash-free</p></button>
     </div></div></div>"""
     if wrapped:
         return f"""<div class="st-key-composer-strip" data-testid="stVerticalBlockBorderWrapper">
@@ -597,7 +600,7 @@ SCENARIOS = {
   <div data-testid="stColumn"><div class="st-key-retry element-container">
     <div class="stButton"><button><p>↻ Try again</p></button></div></div></div>
   <div data-testid="stColumn"><div class="st-key-switch-model element-container">
-    <div class="stButton"><button><p>→ Use Zen · deepseek-v4-flash-free</p></button></div></div></div>
+    <div class="stButton"><button><p>→ Use deepseek-v4-flash-free</p></button></div></div></div>
  </div></div>"""
     + strip(),
 }
@@ -742,10 +745,19 @@ function snapshot() {
   // The popover panel's own background. Reported as a colour rather than folded into
   // the contrast numbers because the failure was not unreadable text — it was a white
   // slab on a dark page, which contrasts beautifully and looks awful.
+  // Where the text cursor sits relative to the paperclip. Two paddings stack to
+  // produce it — the box insets the textarea past the clip, then the textarea insets
+  // its own text — so neither rectangle on its own says how far apart they look.
+  var clipEl = document.getElementById('paperclip-btn');
+  var areaEl = document.querySelector('.stChatInput textarea');
+  var cursorGap = (clipEl && areaEl) ? Math.round(
+      areaEl.getBoundingClientRect().left
+      + parseFloat(getComputedStyle(areaEl).paddingLeft)
+      - clipEl.getBoundingClientRect().right) : null;
   var panelEl = document.querySelector('[data-testid="stPopoverBody"]');
   var panelBg = panelEl ? getComputedStyle(panelEl).backgroundColor : '';
   var out = {viewport: {w: innerWidth, h: innerHeight}, hostBar: HOSTBAR,
-           panelBg: panelBg,
+           panelBg: panelBg, cursorGap: cursorGap,
            scrolled: port ? Math.round(port.scrollTop) : 0,
            // Whether there is anywhere to scroll to. A conversation shorter than
            // the window sits at the bottom of the space reserved for it, so if
@@ -856,6 +868,9 @@ MAX_INPUT_DEAD_SPACE = 20
 # pinned 0.35rem above it; this is that plus the bar's own top padding and rounding.
 # Rendered in the flow instead, they were most of a page away.
 MAX_CHIP_GAP = 40
+# How far the text cursor may sit from the paperclip beside it. The clip is inset 12px
+# from the edge of the box; the cursor matching that reads as one row.
+MAX_CURSOR_GAP = 16
 
 
 def page(body: str, scheme: str, scroll: bool, generating: bool = False,
@@ -1117,6 +1132,16 @@ def audit(data, scenario, scheme, width, state: str) -> list[str]:
                 f"the composer, not of the page)"
             )
 
+    # The paperclip and the first character of the question are one row of one box, so
+    # they have to read as one thing. At 26px apart — the box's 50px inset plus the
+    # textarea's own 24px — they read as two controls that happen to share a border.
+    gap = data.get("cursorGap")
+    if gap is not None and not 0 <= gap <= MAX_CURSOR_GAP:
+        problems.append(
+            f"{where}: the text cursor sits {gap}px from the paperclip "
+            f"(want 0-{MAX_CURSOR_GAP} — they are the same row of the same box)"
+        )
+
     # The popover panel must belong to the page it is drawn over. It is portalled to
     # the end of <body>, so it inherits nothing from the app — and when the stylesheet
     # aimed only at a Base Web wrapper Streamlit had removed, what a dark-mode reader
@@ -1167,6 +1192,17 @@ def audit(data, scenario, scheme, width, state: str) -> list[str]:
             problems.append(
                 f"{where}: the question is {data['hostBar'] - asked['top']}px above "
                 "the fold while its answer generates"
+            )
+        # And not below it either. Sending a follow-up from halfway up a long
+        # conversation left the reader where they were, with the question and the answer
+        # arriving off the bottom of the screen — "i have to scroll down myself". The
+        # scroll that fixes it is app.js's per-turn pin, so this is the check that the
+        # pin actually ran.
+        if asked and asked["top"] > data["viewport"]["h"]:
+            problems.append(
+                f"{where}: the question is {asked['top'] - data['viewport']['h']}px "
+                "below the fold while its answer generates (the per-turn scroll did "
+                "not run)"
             )
         # And not the other way either. The slack that sits a *finished* short
         # conversation above the composer was also being applied to a question with

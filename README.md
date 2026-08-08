@@ -31,7 +31,7 @@ in `.streamlit/secrets.toml` (gitignored) instead of the environment.
 Both sit behind one interface in [`sage/providers.py`](sage/providers.py) and normalise onto the same streaming chunk, so nothing downstream knows which is in use.
 
 - **Mistral** — the official SDK.
-- **OpenCode Zen** — the OpenAI-compatible endpoint at `https://opencode.ai/zen/v1`. Its model list comes from `GET /models` at runtime, because a free tier's lineup changes without notice; `SAGE_OPENCODE_MODELS` is only the fallback.
+- **OpenCode Zen** — the OpenAI-compatible endpoint at `https://opencode.ai/zen/v1`. Its model list comes from `GET /models` at runtime, because a free tier's lineup changes without notice; `SAGE_OPENCODE_MODELS` is only the fallback. Zen serves its paid lineup from the same endpoint, so the picker keeps only the free ones — matched by naming convention (`-free`, plus stealth codenames) rather than a hardcoded list, since the lineup moves. `SAGE_ZEN_FREE_ONLY=0` shows everything, for a deployment with a balance.
 
 Models that cannot call tools answer from a **single retrieval pass** instead of the search/read loop — searched up front, matching sections in the prompt, still cited. Set `SAGE_TOOLLESS_MODELS`, or let the app detect it: a provider that rejects tools is retried that way.
 
@@ -55,6 +55,8 @@ Environment-driven; defaults in [`sage/config.py`](sage/config.py).
 | `OPENCODE_BASE_URL` | `https://opencode.ai/zen/v1` | OpenAI-compatible endpoint |
 | `SAGE_TOOLLESS_MODELS` | *(empty)* | Substrings of models that cannot call tools |
 | `SAGE_VISION_MODELS` | `pixtral,claude` | Substrings of models that can be shown an image |
+| `SAGE_ZEN_FREE_ONLY` | `1` | Offer only Zen's free models. `0` for a paid balance |
+| `SAGE_ZEN_FREE_MARKS` | `-free,big-pickle` | How a free Zen model is recognised |
 | `SAGE_MAX_TOKENS` | `8000` | Response cap. Generous: 1600 cut answers off mid-sentence |
 | `SAGE_TEMPERATURE` | `0.2` | Sampling temperature |
 | `RCC_DOCS_PATH` | `./docs` | User Guide markdown source |
@@ -64,7 +66,8 @@ Environment-driven; defaults in [`sage/config.py`](sage/config.py).
 | `SAGE_SEARCH_RESULTS` | `6` | Results per search |
 | `SAGE_SYNONYM_WEIGHT` | `0.8` | Weight of expanded synonym terms |
 | `SAGE_HISTORY_CHAR_BUDGET` | `48000` | History size before oldest turns are trimmed |
-| `SAGE_MAX_UPLOAD_BYTES` | `10485760` | Upload size limit |
+| `SAGE_MAX_UPLOAD_BYTES` | `10485760` | Upload size limit, per file |
+| `SAGE_MAX_ATTACHED_BYTES` | `20971520` | Upload size limit, across one turn |
 | `SAGE_FEEDBACK_LOG` | *(unset)* | JSONL sink for 👍/👎 and zero-result queries. Unset = nothing recorded |
 | `LOG_LEVEL` | `WARNING` | Python log level |
 

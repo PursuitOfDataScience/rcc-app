@@ -86,7 +86,8 @@
         return top;
     }
 
-    var pinnedTurn = false;
+    // Which question the per-turn scroll has been spent on ('' = none yet).
+    var pinnedTurn = '';
 
     /* --- chrome measurement ---------------------------------------------- */
 
@@ -364,7 +365,7 @@
         if (!el) return;
         if (landing(el)) return;
         if (!isProcessing()) {
-            pinnedTurn = false;
+            pinnedTurn = '';
             settle(el);
             return;
         }
@@ -382,10 +383,32 @@
         var latest = messages[messages.length - 1];
         if (!latest) return;
 
-        if (!pinnedTurn) {
-            pinnedTurn = true;
-            var target = latest.getBoundingClientRect().top + el.scrollTop - TOP_GAP;
-            el.scrollTop = Math.max(0, Math.min(target, el.scrollHeight - el.clientHeight));
+        // Keyed on how many questions there are, not on a boolean, and the key is only
+        // spent once the scroll has actually landed.
+        //
+        // A plain flag set before the scroll was the bug behind "I have to scroll down
+        // myself": this script's realm outlives some reruns and dies on others, so the
+        // flag could still be set from the previous turn — and a pass that ran before
+        // Streamlit had rendered the new question pinned the *old* one and then latched,
+        // leaving the reader wherever they happened to be while the answer streamed in
+        // somewhere below the fold. Stamping after the fact means a pass that measured
+        // a half-built page simply tries again.
+        var stamp = String(messages.length);
+        var box = latest.getBoundingClientRect();
+        // Off-screen entirely — above the top or below the bottom — is always worth a
+        // scroll, whatever the stamp says. This is the belt to the stamp's braces: it
+        // cannot latch, because it asks where the question IS rather than what has
+        // already been done to it.
+        var offscreen = box.bottom < 0 || box.top > view.innerHeight;
+        if (pinnedTurn !== stamp || offscreen) {
+            var target = box.top + el.scrollTop - TOP_GAP;
+            var limit = Math.max(0, el.scrollHeight - el.clientHeight);
+            var landed = Math.max(0, Math.min(target, limit));
+            el.scrollTop = landed;
+            // Spent only if the scroller took it. It refuses while Streamlit is
+            // mid-rebuild, and a stamp spent on a refused scroll is a turn the reader
+            // has to chase by hand.
+            if (Math.abs(el.scrollTop - landed) < 2) pinnedTurn = stamp;
             return;
         }
 
@@ -509,6 +532,79 @@
         input.addEventListener('paste', onPaste);
         view.__sagePasteOff = function () {
             input.removeEventListener('paste', onPaste);
+        };
+    }
+
+    // Up-arrow recalls what you asked before, the way a shell does.
+    //
+    // The questions are read out of the page rather than passed in from Python: they
+    // are already in the DOM as `.user-bubble`, one per turn, in order, so there is
+    // nothing to keep in sync and nothing to serialise. `history` is rebuilt on every
+    // keypress for the same reason — a rerun replaces those nodes, and a list captured
+    // once would recall a conversation that has since been cleared.
+    //
+    // Hijacked ONLY when the caret is at the very start of the box and there is no
+    // selection. Anywhere else, Up means "move up a line", and a multi-line question
+    // being retyped is exactly when stealing that would be most annoying.
+    function addPromptHistory() {
+        var box = doc.querySelector('.stChatInput textarea');
+        if (!box) return;
+        if (view.__sageHistoryOff) {
+            try { view.__sageHistoryOff(); } catch (err) { /* node gone */ }
+        }
+        // -1 means "not browsing"; 0 is the most recent question.
+        var cursor = -1;
+        var draft = '';
+
+        var onKey = function (event) {
+            if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
+            var atStart = box.selectionStart === 0 && box.selectionEnd === 0;
+            if (event.key === 'ArrowUp' && !atStart && cursor === -1) return;
+
+            var asked = [];
+            doc.querySelectorAll('.user-bubble').forEach(function (node) {
+                var text = node.textContent.replace(/\s+$/, '');
+                if (text) asked.push(text);
+            });
+            if (!asked.length) return;
+            asked.reverse();   // most recent first
+
+            if (event.key === 'ArrowUp') {
+                if (cursor === -1) draft = box.value;   // keep what was half-typed
+                if (cursor + 1 >= asked.length) { event.preventDefault(); return; }
+                cursor += 1;
+            } else {
+                if (cursor === -1) return;             // Down does nothing at the end
+                cursor -= 1;
+            }
+            event.preventDefault();
+            var text = cursor === -1 ? draft : asked[cursor];
+            box.value = text;
+            // React owns this field, so the value has to be announced or Streamlit
+            // sends the old one when Enter is pressed.
+            box.dispatchEvent(new view.Event('input', {bubbles: true}));
+            // Caret at the end, so Enter sends and typing appends.
+            box.selectionStart = box.selectionEnd = text.length;
+            box.style.height = 'auto';
+        };
+
+        // Typing anything by hand ends the browse, so the next Up starts again from
+        // the most recent question rather than from wherever the last one left off.
+        var onInput = function () {
+            if (!browsing) cursor = -1;
+            browsing = false;
+        };
+        var browsing = false;
+        var onKeyWrapped = function (event) {
+            browsing = event.key === 'ArrowUp' || event.key === 'ArrowDown';
+            onKey(event);
+        };
+
+        box.addEventListener('keydown', onKeyWrapped);
+        box.addEventListener('input', onInput);
+        view.__sageHistoryOff = function () {
+            box.removeEventListener('keydown', onKeyWrapped);
+            box.removeEventListener('input', onInput);
         };
     }
 
@@ -719,6 +815,7 @@
         measureChrome();
         addPaperclip();
         addPasteHandler();
+        addPromptHistory();
         closePickerOnPick();
         addCodeCopyButtons();
         addAnswerCopyButtons();
