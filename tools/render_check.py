@@ -398,6 +398,53 @@ def strip(clear: bool = True, wrapped: bool = True) -> str:
  {controls}</div>"""
 
 
+# Real citation labels, not short ones. A chip's text is `"{doc_title} — {heading}"`,
+# and RCC headings are frequently whole questions, so 60–90 characters is the ordinary
+# case rather than the long tail. Six of them, because `SEARCH_RESULTS` is 6 and
+# `ToolRunner.sources` dedupes across every tool round, so a six-source answer is
+# routine — and because the ragged-wrap bug this markup replaced needed five real-length
+# labels before it appeared at all. Two short chips, which is what these fixtures used
+# to hold, cannot wrap at any width this file renders: the check could not have failed.
+REAL_SOURCES = [
+    ("Storage System Layout — How do I increase my storage quota?", "docs"),
+    ("Batch jobs — Why does my job fail with “exceeded memory limit, being killed”?",
+     "docs"),
+    ("Allocations and Service Units FAQ — How do I check how many service units I have "
+     "remaining on my allocation?", "docs"),
+    ("Partitions — Partition QoS and per-user limits", "docs"),
+    ("Overview of RCC’s HPC Systems — Midway3", "docs"),
+    ("Skyway FAQs — Which cloud provider should I use?", "web"),
+]
+REAL_RELATED = [
+    "Running jobs on RCC clusters — Service units, allocations, and accounts",
+    "Large-Memory Jobs",
+    "Checking job status in the terminal",
+]
+
+
+def source_list(sources=None) -> str:
+    items = "".join(
+        f'<div class="source-item"><a class="source-link" href="#">{label}</a>'
+        f'<span class="source-kind">{kind}</span></div>'
+        for label, kind in (REAL_SOURCES if sources is None else sources)
+    )
+    return (f'<div class="sources"><span class="sources-label">Sources</span>'
+            f'<div class="source-list">{items}</div></div>')
+
+
+def related_list(related=None) -> str:
+    items = "".join(
+        f'<div class="related-item"><a class="related-link" href="#">{label}</a></div>'
+        for label in (REAL_RELATED if related is None else related)
+    )
+    return (f'<div class="sources related"><span class="sources-label">Related</span>'
+            f'<div class="related-list">{items}</div></div>')
+
+
+SOURCE_LIST = source_list()
+RELATED_LIST = related_list()
+
+
 def answer_block(index: int) -> str:
     return f"""
 <div class="element-container"><div class="stMarkdown">
@@ -418,14 +465,8 @@ def answer_block(index: int) -> str:
 module load cuda/11.8
 python train.py --epochs 100 --batch-size 64 --output /scratch/midway3/$USER/run</code></pre>
  </div></div>
- <div class="sources"><span class="sources-label">Sources</span>
-   <a class="source-chip" href="#">Batch jobs — GPU jobs<span class="source-kind">docs</span></a>
-   <a class="source-chip" href="#">Partitions — Partition QoS<span class="source-kind">docs</span></a>
- </div>
- <div class="sources"><span class="sources-label">Related</span>
-   <a class="source-chip" href="#">Large-Memory Jobs</a>
-   <a class="source-chip" href="#">Checking job status</a>
- </div>
+ {SOURCE_LIST}
+ {RELATED_LIST}
 </div>"""
 
 
@@ -436,7 +477,7 @@ CHAT_MARKER = ('<div class="element-container"><div class="stMarkdown">'
 # nothing between the answer and the input box, because the page was shorter than
 # the window and there was no scroll left for app.js to close the gap with. The
 # failover notice is on it because that is when a reader is looking at the bottom.
-SHORT_ANSWER = """
+SHORT_ANSWER = f"""
 <div class="element-container"><div class="stMarkdown">
   <div class="user-message"><div class="user-bubble">How do I submit a batch job with
   sbatch?</div></div>
@@ -445,9 +486,8 @@ SHORT_ANSWER = """
  <div></div>
  <div class="stMarkdown"><p>Submit it with <code>sbatch ./my_job.sbatch</code>, and the
  scheduler prints the job id it assigned.</p></div></div>
- <div class="sources"><span class="sources-label">Sources</span>
-   <a class="source-chip" href="#">Batch jobs<span class="source-kind">docs</span></a>
- </div>
+ {source_list([("Batch jobs — Submitting a job", "docs")])}
+ {related_list(["Checking job status in the terminal"])}
 </div>
 <div class="element-container"><div class="stMarkdown">
   <div class="notice">Mistral · small-latest was unavailable (out of credit), so Zen ·
@@ -756,7 +796,22 @@ function snapshot() {
       - clipEl.getBoundingClientRect().right) : null;
   var panelEl = document.querySelector('[data-testid="stPopoverBody"]');
   var panelBg = panelEl ? getComputedStyle(panelEl).backgroundColor : '';
+  // EVERY row of a list, not just the first. `box()` below resolves one element per
+  // selector, which is why no check here could express "do the wrapped rows line up"
+  // — the ragged Sources strip was measured in a scratch probe and shipped for months
+  // with a green harness. The marker comes back too, so "are these two lists visually
+  // different?" is answerable without asserting on a colour this file also chose.
+  function rows(selector) {
+    return [].slice.call(document.querySelectorAll(selector)).map(function (el) {
+      var b = el.getBoundingClientRect();
+      var marker = getComputedStyle(el, '::before').content || '';
+      return {left: Math.round(b.left), top: Math.round(b.top),
+              right: Math.round(b.right), marker: marker};
+    });
+  }
   var out = {viewport: {w: innerWidth, h: innerHeight}, hostBar: HOSTBAR,
+           lists: {'.source-item': rows('.source-item'),
+                   '.related-item': rows('.related-item')},
            panelBg: panelBg, cursorGap: cursorGap,
            scrolled: port ? Math.round(port.scrollTop) : 0,
            // Whether there is anywhere to scroll to. A conversation shorter than
@@ -818,7 +873,9 @@ SELECTORS = [
     ".welcome-title", ".welcome-subtitle", ".user-bubble", "last:.user-bubble",
     ".error-card", ".notice", ".st-key-error-actions",
     ".error-title", ".error-body", ".sources-label",
-    ".source-chip", ".st-key-answer-5", ".st-key-answer-0", ".stChatMessage pre",
+    ".source-link", ".related-link", ".source-item", "last:.source-item",
+    ".source-kind",
+    ".st-key-answer-5", ".st-key-answer-0", ".stChatMessage pre",
     ".stChatMessage code", '[data-testid="stBottomBlockContainer"]',
     STRIP, INPUT, INPUT_BOX, SEND, CHIPS, ".st-key-attachments button",
     PANEL, PANEL_BUTTON, PANEL_CAPTION,
@@ -884,17 +941,55 @@ MAX_CURSOR_GAP = 16
 # clamped against the bottom — and then held still for the rest of the turn while the
 # reply streamed in 778px below the composer. Re-implementing a function is not
 # testing it; this drives the real one.
+#
+# It also started too kind. `p.scrollTop = p.scrollHeight` put the reader at the END of
+# the conversation before submitting, which is the one starting position where the bug
+# does not show: the question is appended into the room the page reserves for the bar,
+# so it lands just above the composer whether or not anything scrolls. The report was
+# always about the other case — "if i enter the prompt when the scrollbar isn't at the
+# bottom, the page stays where it is" — so `startFrac` places the reader part-way up as
+# well, and `grab` has them take the page over mid-answer, which must not be undone.
 FOLLOW_DRIVER = r"""
+<style>PORTCSS</style>
 <script>
+var OPTS = FOLLOWOPTS;
 var out = {steps: []};
+
+// The scrollport as the READER experiences it: walk out from the conversation and take
+// the innermost box that both overflows and is a scroll container.
+//
+// Deliberately not app.js's own `scroller()`. This used to be a copy of it — the same
+// three-item list, the same `scrollHeight > clientHeight` test — and a harness that
+// reuses the code under test cannot see that code pick the wrong element. It picked
+// stAppViewContainer's overflow and wrote scroll positions into stMain for three
+// rounds of this bug while every check here agreed with it.
 function port() {
-  var c = [document.querySelector('[data-testid="stMain"]'),
-           document.scrollingElement, document.documentElement];
-  for (var i = 0; i < c.length; i++)
-    if (c[i] && c[i].scrollHeight > c[i].clientHeight + 1) return c[i];
+  var chain = [];
+  var node = document.querySelector('.chat-container') || document.body;
+  for (; node; node = node.parentElement) chain.push(node);
+  chain.push(document.scrollingElement, document.documentElement);
+  for (var i = 0; i < chain.length; i++) {
+    var el = chain[i];
+    if (!el || el.scrollHeight <= el.clientHeight + 1) continue;
+    var over = getComputedStyle(el).overflowY;
+    if (over === 'auto' || over === 'scroll' || over === 'overlay'
+        || el === document.scrollingElement) return el;
+  }
   return document.documentElement;
 }
+function portName(el) {
+  return el ? (el.getAttribute('data-testid') || el.tagName) : 'none';
+}
+// The reader's own scrolling, and the harness's own placement of it. Instant on
+// purpose: under a virtual clock a smooth scroll never advances, so a driver that let
+// `scroll-behavior` apply to itself would measure a page nobody had scrolled.
+function move(el, top) {
+  if (el.scrollTo) { el.scrollTo({top: top, behavior: 'instant'}); }
+  else { el.scrollTop = top; }
+}
 function tick(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+
+var held = false;
 
 // The two numbers the reader cares about: how far the newest content runs past the
 // composer, and whether their question has reached the top of the window (past which
@@ -908,6 +1003,7 @@ function look(label) {
   var barTop = bar ? bar.getBoundingClientRect().top : innerHeight;
   out.steps.push({
     at: label,
+    held: held,
     scrollTop: Math.round(p.scrollTop),
     maxScroll: Math.round(p.scrollHeight - p.clientHeight),
     questionTop: last ? Math.round(last.getBoundingClientRect().top) : null,
@@ -922,21 +1018,34 @@ function para(n) {
   return p;
 }
 
-(async function () {
-  await tick(400);                       // app.js boots and settles the page
-  var p = port();
-  p.scrollTop = p.scrollHeight;          // the reader is at the end of the last answer
-  out.shape = p === document.querySelector('[data-testid="stMain"]')
-    ? 'stMain' : 'document';
-  await tick(300);
-  look('before submit');
-
-  // The rerun that starts a turn appends two things: the marker app.js polls for, and
-  // the question. Nothing here touches the scroll — that is what is being measured.
+function marker() {
+  if (document.getElementById('processing-signal')) return;
   var signal = document.createElement('div');
   signal.id = 'processing-signal';
   signal.hidden = true;
   document.body.appendChild(signal);
+}
+
+(async function () {
+  await tick(400);                       // app.js boots and settles the page
+  var p = port();
+  // Where the reader is when they press Enter. 1 is the end of the last answer; less
+  // than that is part-way up, which is the case that was never rendered here.
+  move(p, Math.round(OPTS.startFrac * (p.scrollHeight - p.clientHeight)));
+  out.shape = portName(p);
+  await tick(300);
+  look('before submit');
+
+  // The rerun that starts a turn. app.py renders `#processing-signal` and then the
+  // question, as two separate deltas, so there is a real window in which app.js sees a
+  // generation in flight with the PREVIOUS question still the newest one in the DOM.
+  // Rendered as that window, because a pass landing in it must not leave the page
+  // pinned to the old question. Nothing here touches the scroll — that is what is
+  // being measured.
+  marker();
+  await tick(150);
+  look('marker only');
+
   var block = document.querySelector('[data-testid="stVerticalBlock"]');
   var q = document.createElement('div');
   q.className = 'element-container';
@@ -957,6 +1066,17 @@ function para(n) {
     sink.appendChild(para(n));
     await tick(180);
     if (n === 3 || n === 6 || n === 12) look('streaming ' + n);
+    // The reader scrolls up to re-read something while the answer is still arriving.
+    // From here on the page is theirs: every later step asserts it stayed where they
+    // put it, not that the view kept following.
+    if (OPTS.grab && n === 6) {
+      var g = port();
+      move(g, Math.max(0, g.scrollTop - 300));
+      await tick(120);
+      out.grabbedAt = Math.round(g.scrollTop);
+      held = true;
+      look('reader scrolled up');
+    }
   }
   await tick(500);
   look('answer complete');
@@ -1137,6 +1257,55 @@ def render(name, html, width, height, shot=False, budget=1500):
 # whole pixels on both sides.
 FOLLOW_SLACK = 8
 
+# Which box the app's vertical overflow settles on — and this replica *defines* that,
+# which is how it managed to bless a scroll that never happened.
+#
+# `base_css` gives stMain `overflow: auto; height: 100vh`, and `doc_scroll` moves the
+# overflow to the document. Those were the only two shapes ever rendered, and app.js
+# named both of them outright. But Streamlit has put the app's scrollbar on
+# `.appview-container` and on `section.main` as well as on `[data-testid="stMain"]`
+# across the versions requirements.txt allows — and app.css's own
+# `overflow-x: hidden` on html, body, stAppViewContainer and stMain makes all four
+# scroll containers here, because CSS computes a `visible` axis to `auto` beside a
+# non-visible one. On the shape where the overflow lands on stAppViewContainer, app.js
+# matched nothing at all and its scroll function returned on its first line: no pin, no
+# settle, no landing reset, on every turn at every window size.
+#
+# So two more shapes, as a stylesheet override rather than a `page()` flag, because
+# they are shapes `page()`'s own base CSS defines away — and defining a shape away is
+# how a check comes to pass on a page the app never has.
+_CONTAINER_CSS = (
+    '[data-testid="stMain"] { overflow: visible !important; height: auto !important; }'
+    '[data-testid="stAppViewContainer"] { height: 100vh !important;'
+    " min-height: 0 !important; overflow: auto !important; }"
+)
+# The same, except stMain keeps a height it cannot scroll. `overflow: visible` reports
+# scrollHeight past clientHeight and then ignores every assignment to scrollTop, so a
+# scroller chosen by "does this overflow?" picks stMain, writes into it all turn, and
+# the page never moves. The two halves fail identically and for different reasons, so
+# both are rendered.
+_DEAF_CSS = (
+    '[data-testid="stMain"] { overflow: visible !important; height: 100% !important; }'
+    '[data-testid="stAppViewContainer"] { height: 100vh !important;'
+    " min-height: 0 !important; overflow: auto !important; }"
+)
+# Not a scrollport shape: a stylesheet turning every scroll into an animation. One
+# `scroll-behavior: smooth` in Streamlit's own CSS — which this repo cannot see — makes
+# `el.scrollTop = x` a request rather than a move, so the position read back on the
+# next line is the old one. app.js has to ask for an instant scroll explicitly.
+_SMOOTH_CSS = 'html, body, [data-testid="stMain"] { scroll-behavior: smooth !important; }'
+
+# name, the scrollport the reader really has, extra CSS, doc_scroll, sticky bar.
+# The bar is pinned both ways across the list rather than doubling every render, the
+# same trade `STICKY_BAR` makes for the screens above.
+FOLLOW_SHAPES = [
+    ("stMain", "stMain", "", False, False),
+    ("document", "HTML", "", True, True),
+    ("container", "stAppViewContainer", _CONTAINER_CSS, False, True),
+    ("container-deaf-main", "stAppViewContainer", _DEAF_CSS, False, False),
+    ("smooth", "stMain", _SMOOTH_CSS, False, False),
+]
+
 
 def check_follow(widths) -> tuple[list[str], int]:
     """Send a follow-up on a scrolled page and watch where the view goes.
@@ -1145,42 +1314,79 @@ def check_follow(widths) -> tuple[list[str], int]:
     composer, or the question has reached the top of the window. Those are the two
     honest resting places. Anything else is the reader looking at a still page while
     their answer arrives somewhere below it, which is the bug this reproduces.
+
+    Three starting positions, because the bug was reported three times and the first
+    version of this check only rendered the one that hides it:
+
+      * `end` — the reader at the bottom of the last answer. The forgiving case: the
+        page reserves a bar's worth of room past its last message, so a question
+        appended into it lands above the composer even if nothing scrolls at all.
+      * `up` — the reader part-way up, which is what was actually reported. Nothing
+        arrives on screen unless the view moves.
+      * `grab` — the reader at the end, who then scrolls up mid-answer. Here the
+        assertion inverts: the page must stay where they put it. The guard meant to do
+        that shipped as unreachable code (it tested `reader && !offscreen` on a path
+        that only runs when `offscreen`), so it was never exercised by anything.
     """
     problems: list[str] = []
     body = CHAT_MARKER + "".join(answer_block(i) for i in range(3))
     checked = 0
-    # Both shapes, because which element scrolls decides all of it, and a narrow
-    # window as well as a wide one: the shorter the viewport, the longer the page
-    # stays too short to put the question at the top, which is the whole failure.
-    for doc_scroll in (False, True):
-        shape = "document" if doc_scroll else "stMain"
-        for width, height in widths:
-            name = f"follow-{shape}-{width}"
-            html = page(body, "dark", scroll=False, doc_scroll=doc_scroll,
-                        driver=FOLLOW_DRIVER)
-            data = render(name, html, width, height, budget=20000)
-            if data is None or not data.get("steps"):
-                problems.append(f"{name}: the follow-up sequence reported nothing")
-                continue
-            checked += 1
-            if data.get("shape") != shape:
-                problems.append(
-                    f"{name}: meant to put the scrollbar on {shape} and app.js found "
-                    f"it on {data['shape']} — this render measured the other shape"
-                )
-                continue
-            for step in data["steps"]:
-                pinned = step["questionTop"] is not None and (
-                    step["questionTop"] <= TOP_GAP + FOLLOW_SLACK
-                )
-                if step["hiddenBelow"] > FOLLOW_SLACK and not pinned:
+    for shape, expect, css, doc_scroll, sticky in FOLLOW_SHAPES:
+        # A narrow window as well as a wide one: the shorter the viewport, the longer
+        # the page stays too short to put the question at the top, which is the whole
+        # failure.
+        for label, start, grab in (("end", 1.0, False), ("up", 0.4, False),
+                                   ("grab", 1.0, True)):
+            for width, height in widths:
+                name = f"follow-{shape}-{label}-{width}"
+                opts = json.dumps({"startFrac": start, "grab": grab})
+                html = page(body, "dark", scroll=False, doc_scroll=doc_scroll,
+                            sticky=sticky,
+                            driver=(FOLLOW_DRIVER.replace("PORTCSS", css)
+                                    .replace("FOLLOWOPTS", opts)))
+                data = render(name, html, width, height, budget=20000)
+                if data is None or not data.get("steps"):
+                    problems.append(f"{name}: the follow-up sequence reported nothing")
+                    continue
+                checked += 1
+                if data.get("shape") != expect:
                     problems.append(
-                        f"{name}/{step['at']}: the newest content runs "
-                        f"{step['hiddenBelow']}px past the composer while the question "
-                        f"sits {step['questionTop']}px down, so the view stopped "
-                        f"following the answer (scrollTop {step['scrollTop']} of "
-                        f"{step['maxScroll']})"
+                        f"{name}: meant to put the scrollbar on {expect} and the page "
+                        f"put it on {data['shape']} — this render measured a shape it "
+                        f"does not claim to be"
                     )
+                    continue
+                grabbed = data.get("grabbedAt")
+                for step in data["steps"]:
+                    # The reader put the page there themselves, and the marker-only
+                    # window is a half-built page with no new question in it yet. What
+                    # both have to be judged on is where the steps AFTER them end up.
+                    if step["at"] in ("before submit", "marker only"):
+                        continue
+                    if step["held"]:
+                        if grabbed is None:
+                            continue
+                        if abs(step["scrollTop"] - grabbed) > FOLLOW_SLACK:
+                            problems.append(
+                                f"{name}/{step['at']}: the reader scrolled to "
+                                f"{grabbed} and the view was dragged to "
+                                f"{step['scrollTop']} — a reader who scrolls away "
+                                f"mid-answer must keep the page"
+                            )
+                        continue
+                    # Pinned means AT the top gap, not merely past it: a question
+                    # above the top of the window is off screen, not pinned.
+                    pinned = step["questionTop"] is not None and (
+                        -FOLLOW_SLACK <= step["questionTop"] <= TOP_GAP + FOLLOW_SLACK
+                    )
+                    if step["hiddenBelow"] > FOLLOW_SLACK and not pinned:
+                        problems.append(
+                            f"{name}/{step['at']}: the newest content runs "
+                            f"{step['hiddenBelow']}px past the composer while the "
+                            f"question sits {step['questionTop']}px down, so the view "
+                            f"stopped following the answer (scrollTop "
+                            f"{step['scrollTop']} of {step['maxScroll']})"
+                        )
     return problems, checked
 
 
@@ -1470,6 +1676,71 @@ def audit(data, scenario, scheme, width, state: str) -> list[str]:
             problems.append(
                 f"{where}: {gap}px of dead space between the last message and the "
                 f"input bar (want at most {MAX_TAIL_GAP}; {room})"
+            )
+
+    problems.extend(audit_citations(data, where))
+    return problems
+
+
+def audit_citations(data, where: str) -> list[str]:
+    """The Sources and Related lists: aligned rows, and two visibly different lists.
+
+    Both used to be rows of identical chips in a wrapping flexbox with the label as the
+    first item, which indents line one and drops every later line back to the container
+    edge — 66px of sawtooth with six real citations at 820px. No check could see it,
+    because the measurement read only the first chip in the document.
+    """
+    problems: list[str] = []
+    lists = data.get("lists") or {}
+
+    for selector in (".source-item", ".related-item"):
+        found = lists.get(selector) or []
+        if not found:
+            continue
+        lefts = {row["left"] for row in found}
+        if len(lefts) > 1:
+            problems.append(
+                f"{where}: {selector} rows start at {sorted(lefts)} — a citation list "
+                f"whose rows do not share a left edge reads as broken, not as a list"
+            )
+        # One row per line. Two rows sharing a `top` means they sat side by side, which
+        # is the chip layout coming back and the reader losing the numbering's meaning.
+        tops = [row["top"] for row in found]
+        if len(set(tops)) != len(tops):
+            problems.append(
+                f"{where}: {selector} put more than one entry on a line (tops {tops})"
+            )
+
+    sources, related = lists.get(".source-item") or [], lists.get(".related-item") or []
+    if sources and related:
+        # Different in a way a reader can see, taken from the marker the cascade
+        # resolved rather than from a colour this file also chose. Chromium reports
+        # `content` unresolved — `counter(source) "."`, not `"1."` — so both spellings
+        # count as numbered; asserting only on a digit passed on the chip layout, whose
+        # marker is `none`, and failed on the list that actually numbers its rows.
+        marker = sources[0]["marker"]
+        numbered = "counter" in marker or any(ch.isdigit() for ch in marker)
+        if not numbered:
+            problems.append(
+                f"{where}: the Sources list is not numbered (marker {marker!r}) — the "
+                f"numbering is what distinguishes a citation from a suggestion"
+            )
+        if related[0]["marker"] == marker:
+            problems.append(
+                f"{where}: Sources and Related share the marker {marker!r}, so nothing "
+                f"but the label tells them apart"
+            )
+
+    # And the marker has to occupy real space, or a numbered list renders as an
+    # unnumbered one however the stylesheet is written.
+    link = data["els"].get(".source-link")
+    row = (sources or [None])[0]
+    if link and row:
+        indent = link["left"] - row["left"]
+        if indent < 10:
+            problems.append(
+                f"{where}: the citation number column reserves only {indent}px, so the "
+                f"numbers are not visible beside the titles"
             )
     return problems
 
