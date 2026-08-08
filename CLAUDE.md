@@ -22,6 +22,20 @@ locally on the same commit is the same script against the same stylesheet, so a 
 local run plus green lint/tests is enough to merge on; don't idle waiting for the
 remote copy of a result already in hand.
 
+## Running the checks here
+
+Three of them are available and two of them hide:
+
+- **Lint**: `/root/.local/bin/ruff check .` — installed, but not on `PATH`, so a bare
+  `ruff` or `python -m ruff` says "no module named ruff". A whole session was spent
+  reporting the lint as unrunnable while CI failed on `SIM117`; it is runnable.
+- **Tests**: pytest cannot be installed (no package index). There is a working shim in
+  the session scratchpad that handles fixtures, `parametrize`, `raises(...).value` and
+  `xfail`; without those four it silently runs 2 test files out of 11.
+- **Layout**: `python tools/render_check.py`, ~4 minutes locally for ~576 renders.
+
+Run all three before pushing. Each has failed CI at least once for want of being run.
+
 ## The UI
 
 Every UI bug that has shipped here was pure CSS, and Streamlit usually cannot be
