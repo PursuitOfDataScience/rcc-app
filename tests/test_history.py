@@ -186,3 +186,57 @@ def test_a_screenshot_does_not_evict_the_conversation_from_the_budget():
                      else [{"text": message["content"]}])
     )
     assert "first question" in joined, "one image evicted the whole conversation"
+
+
+class TestTrimIsReported:
+    """`build` used to return the message list alone, so the trim happened and the
+    record of it was dropped on the next line — while the UI rendered every message.
+    A long conversation showed twenty turns on screen with six sent upstream."""
+
+    def test_a_short_conversation_reports_nothing_lost(self):
+        built = history.build([user("hello"), assistant("hi")], "S")
+        assert built.dropped == 0
+        assert built.clipped == 0
+        assert built.stubbed == ()
+        assert built.dropped_upto == -1
+
+    def test_dropped_turns_are_counted_and_located(self, monkeypatch):
+        monkeypatch.setattr(config, "HISTORY_CHAR_BUDGET", 400)
+        messages = []
+        for index in range(12):
+            messages.append(user(f"question {index} " + "x" * 120))
+            messages.append(assistant(f"answer {index} " + "y" * 120))
+        built = history.build(messages, "S")
+        assert built.dropped > 0, "nothing was trimmed at a 400-char budget"
+        # Points at a real position in the list the UI renders, so the fold marker
+        # can be drawn where the loss actually happened.
+        assert 0 <= built.dropped_upto < len(messages)
+        # The newest turn always survives.
+        assert "answer 11" in str(built.messages[-1]["content"])
+
+    def test_a_clipped_final_turn_is_reported(self, monkeypatch):
+        monkeypatch.setattr(config, "HISTORY_CHAR_BUDGET", 200)
+        built = history.build([user("q " + "z" * 5000)], "S")
+        assert built.clipped > 0, "an over-budget turn was silently truncated"
+
+    def test_stubbed_attachments_are_reported(self, monkeypatch):
+        """The most damaging trim in practice: MAX_FILE_TEXT_CHARS is 30k against a
+        48k budget, so one attached .out plus a couple of turns evicts the file the
+        user is asking about — and only the newest attachment turn ships full text."""
+        monkeypatch.setattr(config, "ATTACHMENT_FULL_TEXT_TURNS", 1)
+        first = Attachment(filename="run1.out", kind="text", text="early log")
+        second = Attachment(filename="run2.out", kind="text", text="later log")
+        messages = [
+            user("look at this", first),
+            assistant("ok"),
+            user("and this", second),
+        ]
+        built = history.build(messages, "S")
+        assert 0 in built.stubbed, "the earlier attachment turn was not flagged"
+        assert 2 not in built.stubbed, "the newest attachment turn must ship in full"
+
+    def test_the_payload_still_starts_with_the_system_prompt(self, monkeypatch):
+        monkeypatch.setattr(config, "HISTORY_CHAR_BUDGET", 100)
+        messages = [user("a" * 500), assistant("b" * 500), user("c" * 500)]
+        built = history.build(messages, "SYSTEM")
+        assert built.messages[0] == {"role": "system", "content": "SYSTEM"}

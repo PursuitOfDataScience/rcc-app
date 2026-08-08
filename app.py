@@ -810,11 +810,12 @@ if st.session_state.processing:
 
     try:
         provider = get_provider(MODEL.provider)
-        messages = history.build(
+        built = history.build(
             st.session_state.messages,
             SYSTEM_PROMPT,
             vision=config.sees_images(MODEL.id),
         )
+        messages = built.messages
         use_tools = MODEL.supports_tools
 
         if use_tools:

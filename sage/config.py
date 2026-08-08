@@ -235,6 +235,13 @@ DOCS_BASE_URL = os.getenv(
 # HELP_DESK_URL beside this for the caveat line under the input; that line is gone and
 # nothing else linked it, so it went too rather than sitting here unused.
 HELP_DESK_EMAIL = os.getenv("RCC_HELP_EMAIL", "help@rcc.uchicago.edu")
+# New-issue URL for the upstream User Guide repo. When set, an answer the docs could
+# not support offers a pre-filled documentation-gap issue — the cheapest closed loop
+# there is between "the docs don't say" and someone fixing the docs. Unset disables
+# the button rather than guessing a repository.
+DOCS_ISSUE_URL = os.getenv(
+    "RCC_DOCS_ISSUE_URL", "https://github.com/rcc-uchicago/user-guide/issues/new"
+)
 
 # --- ops -------------------------------------------------------------------
 

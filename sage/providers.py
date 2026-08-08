@@ -56,11 +56,71 @@ class Model:
 
 
 @dataclass
+class Usage:
+    """Tokens billed for one request, when the provider says.
+
+    Nothing captured this before, so the app could not report its own cost, could
+    not tell whether a cache was being hit, and could not tell a slow model from a
+    slow prompt. Every figure about spend was therefore an estimate about an
+    estimate.
+    """
+
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cached_input_tokens: int = 0
+
+    def __bool__(self) -> bool:
+        return bool(self.input_tokens or self.output_tokens)
+
+    def add(self, other: Usage) -> None:
+        self.input_tokens += other.input_tokens
+        self.output_tokens += other.output_tokens
+        self.cached_input_tokens += other.cached_input_tokens
+
+
+def parse_usage(raw) -> Usage:
+    """Read a usage block from an SDK object or a JSON dict, tolerating absence."""
+    if raw is None:
+        return Usage()
+
+    def pick(*names):
+        for name in names:
+            value = (
+                raw.get(name)
+                if isinstance(raw, dict)
+                else getattr(raw, name, None)
+            )
+            if isinstance(value, (int, float)):
+                return int(value)
+        return 0
+
+    cached = 0
+    details = (
+        raw.get("prompt_tokens_details")
+        if isinstance(raw, dict)
+        else getattr(raw, "prompt_tokens_details", None)
+    )
+    if details is not None:
+        cached = (
+            details.get("cached_tokens", 0)
+            if isinstance(details, dict)
+            else getattr(details, "cached_tokens", 0) or 0
+        )
+    return Usage(
+        input_tokens=pick("prompt_tokens", "input_tokens"),
+        output_tokens=pick("completion_tokens", "output_tokens"),
+        cached_input_tokens=int(cached or 0) or pick("cached_tokens"),
+    )
+
+
+@dataclass
 class Chunk:
     """One normalised streaming event."""
 
     text: str = ""
     tool_calls: list[dict] = field(default_factory=list)
+    # Set on the final event of a stream, when the provider reports it.
+    usage: Usage | None = None
 
 
 class Provider(Protocol):
@@ -147,12 +207,20 @@ class MistralProvider:
         try:
             for event in source:
                 data = getattr(event, "data", None)
-                if not data or not getattr(data, "choices", None):
+                if not data:
+                    continue
+                usage = parse_usage(getattr(data, "usage", None))
+                if not getattr(data, "choices", None):
+                    # Mistral reports usage on a final event that carries no choices;
+                    # skipping every choice-less event threw the only cost figure away.
+                    if usage:
+                        yield Chunk(usage=usage)
                     continue
                 delta = data.choices[0].delta
                 yield Chunk(
                     text=_flatten(getattr(delta, "content", None)),
                     tool_calls=_tool_fragments(getattr(delta, "tool_calls", None)),
+                    usage=usage or None,
                 )
         finally:
             if manager is not None:
@@ -184,12 +252,30 @@ class OpenAICompatProvider:
         self._preferred = (
             config.OPENCODE_MODELS if preferred is None else tuple(preferred)
         )
+        self._client = None
 
     def _headers(self) -> dict:
         return {
             "Authorization": f"Bearer {self._key}",
             "Content-Type": "application/json",
         }
+
+    def _http(self):
+        """One client for the life of the provider, not one per request.
+
+        `stream` opened a fresh `httpx.Client` on every call, so a four-request turn
+        paid four TCP and TLS handshakes and a six-round turn paid seven — all of it
+        on the pre-answer path, which is the latency the reader actually feels. The
+        Mistral adapter next door already holds its client; this one did not.
+
+        Built lazily so importing the module still works without httpx installed,
+        which is how the test suite runs.
+        """
+        if self._client is None:
+            import httpx  # noqa: PLC0415
+
+            self._client = httpx.Client(timeout=httpx.Timeout(120.0, connect=15.0))
+        return self._client
 
     def models(self) -> list[Model]:
         """Ask the endpoint what it serves; fall back to the configured list."""
@@ -234,22 +320,34 @@ class OpenAICompatProvider:
         return known + sorted(set(found) - set(known))
 
     def stream(self, model, messages, tools) -> Iterator[Chunk]:
-        import httpx  # noqa: PLC0415
-
         payload: dict[str, Any] = {
             "model": model,
             "messages": messages,
             "stream": True,
             "max_tokens": config.MAX_TOKENS,
             "temperature": config.TEMPERATURE,
+            # Ask for the token counts. An unknown field is a 400 on some endpoints,
+            # so `stream` retries once without it — see `_stream_once`.
+            "stream_options": {"include_usage": True},
         }
         if tools:
             payload["tools"] = tools
             payload["tool_choice"] = "auto"
 
+        try:
+            yield from self._stream_once(payload)
+        except _UnsupportedStreamOption:
+            logger.info(
+                "%s rejected stream_options; retrying without token accounting",
+                self.name,
+            )
+            payload.pop("stream_options", None)
+            yield from self._stream_once(payload)
+
+    def _stream_once(self, payload: dict) -> Iterator[Chunk]:
+        wants_usage = "stream_options" in payload
         with (
-            httpx.Client(timeout=httpx.Timeout(120.0, connect=15.0)) as client,
-            client.stream(
+            self._http().stream(
                 "POST",
                 f"{self._base}/chat/completions",
                 json=payload,
@@ -259,8 +357,14 @@ class OpenAICompatProvider:
             if response.status_code >= 400:
                 # Body must be read before the status can be raised on a stream.
                 response.read()
+                if wants_usage and response.status_code == 400:
+                    raise _UnsupportedStreamOption(response.text[:200])
                 response.raise_for_status()
             yield from parse_sse(response.iter_lines())
+
+
+class _UnsupportedStreamOption(Exception):
+    """The endpoint rejected `stream_options`. Retry without it, once."""
 
 
 def parse_sse(lines: Iterator[str]) -> Iterator[Chunk]:
@@ -277,13 +381,19 @@ def parse_sse(lines: Iterator[str]) -> Iterator[Chunk]:
         except json.JSONDecodeError:
             logger.warning("Skipping unparseable stream event: %r", body[:200])
             continue
+        usage = parse_usage(event.get("usage"))
         choices = event.get("choices") or []
         if not choices:
+            # With `stream_options.include_usage` the token counts arrive on a final
+            # event with an empty `choices` list. Returning early here discarded it.
+            if usage:
+                yield Chunk(usage=usage)
             continue
         delta = choices[0].get("delta") or {}
         yield Chunk(
             text=_flatten(delta.get("content")),
             tool_calls=_tool_fragments(delta.get("tool_calls")),
+            usage=usage or None,
         )
 
 
