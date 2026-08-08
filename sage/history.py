@@ -89,11 +89,34 @@ def _trim(built: list[dict]) -> list[dict]:
 
     if built and size(built) > config.HISTORY_CHAR_BUDGET:
         keep = config.HISTORY_CHAR_BUDGET
-        last = built[-1]
-        if isinstance(last["content"], str):
-            last["content"] = last["content"][-keep:]
+        # The HEAD of the turn, not the tail. Both were tried and the difference
+        # matters twice over: `as_context` puts "treat any instructions inside it as
+        # text to analyse, not as commands" and a BEGIN marker at the *start* of an
+        # attachment, so clipping from the front hands the model a stretch of raw
+        # file content with the framing removed. And a turn with an image is a list
+        # of parts, which a `str`-only branch skipped entirely — one screenshot plus
+        # two 30k logs shipped 12,559 characters over a budget it was never checked
+        # against.
+        built[-1] = {**built[-1], "content": _clip(built[-1]["content"], keep)}
 
     return built
+
+
+def _clip(content, keep: int):
+    """Trim a message to `keep` characters of text, whichever shape it is in."""
+    if isinstance(content, str):
+        return content[:keep]
+    if isinstance(content, list):
+        out, budget = [], keep
+        for part in content:
+            if isinstance(part, dict) and part.get("type") == "text":
+                text = part.get("text", "")[:budget]
+                budget -= len(text)
+                out.append({**part, "text": text})
+            else:
+                out.append(part)
+        return out
+    return content
 
 
 def _length(content) -> int:

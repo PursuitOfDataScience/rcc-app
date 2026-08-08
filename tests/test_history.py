@@ -121,6 +121,54 @@ def test_an_image_is_not_offered_to_a_model_that_cannot_see():
     assert "pasted-image.png" in built[-1]["content"]
 
 
+# --- which models are offered the picture ----------------------------------
+#
+# `config.sees_images` is the switch every test above takes as given: `vision=` comes
+# from it, and nothing else decides whether a screenshot travels as bytes or as a
+# sentence. Kept here, beside what it switches, rather than left as the one input to
+# these builds that nothing checks.
+
+
+def test_a_model_that_can_see_is_recognised_from_its_id():
+    assert config.sees_images("pixtral-12b-2409")
+    assert config.sees_images("claude-sonnet-4-5")
+    # Ids arrive spelled however a provider spells them, discovery included.
+    assert config.sees_images("Pixtral-Large-Latest")
+
+
+def test_a_model_that_cannot_see_is_never_guessed_at():
+    """Conservative on purpose: an unlisted model gets the sentence, because the
+    alternative is a 4xx on a question the user has already waited for."""
+    assert not config.sees_images("mistral-small-latest")
+    assert not config.sees_images("deepseek-v4-flash-free")
+    assert not config.sees_images("")
+    assert not config.sees_images(None)
+
+
+def test_the_vision_list_is_a_deployment_setting(monkeypatch):
+    """A free tier's lineup changes without notice, so learning that a model reads
+    images must not need a code change."""
+    monkeypatch.setattr(config, "VISION_MODELS", ("mimo",))
+    assert config.sees_images("mimo-v2.5")
+    assert not config.sees_images("pixtral-12b-2409")
+
+
+def test_the_switch_is_what_decides_the_shape_of_the_turn():
+    """The two halves wired together: what `sees_images` says about a model is what
+    `build` does with the picture. Passing `vision=` by hand, as the tests above do,
+    cannot catch the two disagreeing."""
+    shot = Attachment(
+        "pasted-image.png", "image", "", data=b"\x89PNG\r\n\x1a\nbody",
+        mime="image/png",
+    )
+    for model, listed in (("pixtral-12b-2409", True), ("mistral-small-latest", False)):
+        assert config.sees_images(model) is listed
+        built = history.build(
+            [user("what is this?", shot)], "S", vision=config.sees_images(model)
+        )
+        assert isinstance(built[-1]["content"], list) is listed, model
+
+
 def test_a_screenshot_does_not_evict_the_conversation_from_the_budget():
     """Base64 image bytes are enormous. Counted against a character budget they
     would push every real turn out to make room for one screenshot."""

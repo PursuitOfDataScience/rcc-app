@@ -705,11 +705,12 @@ class TestAttachments:
         def getvalue(self):
             return self._data
 
-    def app(self, monkeypatch, uploads, session=None):
+    def app(self, monkeypatch, uploads, session=None, **stub_kwargs):
         mistral = ScriptedProvider([], name="mistral", models=("mistral-small-latest",))
         return run_app(
             monkeypatch, client=mistral, upload=uploads,
             session={"messages": [], "processing": False, **(session or {})},
+            **stub_kwargs,
         )
 
     def test_the_uploader_asks_for_more_than_one_file(self, monkeypatch):
@@ -732,21 +733,25 @@ class TestAttachments:
 
     def test_the_same_file_is_not_held_twice_across_reruns(self, monkeypatch):
         """The uploader reports its files again on every rerun. Without an identity
-        check one attachment became one per interaction with the page."""
-        upload = self.Upload("run.err", b"segfault\n")
-        stub, _m = self.app(
-            monkeypatch, [upload],
-            session={"attachments": [self._processed("run.err", b"segfault\n")]},
-        )
+        check one attachment became one per interaction with the page.
+
+        Both runs go through the app, rather than the second one being handed a
+        hand-built attachment: what identifies a file is the app's business and has
+        changed once already, and a fixture that mints its own identity stops
+        exercising the check the moment that happens — which is how this test came to
+        pass a file the app would have recognised.
+        """
+        stub, _m = self.app(monkeypatch, [self.Upload("run.err", b"segfault\n")])
         assert len(stub.session_state["attachments"]) == 1
 
-    @staticmethod
-    def _processed(name, data):
-        from sage import files as files_mod
-
-        attachment, _error = files_mod.process(name, data)
-        attachment.size = len(data)
-        return attachment
+        # The rerun: same widget, same file, reported again.
+        again, _m = self.app(
+            monkeypatch, [self.Upload("run.err", b"segfault\n")],
+            session=dict(stub.session_state),
+        )
+        assert len(again.session_state["attachments"]) == 1, (
+            "the same file was attached twice by a rerun that changed nothing"
+        )
 
     def test_a_rejected_file_does_not_take_the_others_with_it(self, monkeypatch):
         """A bad file used to reset the whole widget, dropping the good ones too."""
@@ -781,3 +786,161 @@ class TestAttachments:
         png = b"\x89PNG\r\n\x1a\n" + b"x" * 40
         stub, _m = self.app(monkeypatch, [self.Upload("pasted-image.png", png)])
         assert any("cannot read images" in caption for caption in stub.captions)
+
+    def test_a_dismissed_file_does_not_come_back_on_the_next_rerun(self, monkeypatch):
+        """The ✕ has to outlive the rerun it triggers.
+
+        Nothing in this app can reach into the uploader widget and remove a file from
+        it, so the widget goes on reporting a dismissed one on every rerun. Without a
+        record of what was dismissed the chip disappeared and was rebuilt on the next
+        frame, which is a control that undoes itself.
+        """
+        stub, _m = self.app(
+            monkeypatch, [self.Upload("slurm-1.out", b"OOM killed\n")],
+            buttons={"drop-attachment-0": True},
+        )
+        assert stub.session_state["attachments"] == []
+
+        # The rerun that ✕ ends in: the same widget, still holding the same file.
+        after, _m = self.app(
+            monkeypatch, [self.Upload("slurm-1.out", b"OOM killed\n")],
+            session=dict(stub.session_state),
+        )
+        assert [item.filename for item in after.session_state["attachments"]] == [], (
+            "the dismissed file was re-attached by the rerun the dismissal caused"
+        )
+
+    def test_the_chip_that_was_dismissed_is_the_one_that_goes(self, monkeypatch):
+        """Every chip needs its own key and its own index.
+
+        One key for the row — which is what a single-attachment composer had — makes
+        every ✕ the same button: Streamlit refuses the duplicate, or the first file
+        goes whichever chip was clicked.
+        """
+        stub, _m = self.app(monkeypatch, [
+            self.Upload("keep.out", b"still wanted\n"),
+            self.Upload("drop.out", b"not wanted\n"),
+        ], buttons={"drop-attachment-1": True})
+        assert [item.filename for item in stub.session_state["attachments"]] == [
+            "keep.out",
+        ]
+
+    def test_two_different_files_with_one_name_are_both_held(self, monkeypatch):
+        """A name is not an identity, so an edited file attaches beside the old one.
+
+        Keyed on the name alone the second of these is dropped without a word — the
+        same failure as the guard that dropped every file offered while one was
+        already held. Not a corner case: every screenshot pasted into the box arrives
+        called pasted-image.png, and every cluster has more than one config.yaml.
+        """
+        stub, _m = self.app(monkeypatch, [
+            self.Upload("submit.sbatch", b"#SBATCH -p caslake\n"),
+            self.Upload("submit.sbatch", b"#SBATCH -p caslake\n#SBATCH --mem=64G\n"),
+        ])
+        held = stub.session_state["attachments"]
+        assert len(held) == 2, "the edited file was taken for the one already held"
+        assert "--mem=64G" in held[1].text
+
+    def test_sending_the_turn_hands_the_files_over_and_empties_the_composer(
+        self, monkeypatch
+    ):
+        """Both files travel with the question, and none is left in the composer.
+
+        A turn used to carry one attachment, so the second was not merely unsent — it
+        was unsendable. And a file left behind in the composer is re-sent, and paid
+        for, with every later question in the conversation.
+        """
+        stub, _m = self.app(
+            monkeypatch,
+            [self.Upload("slurm-1.out", b"OOM killed\n"),
+             self.Upload("submit.sbatch", b"#SBATCH -p caslake\n")],
+            chat_input="why did this die?",
+        )
+        sent = stub.session_state["messages"][-1]
+        assert [item.filename for item in sent["attachments"]] == [
+            "slurm-1.out", "submit.sbatch",
+        ]
+        assert stub.session_state["attachments"] == []
+        assert stub.session_state["uploader_key"] == 1, (
+            "the widget has to be reset, or it reports the sent files again"
+        )
+
+    def test_a_dismissal_does_not_outlive_the_turn_it_was_made_in(self, monkeypatch):
+        """Dismissed keys name files in a widget that is gone once a turn is sent.
+
+        Kept past the send, they refuse the same file for the rest of the
+        conversation: a paperclip that does nothing, for a file the user attached
+        successfully two questions ago.
+        """
+        data = b"OOM killed\n"
+        dismissed, _m = self.app(
+            monkeypatch, [self.Upload("slurm-1.out", data)],
+            buttons={"drop-attachment-0": True},
+        )
+        assert dismissed.session_state["dropped_uploads"], "nothing was remembered"
+
+        sent, _m = self.app(
+            monkeypatch, [self.Upload("slurm-1.out", data)],
+            session=dict(dismissed.session_state), chat_input="why did this die?",
+        )
+        assert sent.session_state["messages"][-1]["attachments"] == []
+        # Emptied, whatever it is kept in — a set of keys once, counts per key now.
+        assert not sent.session_state["dropped_uploads"]
+
+        # The next question, and the same file offered again to a fresh widget.
+        again, _m = self.app(
+            monkeypatch, [self.Upload("slurm-1.out", data)],
+            session=dict(sent.session_state) | {"processing": False},
+        )
+        assert [item.filename for item in again.session_state["attachments"]] == [
+            "slurm-1.out",
+        ], "a dismissal from an earlier turn still refuses the file"
+
+
+class TestVisionModels:
+    """A pasted screenshot is only useful if the model is handed the picture.
+
+    Pasting one used to do nothing whatsoever. Now it attaches, and whether the bytes
+    travel is `config.sees_images`' decision — an image sent to a text-only model is a
+    4xx, not a polite decline. These drive the whole app rather than `history.build`
+    directly, because the wiring is half the fix: app.py has to ask that question and
+    hand the answer to the builder.
+    """
+
+    PNG = b"\x89PNG\r\n\x1a\n" + b"IHDR" + b"pixels" * 8
+
+    def session(self, model_key):
+        from sage import files as files_mod  # noqa: PLC0415
+
+        shot, error = files_mod.process("pasted-image.png", self.PNG)
+        assert error is None, error
+        return {
+            "messages": [{"role": "user", "text": "what does this error mean?",
+                          "attachments": [shot]}],
+            "processing": True,
+            "model": model_key,
+        }
+
+    def content_sent(self, monkeypatch, model_id):
+        """The user turn as the provider received it."""
+        provider = ScriptedProvider([[event("That is an out-of-memory kill.")]],
+                                    name="mistral", models=(model_id,))
+        run_app(monkeypatch, client=provider,
+                session=self.session(f"mistral:{model_id}"))
+        assert provider.calls == 1
+        return provider.sent[0][-1]["content"]
+
+    def test_a_vision_model_is_handed_the_picture(self, monkeypatch):
+        content = self.content_sent(monkeypatch, "pixtral-12b-latest")
+        assert isinstance(content, list), f"the image never became a part: {content!r}"
+        assert [part["type"] for part in content] == ["text", "image_url"]
+        assert content[1]["image_url"]["url"].startswith("data:image/png;base64,")
+        assert "pasted-image.png" in content[0]["text"]
+
+    def test_a_text_only_model_is_told_about_the_file_instead(self, monkeypatch):
+        """Held back deliberately: the request would come back 4xx, and a 4xx is a
+        worse answer than "there is an image here that I cannot read"."""
+        content = self.content_sent(monkeypatch, "mistral-small-latest")
+        assert isinstance(content, str), f"bytes went to a text-only model: {content!r}"
+        assert "pasted-image.png" in content
+        assert "base64" not in content

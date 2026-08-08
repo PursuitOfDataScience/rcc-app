@@ -38,10 +38,21 @@ _ICONS = {
 }
 
 # Bytes that do not appear in text a person wrote. NUL is the giveaway on every
-# binary format worth naming; the C0 controls other than tab/newline/carriage
-# return/form feed are the rest. Used because the extension is not evidence: the
-# picker's list is a convenience, and a `.log` can be a core dump.
-_BINARY_BYTES = bytes(range(0, 9)) + bytes(range(11, 13)) + bytes(range(14, 32))
+# binary format worth naming; most other C0 controls are the rest.
+#
+# The exceptions are not decorative — each one is a byte that a *terminal* puts in a
+# file a cluster user would attach, and an earlier version of this list refused all of
+# them:
+#   0x08 backspace   — progress indicators overwriting themselves
+#   0x09 tab
+#   0x0a newline
+#   0x0b vertical tab, 0x0c form feed — page breaks in older printed output
+#   0x0d carriage return
+#   0x1b escape      — ANSI colour. `rich`, `pytest`, `ls --color` and most Python
+#                      logging setups emit one every ten or twenty bytes, so at the
+#                      2% threshold below a coloured `slurm-12345.err` was refused
+#                      outright: three escapes in a hundred bytes was enough.
+_BINARY_BYTES = bytes(range(1, 8)) + bytes(range(14, 27)) + bytes(range(28, 32))
 
 # Tried in order. utf-8 first because it is what everything modern writes, then its
 # BOM'd form, then the two single-byte encodings a cluster's older tooling emits.
@@ -58,15 +69,24 @@ _IMAGE_MAGIC = (
     (b"\xff\xd8\xff", "image/jpeg"),
     (b"GIF87a", "image/gif"),
     (b"GIF89a", "image/gif"),
+    (b"BM", "image/bmp"),
+    (b"II*\x00", "image/tiff"),
+    (b"MM\x00*", "image/tiff"),
 )
 
 
 def _image_mime(data: bytes) -> str | None:
+    """The image type, or None. Slices are safe on short input — Python clamps."""
     for magic, mime in _IMAGE_MAGIC:
         if data.startswith(magic):
             return mime
     if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
         return "image/webp"
+    # HEIC/HEIF: an ISO base-media file whose second box is `ftyp`. The phone camera
+    # default, and it starts with NUL bytes — so without this it was refused as "not
+    # text", which is a strange thing to tell someone about a photograph.
+    if data[4:8] == b"ftyp" and data[8:12] in (b"heic", b"heix", b"hevc", b"mif1"):
+        return "image/heic"
     return None
 
 
@@ -81,10 +101,12 @@ class Attachment:
     # can be handed the picture rather than a sentence about it.
     data: bytes = b""
     mime: str = ""
-    # Byte size of the upload it came from. Half of the (name, size) pair the app
-    # identifies a file by across reruns, since the uploader reports the same files
-    # again on every one of them.
+    # Byte size of the upload it came from, and the identity the app tracks it by
+    # across reruns (name, size and a digest — see `upload_key` in app.py). Both are
+    # stamped on by the caller, because the uploader reports the same files again on
+    # every rerun and something has to say "this one is already held".
     size: int = 0
+    key: tuple = ()
 
     @property
     def icon(self) -> str:
@@ -141,13 +163,21 @@ def _looks_binary(data: bytes) -> bool:
     return control > len(sample) * 0.02
 
 
-def _decode(data: bytes) -> str | None:
+def _decode(data: bytes) -> str:
+    """Text, always. The last encoding in the chain cannot fail.
+
+    latin-1 maps all 256 byte values, so by the time it is reached the answer is
+    guaranteed. This used to return `None` and the caller had a "could not decode"
+    branch for it — dead code that read like a safety net, with a test in the suite
+    conceding as much. What actually guards against nonsense is `_looks_binary`
+    upstream; this is only about which encoding renders the text best.
+    """
     for encoding in _ENCODINGS:
         try:
             return data.decode(encoding)
         except UnicodeDecodeError:
             continue
-    return None
+    return data.decode("latin-1", errors="replace")
 
 
 def _truncate(text: str, label: str) -> tuple[str, bool]:
@@ -167,7 +197,21 @@ def process(filename: str, data: bytes) -> tuple[Attachment | None, str | None]:
         limit = config.MAX_UPLOAD_BYTES // (1024 * 1024)
         return None, f"{filename} is larger than the {limit} MB limit."
 
-    if lowered.endswith(".pdf"):
+    # Images first, and by their bytes. A pasted screenshot is the case this exists
+    # for: it arrives under a name this app made up, so the name says nothing.
+    #
+    # Ahead of the PDF branch on purpose. With the order reversed, a PNG that happened
+    # to be called `screenshot.pdf` went to the PDF parser and came back "PDF support
+    # is unavailable on this server" — an answer about the wrong thing entirely.
+    mime = _image_mime(data)
+    if mime:
+        return Attachment(filename, "image", "", data=data, mime=mime), None
+
+    # A PDF is a PDF because it starts with %PDF, not because of its name. The name is
+    # still accepted as evidence, because a PDF served by a CGI script can arrive
+    # without the header intact — but a browser download called `viewcontent.cgi` with
+    # real PDF bytes used to fall through to the text branch and be refused as binary.
+    if data.startswith(b"%PDF") or lowered.endswith(".pdf"):
         try:
             text, pages = _extract_pdf(data)
         except ImportError:
@@ -182,13 +226,6 @@ def process(filename: str, data: bytes) -> tuple[Attachment | None, str | None]:
         text, truncated = _truncate(text, "Document")
         return Attachment(filename, "pdf", text, pages, truncated), None
 
-    # Before the binary sniff, which would throw every image out. A pasted screenshot
-    # is the case this exists for: it arrives as PNG bytes under a name this app made
-    # up, so the only evidence about what it is comes from the bytes themselves.
-    mime = _image_mime(data)
-    if mime:
-        return Attachment(filename, "image", "", data=data, mime=mime), None
-
     # Everything that is not a PDF or an image is text, and whether it is text is
     # decided by reading it. Checking the extension against a list was the old rule,
     # and the files it turned away were the ones this app exists to answer questions
@@ -200,8 +237,6 @@ def process(filename: str, data: bytes) -> tuple[Attachment | None, str | None]:
         )
 
     text = _decode(data)
-    if text is None:
-        return None, f"Could not decode {filename} as text."
 
     if lowered.endswith((".json", ".ipynb")):
         try:
