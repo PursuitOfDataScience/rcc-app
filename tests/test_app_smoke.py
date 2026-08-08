@@ -89,18 +89,28 @@ class TestWelcome:
         # Collapsed, because the markup is wrapped for the source file and a
         # sentence in it is split across lines wherever that happened to land.
         html = " ".join("\n".join(stub.markdown_html).split())
-        assert "What can I help you with?" in html
+        assert "Ask the RCC docs" in html
         # The hero says what this is, and that is all the explaining the landing
         # screen does. The limits were a third line in the hero, then an ℹ️ popover
         # in the row under the input, then three paragraphs of small print under the
         # starter cards, then one 11px caveat line beside the model name. Each was
         # one explanation too many in the way of the box you type in, and the last
         # of them is gone too.
-        assert "Sage reads the docs" not in html
+        #
+        # This guard is structural rather than a list of banned phrases. It used to
+        # assert that the words "Sage reads the docs" were absent, which was a proxy
+        # for "no extra explanatory surface" — and the subtitle now carries exactly
+        # that sentence, because scope belongs in the one line that already exists
+        # rather than in a second line underneath it. What must stay true is the
+        # count: one subtitle, no note block, no popover, no caveat row.
+        assert html.count('class="welcome-subtitle"') == 1
+        assert "landing-note" not in html
         assert "What Sage is" not in html
         assert "Documentation synced" not in html
         assert "drop into the walk-in lab" not in html
         assert "Sage can make mistakes" not in html
+        # The Help Desk address belongs in the answer to a question the docs cannot
+        # settle, not on the screen before anything has been asked.
         assert "RCC Help Desk" not in html
 
     def test_nothing_explains_the_app_with_a_control(self, monkeypatch):
@@ -199,12 +209,33 @@ class TestTurnLoop:
         assert stub.session_state["messages"][-1]["sources"] == []
 
     def test_the_tool_round_limit_is_enforced(self, monkeypatch):
+        """The loop still stops — but it answers from what it read.
+
+        It used to stop and emit "I wasn't able to finish looking that up. Please try
+        rephrasing your question.", discarding up to six rounds of retrieved
+        documentation and asking the reader to rephrase a question that had in fact
+        been researched. The limit now triggers one final request with tools
+        withheld, hence MAX_TOOL_ROUNDS + 2 calls rather than + 1.
+        """
         from sage import config
 
         client = ScriptedProvider([self.SEARCH] * (config.MAX_TOOL_ROUNDS + 1))
         stub, _module = run_app(monkeypatch, client=client, session=self.session())
-        assert client.calls == config.MAX_TOOL_ROUNDS + 1
-        assert "wasn't able to finish" in stub.session_state["messages"][-1]["text"]
+        assert client.calls == config.MAX_TOOL_ROUNDS + 2
+        # The loop is bounded: it does not keep going once tools are withheld.
+        assert client.calls <= config.MAX_TOOL_ROUNDS + 2
+        assert "wasn't able to finish" not in stub.session_state["messages"][-1]["text"]
+
+    def test_a_round_limit_with_nothing_to_say_still_names_the_help_desk(
+        self, monkeypatch
+    ):
+        """If even the forced answer comes back empty, the dead end has an exit."""
+        from sage import config
+
+        client = ScriptedProvider([self.SEARCH] * (config.MAX_TOOL_ROUNDS + 2))
+        stub, _module = run_app(monkeypatch, client=client, session=self.session())
+        text = stub.session_state["messages"][-1]["text"]
+        assert config.HELP_DESK_EMAIL in text
 
     def test_api_failure_becomes_a_typed_user_message(self, monkeypatch):
         error = RuntimeError("rate limit exceeded")

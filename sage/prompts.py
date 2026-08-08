@@ -91,3 +91,28 @@ TOPICS: accounts and allocations, connecting (SSH, ThinLinc), Slurm, storage and
 quotas, data transfer (Globus, rclone, Samba), software modules, Python, R, MATLAB,
 GPUs, containers, and RCC policy."""
 
+
+# Appended to the system prompt when the reader asks for a register. The audience
+# splits cleanly — a first-year grad student who has never used SSH, and a PI who
+# wants one flag — and a global setting is a smaller, more honest control than
+# memory or a persona system this app has no identity to hang on.
+STYLES = {
+    "normal": "",
+    "concise": (
+        "\n\nBE CONCISE. Answer in as few words as the question allows. Lead with the "
+        "command or the fact. Skip preamble, skip recap, skip encouragement. One short "
+        "paragraph or a short list, plus the code block. Still cite every page."
+    ),
+    "explanatory": (
+        "\n\nBE EXPLANATORY. Assume the reader is new to HPC. Expand each term of art "
+        "the first time it appears (node, core, task, partition, QOS, service unit, "
+        "login node, scratch) in a short parenthesis. Say what each command does and "
+        "what each flag means. Name the mistake that most often follows this step. "
+        "Still lead with the answer, and still cite every page."
+    ),
+}
+
+
+def system_prompt(style: str = "normal") -> str:
+    return SYSTEM_PROMPT + STYLES.get(style, "")
+

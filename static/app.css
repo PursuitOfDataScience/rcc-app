@@ -500,11 +500,12 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
     justify-content: center !important;
     text-align: center !important;
     width: 100% !important;
-    /* Single-line labels, so the card no longer needs to be tall enough for two —
-     * but taller and roomier than that minimum. At 56px in a 92vw grid the six of
-     * them read as squeezed into a corner of a very large window, which is what they
-     * were: the only thing on the landing screen and using a fifth of it. */
-    height: 72px !important;
+    /* `min-height` only. A fixed `height` with `!important` cannot absorb the
+     * 1.5x line-height and 0.12em letter-spacing WCAG 1.4.12 requires a user to be
+     * able to apply, and it clipped rather than grew — and now that each card carries
+     * a real question rather than a two-word label, two lines is the normal case.
+     * Still roomy: at 56px in a 92vw grid the six of them read as squeezed into a
+     * corner of a very large window, which is what they were. */
     min-height: 72px !important;
     padding: 12px 20px !important;
     background: var(--card-bg) !important;
@@ -805,6 +806,17 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
     margin-bottom: 8px;
 }
 
+/* Only the newest attachment-bearing turn sends its file text, so on an earlier turn
+ * the model can see the filename and not the file. Dimmed and struck through, with a
+ * title attribute, so the reader learns that before an answer disappoints them rather
+ * than after. Contrast is kept above AA against the bubble: this is a state, not a
+ * disabled control. */
+.attachment-badge.is-stale {
+    background: rgba(255, 255, 255, 0.12);
+    text-decoration: line-through;
+    text-decoration-thickness: 1px;
+}
+
 /* Assistant turns live in a keyed container; the old wrapper <div> never actually
  * wrapped anything because Streamlit closes each markdown block on its own.
  *
@@ -924,7 +936,11 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
     color: var(--brand-text) !important;
 }
 
-.source-chip .source-kind { opacity: 0.65; font-size: 0.68rem; }
+/* No `opacity`. At 0.65 over --chip-bg this measured 3.13:1 in light and 4.45:1 in
+ * dark, both under the 4.5:1 an 11px label needs — and it was invisible to the
+ * harness, which skips contrast for any selector containing "chip". A dimmer token at
+ * full opacity says the same thing and passes. */
+.source-chip .source-kind { color: var(--text-muted); font-size: 0.69rem; }
 
 /* ===== FEEDBACK ===== */
 [class*="st-key-rate-"] { margin-top: 0.3rem !important; }
@@ -935,10 +951,90 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
     background: transparent !important;
     border: 1px solid transparent !important;
     color: var(--text-muted) !important;
-    padding: 1px 7px !important;
-    min-height: 0 !important;
+    /* 24x24 minimum: these measured 32.4x19 and passed WCAG 2.5.8 only on the
+     * spacing exception, by 3.2px. One nudge to the margin above and it would have
+     * been a hard failure with nothing in CI to notice, because no scenario rendered
+     * a rating row. `min-height: 0` was what removed the floor. */
+    padding: 3px 7px !important;
+    min-height: 24px !important;
+    min-width: 24px !important;
     font-size: 0.82rem !important;
     border-radius: var(--radius-sm) !important;
+}
+
+/* The thumbs-down reason picker: one row of small choices, only after a 👎. */
+[class*="st-key-reason-"] { margin-top: 0.15rem !important; }
+
+[class*="st-key-reason-"] [data-testid="stVerticalBlock"] {
+    flex-direction: row !important;
+    flex-wrap: wrap !important;
+    gap: 0.3rem !important;
+}
+
+[class*="st-key-reason-"] button {
+    background: var(--chip-bg) !important;
+    border: 1px solid var(--chip-border) !important;
+    color: var(--chip-fg) !important;
+    padding: 3px 10px !important;
+    min-height: 24px !important;
+    font-size: 0.74rem !important;
+    border-radius: var(--radius-sm) !important;
+    width: auto !important;
+}
+
+[class*="st-key-reason-"] button:hover {
+    border-color: var(--brand-line) !important;
+    color: var(--brand-text) !important;
+}
+
+/* Suggested follow-up questions. Laid out as a wrapping row of quiet chips so they
+ * read as offers rather than as another strip of citations. */
+[class*="st-key-followups-"] { margin-top: 0.45rem !important; }
+
+[class*="st-key-followups-"] [data-testid="stVerticalBlock"] {
+    flex-direction: row !important;
+    flex-wrap: wrap !important;
+    gap: 0.35rem !important;
+}
+
+[class*="st-key-followups-"] button {
+    background: transparent !important;
+    border: 1px solid var(--chip-border) !important;
+    color: var(--text-secondary) !important;
+    padding: 4px 11px !important;
+    min-height: 26px !important;
+    font-size: 0.78rem !important;
+    border-radius: 999px !important;
+    width: auto !important;
+    text-align: left !important;
+}
+
+[class*="st-key-followups-"] button:hover {
+    background: var(--chip-bg) !important;
+    border-color: var(--brand-line) !important;
+    color: var(--brand-text) !important;
+}
+
+/* The escalation row on an answer that cited nothing. Links, not buttons: both leave
+ * the app (a mailto and a new issue), and dressing them as buttons would imply the
+ * app is doing something it is not. */
+[class*="st-key-gap-"] { margin-top: 0.3rem !important; }
+
+.gap-action {
+    display: inline-block;
+    margin: 0.15rem 0.4rem 0.15rem 0;
+    padding: 4px 11px;
+    font-size: 0.78rem;
+    color: var(--brand-text);
+    background: var(--chip-bg);
+    border: 1px solid var(--chip-border);
+    border-radius: var(--radius-sm);
+    text-decoration: none;
+}
+
+.gap-action:hover {
+    border-color: var(--brand-line);
+    background: var(--code-inline-bg);
 }
 
 [class*="st-key-rate-"] button:hover {
@@ -1017,6 +1113,36 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
     color: var(--text-secondary);
 }
 
+/* Same component, warning colour: an ungrounded answer or a turn that was clipped.
+ * Reuses .notice rather than inventing a third callout design — there were already
+ * two (.notice and .error-card) doing the same job in two visual languages. */
+.notice-gap {
+    border-left-color: var(--danger);
+    background: var(--danger-bg);
+}
+
+/* ===== HISTORY FOLD ===== */
+/* Drawn at the cut point, between the last dropped turn and the first sent one,
+ * because the reader's question is "which part did it forget" and position answers
+ * that without words. A count is the only number shown: a permanent context gauge is
+ * the same mistake as the caveat line that was removed from under the input. */
+.fold {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin: var(--space-md) 0;
+    color: var(--text-muted);
+    font-size: 0.72rem;
+}
+
+.fold::before,
+.fold::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: var(--chip-border);
+}
+
 /* ===== ERRORS ===== */
 .error-card {
     background: var(--danger-bg);
@@ -1024,7 +1150,10 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
     border-radius: var(--radius-md);
     padding: var(--space-md) var(--space-lg);
     margin: var(--space-md) 0 var(--space-sm);
-    text-align: center;
+    /* Left-aligned. Centred body copy is a modal/toast convention and this is an
+     * inline system message — .notice, two rules away, does the same job left-aligned,
+     * and having the two disagree was the app's failure state looking least designed. */
+    text-align: left;
     color: var(--text-primary);
 }
 
@@ -1070,7 +1199,9 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
     .welcome { margin-top: 0 !important; padding-top: 0.25rem; }
     .welcome-title { font-size: clamp(1.6rem, 3.9vw, 2.1rem) !important; }
     .welcome-subtitle { margin-bottom: 0.35rem; }
-    [class*="st-key-example-card-"] button { height: 48px !important; min-height: 48px !important; }
+    /* min-height only — see the note on the base rule; a fixed height clips a
+     * wrapped question and fails WCAG 1.4.12. */
+    [class*="st-key-example-card-"] button { min-height: 48px !important; }
     .st-key-examples [data-testid="stHorizontalBlock"] { margin-bottom: 0.45rem !important; }
     /* No padding-top override here. It used to restate `var(--host-header)` to
      * document that the clearance for Streamlit's header is never what gets
@@ -1090,7 +1221,7 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
         gap: 0.5rem !important;
     }
 
-    [class*="st-key-example-card-"] button { width: 100% !important; height: 52px !important; min-height: 52px !important; }
+    [class*="st-key-example-card-"] button { width: 100% !important; min-height: 52px !important; }
 
     .user-message { padding-right: 0 !important; }
     .user-bubble { max-width: 88%; }
@@ -1112,6 +1243,13 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
         animation-duration: 0.001ms !important;
         animation-iteration-count: 1 !important;
         transition-duration: 0.001ms !important;
+        /* Without this the whole landing screen is invisible for up to 580ms.
+         * The entry animations use `animation-fill-mode: both`, so the `from`
+         * keyframe — opacity 0, translated down — applies for the whole delay, and
+         * the delays run 0.15s to 0.58s. Zeroing the duration and not the delay
+         * turned "don't animate" into a staggered flash of nothing, which is worse
+         * than the animation it was meant to suppress. */
+        animation-delay: 0s !important;
     }
 
     .status-text {
@@ -1123,10 +1261,54 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
     .status-dot, .status-dots span { animation: none !important; opacity: 1; transform: none; }
 }
 
+/* ===== FORCED COLORS (Windows High Contrast) ===== */
+/* Nothing here existed, and two elements rendered as literally nothing.
+ *
+ * `background-clip: text` + `-webkit-text-fill-color: transparent` is how the hero
+ * title and the status text are painted. In forced-colors mode `color` is forced to
+ * CanvasText but `-webkit-text-fill-color` is not in the forced set and still wins,
+ * while the gradient behind it is not drawn — so both disappear. The fix is already
+ * written two rules up for reduced motion; it just was never applied here.
+ *
+ * `background-color`-only graphics (the status dot and the bouncing dots) are forced
+ * to Canvas and vanish too, so they get a border instead. */
+@media (forced-colors: active) {
+    .welcome-title, .status-text {
+        -webkit-text-fill-color: CanvasText;
+        background: none;
+        color: CanvasText;
+    }
+
+    .status-dot, .status-dots span {
+        background: CanvasText;
+        border: 1px solid CanvasText;
+    }
+
+    /* White-on-gradient becomes CanvasText on an undrawn background. Let the UA
+     * paint it and keep the shape with a border, exactly as the print block does. */
+    .user-bubble {
+        background: none !important;
+        color: CanvasText !important;
+        border: 1px solid CanvasText;
+    }
+
+    .source-chip, .gap-action, .notice, .error-card, .attachment-badge {
+        border: 1px solid CanvasText;
+    }
+
+    /* Struck-through text is the only signal left once the tint is forced away. */
+    .attachment-badge.is-stale { background: none !important; }
+}
+
 /* ===== PRINT ===== */
 @media print {
+    /* .st-key-attachments is `position: fixed` too, so without it here the chips
+     * landed on page 1 on top of the conversation. */
     .st-key-composer-strip, .stChatInput, [data-testid="stBottomBlockContainer"],
-    .rcc-copy-btn, [class*="st-key-rate-"] { display: none !important; }
+    .st-key-attachments, .rcc-copy-btn, [class*="st-key-rate-"],
+    [class*="st-key-reason-"], [class*="st-key-followups-"] {
+        display: none !important;
+    }
 
     /* Nothing is pinned on paper, so the reserved band is dead white space. */
     .main .block-container, [data-testid="stMainBlockContainer"] {
@@ -1135,6 +1317,40 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
         display: block !important;
     }
 
+    /* `prefers-color-scheme: dark` still matches while printing in Chromium, so the
+     * dark tokens were being used against white paper: .notice, .error-body and every
+     * muted label printed light grey on white. Restating the light values here fixes
+     * the whole class at once rather than element by element. */
+    :root {
+        --text-primary: #1f2937;
+        --text-secondary: #4b5563;
+        --text-muted: #6b7280;
+        --brand-text: #800000;
+        --chip-bg: #ffffff;
+        --chip-border: #999999;
+    }
+
     .user-bubble { background: none !important; color: #000 !important; border: 1px solid #999; }
     .stChatMessage, .source-chip { color: #000 !important; }
+
+    /* The hero is gradient-clipped text, which prints as nothing. */
+    .welcome-title {
+        -webkit-text-fill-color: #000 !important;
+        background: none !important;
+        color: #000 !important;
+    }
+
+    /* A printed citation with no URL is not a citation. This app's whole proposition
+     * is that every answer links the documentation it came from, and on paper that
+     * link has to be readable. */
+    .source-chip::after {
+        content: " (" attr(href) ")";
+        font-size: 0.7em;
+        color: #555;
+    }
+
+    /* Don't split an answer or a command across a page break. */
+    [class*="st-key-answer-"], .stChatMessage pre { break-inside: avoid; }
+
+    @page { margin: 18mm; }
 }

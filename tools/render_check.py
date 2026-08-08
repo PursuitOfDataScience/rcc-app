@@ -127,17 +127,37 @@ APP = _read("app.py")
 
 def _subtitle() -> str:
     match = re.search(r'class="welcome-subtitle">(.*?)</p>', APP, re.S)
-    return re.sub(r"\s+", " ", match.group(1)).strip() if match else "(missing)"
+    if not match:
+        return "(missing)"
+    text = re.sub(r"\s+", " ", match.group(1)).strip()
+    # The subtitle interpolates the docs snapshot date. Substituting a realistic one
+    # rather than measuring the literal `{freshness()}` — a placeholder is four
+    # characters where the real string is twenty, and the subtitle is held to one line.
+    return text.replace("{freshness()}", ", synced 6 July 2026")
 
 
 def _card_labels() -> list[str]:
+    """Read the real card strings out of app.py.
+
+    This required three quoted strings per entry, matching `(icon, label, question)`.
+    EXAMPLES is now `(icon, question)` — the label *is* the question sent — and the
+    old pattern would have matched nothing and returned an empty list, so every card
+    assertion below would have passed by measuring no cards at all. Asserting the
+    count is what turns that class of silence into a failure.
+    """
     block = re.search(r"EXAMPLES = \[(.*?)\n\]", APP, re.S).group(1)
-    return [
-        f"{icon} {label}"
-        for icon, label, _q in re.findall(
-            r'\(\s*"([^"]+)",\s*"([^"]+)",\s*"([^"]+)"\s*\)', block
+    found = [
+        f"{icon} {question}"
+        for icon, question in re.findall(
+            r'\(\s*"([^"]+)",\s*"([^"]+)"\s*\)', block
         )
     ]
+    if not found:
+        raise SystemExit(
+            "render_check could not parse EXAMPLES out of app.py. Fix the pattern in "
+            "_card_labels — an empty list would make every card check pass silently."
+        )
+    return found
 
 
 # There was a `_disclaimer()` here that read the caveat line out of app.py so the two
@@ -474,7 +494,7 @@ def landing(wrapped: bool = True) -> str:
     return f"""
 <div class="element-container"><div class="stMarkdown">
   <div class="welcome">
-    <h1 class="welcome-title">What can I help you with?</h1>
+    <h1 class="welcome-title">Ask the RCC docs</h1>
     <p class="welcome-subtitle">{SUBTITLE}</p>
   </div></div></div>
 {cards}"""
@@ -617,7 +637,12 @@ LINE_LIMITS = {
     # everything wraps and a limit there would be noise. Anything that must hold at a
     # phone width belongs in NARROW_LINE_LIMITS instead, where the gate does not
     # apply — a budget listed only here is silently unenforced below 641px.
-    **{f".st-key-example-card-{i} button p": 1 for i in range(6)},
+    # Two, not one. The cards used to be short labels ("Storage quotas") paired with a
+    # different, longer question that was actually sent; now the card text *is* the
+    # question, which is what the user's own message bubble should contain. A real
+    # question does not fit on one line at this width, and the card grew a `min-height`
+    # to hold it — three lines still means the wording should be shortened.
+    **{f".st-key-example-card-{i} button p": 2 for i in range(6)},
 }
 
 # Line budgets that apply BELOW 641px too, where the general gate does not. Empty
@@ -929,7 +954,7 @@ def page(body: str, scheme: str, scroll: bool, generating: bool = False,
            # exclusion that keeps it out of the send button's corner was ever rendered.
            '<button id="paperclip-btn" type="button">📎</button>'
            + ('<textarea rows="6">' + TYPED + "</textarea>" if typed else
-              '<textarea rows="1" placeholder="Ask anything about RCC…"></textarea>')
+              '<textarea rows="1" placeholder="Ask about Midway, Slurm, storage — or paste an error"></textarea>')
            + (f'<div class="chat-actions">{send}</div>' if column_input else send)
            + "</div></div></div></div>")
     return f"""<!doctype html><html><head><meta charset="utf-8">
