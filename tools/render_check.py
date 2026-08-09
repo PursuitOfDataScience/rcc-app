@@ -197,6 +197,15 @@ body {{ margin: 0; background: {BACKGROUNDS[scheme]}; color: {FOREGROUNDS[scheme
    scrolled. See `page(doc_scroll=…)`. */
 .doc-scroll [data-testid="stMain"] {{ overflow: visible; height: auto; }}
 .block-container {{ padding: 6rem 1rem 10rem; margin: 0 auto; }}
+/* Streamlit's own wrapper between `.stMarkdown` and whatever `st.markdown` was given,
+   and the one declaration on it that moves anything: a negative bottom margin, which
+   collapses with the last child's and pulls the next block up by 16px.
+   `st-emotion-cache-8vxb2y {{ margin-bottom: -1rem }}` on 1.54, measured live.
+   Missing here, this replica was 16px more generous than the app on every gap set from
+   inside a markdown block — the question-to-answer gap, the Sources strip, the notice
+   and the error card — so it read 44px where the app drew 28px and passed a bound the
+   app was failing. */
+[data-testid="stMarkdownContainer"] {{ margin-bottom: -1rem; }}
 .stMarkdown h1 {{ font-size: 2.75rem; font-weight: 600; line-height: 1.2;
                  padding: 1.25rem 0 1rem; margin: 0; }}
 .stMarkdown h2 {{ font-size: 1.75rem; line-height: 1.3; margin: 0 0 .5rem; }}
@@ -447,13 +456,13 @@ RELATED_LIST = related_list()
 
 def answer_block(index: int) -> str:
     return f"""
-<div class="element-container"><div class="stMarkdown">
+<div class="element-container"><div class="stMarkdown"><div data-testid="stMarkdownContainer">
   <div class="user-message"><div class="user-bubble">How do I request a GPU for a
   batch job on Midway3, and what partition should I use?</div></div>
-</div></div>
+</div></div></div>
 <div class="st-key-answer-{index} element-container"><div class="stChatMessage">
  <div></div>
- <div class="stMarkdown">
+ <div class="stMarkdown"><div data-testid="stMarkdownContainer">
   <h2>Requesting a GPU</h2>
   <p>Add <code>--gres=gpu:1</code> to your script and submit to the
   <code>gpu</code> partition.</p>
@@ -464,35 +473,36 @@ def answer_block(index: int) -> str:
 #SBATCH --mem=32G
 module load cuda/11.8
 python train.py --epochs 100 --batch-size 64 --output /scratch/midway3/$USER/run</code></pre>
- </div></div>
+ </div></div></div>
  {SOURCE_LIST}
  {RELATED_LIST}
 </div>"""
 
 
 CHAT_MARKER = ('<div class="element-container"><div class="stMarkdown">'
-               '<div class="chat-container"></div></div></div>')
+               '<div data-testid="stMarkdownContainer">'
+               '<div class="chat-container"></div></div></div></div>')
 
 # One question and a two-line reply: the shape that used to leave 121–566px of
 # nothing between the answer and the input box, because the page was shorter than
 # the window and there was no scroll left for app.js to close the gap with. The
 # failover notice is on it because that is when a reader is looking at the bottom.
 SHORT_ANSWER = f"""
-<div class="element-container"><div class="stMarkdown">
+<div class="element-container"><div class="stMarkdown"><div data-testid="stMarkdownContainer">
   <div class="user-message"><div class="user-bubble">How do I submit a batch job with
   sbatch?</div></div>
-</div></div>
+</div></div></div>
 <div class="st-key-answer-0 element-container"><div class="stChatMessage">
  <div></div>
- <div class="stMarkdown"><p>Submit it with <code>sbatch ./my_job.sbatch</code>, and the
- scheduler prints the job id it assigned.</p></div></div>
+ <div class="stMarkdown"><div data-testid="stMarkdownContainer"><p>Submit it with <code>sbatch ./my_job.sbatch</code>, and the
+ scheduler prints the job id it assigned.</p></div></div></div>
  {source_list([("Batch jobs — Submitting a job", "docs")])}
  {related_list(["Checking job status in the terminal"])}
 </div>
-<div class="element-container"><div class="stMarkdown">
+<div class="element-container"><div class="stMarkdown"><div data-testid="stMarkdownContainer">
   <div class="notice">Mistral · small-latest was unavailable (out of credit), so Zen ·
   deepseek-v4-flash-free answered instead. Pick a different one from the model button
-  under the input box.</div></div></div>"""
+  under the input box.</div></div></div></div>"""
 
 def landing(wrapped: bool = True) -> str:
     """The hero and the starter cards.
@@ -512,11 +522,11 @@ def landing(wrapped: bool = True) -> str:
         cards = ('<div class="st-key-examples" data-testid="stVerticalBlock">'
                  f"{grid}</div>")
     return f"""
-<div class="element-container"><div class="stMarkdown">
+<div class="element-container"><div class="stMarkdown"><div data-testid="stMarkdownContainer">
   <div class="welcome">
     <h1 class="welcome-title">What can I help you with?</h1>
     <p class="welcome-subtitle">{SUBTITLE}</p>
-  </div></div></div>
+  </div></div></div></div>
 {cards}"""
 
 def _check_balanced(scenarios: dict) -> None:
@@ -577,19 +587,19 @@ TYPED = (
 # nothing to catch. On this screen it is the whole page, which is how the question
 # ended up halfway down the window with the answer arriving underneath it.
 IN_FLIGHT = """
-<div class="element-container"><div class="stMarkdown">
+<div class="element-container"><div class="stMarkdown"><div data-testid="stMarkdownContainer">
   <div class="user-message"><div class="user-bubble">How do I connect to Midway via
   SSH?</div></div>
-</div></div>
+</div></div></div>
 <div class="element-container"><div class="stChatMessage">
  <div></div>
- <div class="stMarkdown">
+ <div class="stMarkdown"><div data-testid="stMarkdownContainer">
   <div class="status-row" role="status" aria-live="polite">
     <span class="status-dot" aria-hidden="true"></span>
     <span class="status-text">Reading SSH (Secure Shell)</span>
     <span class="status-dots" aria-hidden="true"><span></span><span></span><span></span></span>
   </div>
- </div></div></div>"""
+ </div></div></div></div>"""
 
 # The strip's container shape alternates across the screens, so both shapes are
 # audited at every width, in both themes, in every state.
@@ -626,15 +636,15 @@ SCENARIOS = {
     "in-flight": CHAT_MARKER + IN_FLIGHT + strip(wrapped=False),
     "error": CHAT_MARKER
     + """
-<div class="element-container"><div class="stMarkdown">
+<div class="element-container"><div class="stMarkdown"><div data-testid="stMarkdownContainer">
   <div class="user-message"><div class="user-bubble">How do I run PyTorch on GPUs?</div></div>
-</div></div>
-<div class="element-container"><div class="stMarkdown">
+</div></div></div>
+<div class="element-container"><div class="stMarkdown"><div data-testid="stMarkdownContainer">
   <div class="error-card" role="alert">
     <div class="error-title">Could not complete that request</div>
     <div class="error-body">This model is out of credit or its quota is used up.
       Switch to another model and try again.</div>
-  </div></div></div>
+  </div></div></div></div>
 <div class="st-key-error-actions element-container">
  <div data-testid="stHorizontalBlock">
   <div data-testid="stColumn"><div class="st-key-retry element-container">
@@ -1049,14 +1059,16 @@ function marker() {
   var block = document.querySelector('[data-testid="stVerticalBlock"]');
   var q = document.createElement('div');
   q.className = 'element-container';
-  q.innerHTML = '<div class="stMarkdown"><div class="user-message">'
-    + '<div class="user-bubble">what else can you do?</div></div></div>';
+  q.innerHTML = '<div class="stMarkdown"><div data-testid="stMarkdownContainer">'
+    + '<div class="user-message">'
+    + '<div class="user-bubble">what else can you do?</div></div></div></div>';
   block.appendChild(q);
   var streamed = document.createElement('div');
   streamed.id = 'streamed';
   streamed.className = 'st-key-answer-9 element-container';
   streamed.innerHTML = '<div class="stChatMessage"><div></div>'
-    + '<div class="stMarkdown" id="sink"></div></div>';
+    + '<div class="stMarkdown">'
+    + '<div data-testid="stMarkdownContainer" id="sink"></div></div></div>';
   block.appendChild(streamed);
   await tick(600);
   look('question appended');
@@ -1402,7 +1414,17 @@ def audit(data, scenario, scheme, width, state: str) -> list[str]:
     generating = state == "generating"
     # "unmeasured" is the first frame, so it is at the top of the page like "rest":
     # the host-toolbar collision check below is meaningful in both.
-    scrolled = state not in ("rest", "unmeasured")
+    #
+    # Unless app.js has moved it. "rest" stopped being a synonym for "at the top of
+    # the page" when a finished turn started following its own tail down, so that the
+    # Sources strip and the rating row clear the composer. On the shortest viewport
+    # (966x626) that lands the page at its maximum scroll, which puts the top of the
+    # answer 25px behind the host overlay — with no less-scrolled position that also
+    # shows the tail. Reading the measured position rather than inferring it from the
+    # state name is what the collision check's own comment already asks for: once the
+    # page is scrolled, content passing under a fixed overlay is inherent. A page that
+    # has NOT scrolled is still judged, which is the case the check was written for.
+    scrolled = state not in ("rest", "unmeasured") or data["scrolled"] > 0
 
     if data["docOverflowX"] > 0:
         problems.append(f"{where}: page scrolls sideways by {data['docOverflowX']}px")

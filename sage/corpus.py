@@ -82,9 +82,17 @@ class Corpus:
 
 
 def docs_url(rel_path: str, anchor: str = "") -> str:
-    """Map `slurm/sbatch.md` to its published user-guide URL."""
+    """Map `slurm/sbatch.md` to its published user-guide URL.
+
+    An `index.md` is the directory it sits in, at every depth, not just the top one.
+    mkdocs runs with `use_directory_urls` (the default), which publishes
+    `software/index.md` at `software/` — so citing it to `software/index/` is a 404,
+    and it was: 16 indexed sections across `software/index.md` and
+    `tutorials/gis/index.md` pointed at a dead page.
+    """
     slug = re.sub(r"\.md$", "", rel_path, flags=re.IGNORECASE).strip("/")
-    if slug in ("index", ""):
+    slug = re.sub(r"(?:^|/)index$", "", slug).strip("/")
+    if not slug:
         url = config.DOCS_BASE_URL
     else:
         url = f"{config.DOCS_BASE_URL.rstrip('/')}/{slug}/"

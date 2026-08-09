@@ -24,23 +24,44 @@ remote copy of a result already in hand.
 
 ## Running the checks here
 
-Three of them are available and two of them hide:
+**Activate the environment first. Everything below is in it:**
 
-- **Lint**: `/root/.local/bin/ruff check .` — installed, but not on `PATH`, so a bare
-  `ruff` or `python -m ruff` says "no module named ruff". A whole session was spent
-  reporting the lint as unrunnable while CI failed on `SIM117`; it is runnable.
-- **Tests**: pytest cannot be installed (no package index). There is a working shim in
-  the session scratchpad that handles fixtures, `parametrize`, `raises(...).value` and
-  `xfail`; without those four it silently runs 2 test files out of 11.
-- **Layout**: `python tools/render_check.py`, ~4 minutes locally for ~576 renders.
+```bash
+source /software/python-miniforge-25.3.0-el8-x86_64/bin/activate AI
+```
 
-Run all three before pushing. Each has failed CI at least once for want of being run.
+That gives you ruff 0.15.18, pytest 9.0.3, streamlit 1.54.0, playwright 1.59.0 and
+httpx. Outbound HTTPS works. Chromium is at
+`~/.cache/ms-playwright/chromium-1217/chrome-linux64/chrome`.
+
+- **Lint**: `ruff check .`
+- **Tests**: `python -m pytest -q` — 387 pass. Real pytest; no shim is needed.
+- **Layout**: `SAGE_CHROME=~/.cache/ms-playwright/chromium-1217/chrome-linux64/chrome
+  python tools/render_check.py` — ~7 minutes for 576 renders.
+- **Anchors**: `python tools/anchor_check.py` — network-bound, so not in the suite.
+  Run it after touching `slugify`, `plain_heading` or `docs_url`.
+
+Run the first three before pushing. Each has failed CI at least once for want of
+being run.
+
+> This section used to say pytest could not be installed, that ruff lived at
+> `/root/.local/bin/ruff` (it is there, and permission-denied for this user), and that
+> Streamlit usually could not be run. All three were wrong, and the cost was that
+> nobody ran the app: a post-turn scroll bug that hid every answer's Sources strip and
+> 👍/👎 behind the composer, and a question-to-answer gap the layout harness was
+> structurally unable to see, both survived because the only thing that could catch
+> them was believed to be unavailable. **Check before recording that a tool is
+> missing.**
 
 ## The UI
 
-Every UI bug that has shipped here was pure CSS, and Streamlit usually cannot be
-installed in the working environment. `tools/render_check.py` renders `static/app.css`
-against a replica of Streamlit's DOM in headless Chromium and measures it.
+Every UI bug that has shipped here was pure CSS, and `tools/render_check.py` renders
+`static/app.css` against a replica of Streamlit's DOM in headless Chromium and
+measures it. But Streamlit **does** run here, so the replica is no longer the only
+witness: boot the real app against a mock provider and drive it with Playwright when
+a bug is about behaviour over time rather than a static layout. That is what the
+harness cannot model — it renders settled states, not the moment a turn lands and the
+page grows by 130–290px underneath the reader.
 
 Two habits from things that got past it:
 
@@ -53,6 +74,16 @@ Two habits from things that got past it:
   on `stMain` vs. the document, the send button beside the text vs. under it — each of
   those pairs cost a round of "fixed it" that fixed nothing.
 
+- **Model the wrappers, not just the classes.** Streamlit puts
+  `[data-testid="stMarkdownContainer"]` between `.stMarkdown` and anything given to
+  `st.markdown`, and it carries `margin-bottom: -1rem`. The replica had the classes and
+  not that wrapper, so every gap set from inside a markdown block measured 16px more
+  generous here than in the app — the harness read 44px, the app drew 28px, and it
+  passed a bound the app was failing. Margins in `app.css` are written 1rem larger than
+  the gap they draw for this reason.
+
 Prefer a mechanism whose failure mode is visible over one that depends on how Streamlit
 lays out the page, and don't write a rule against an unversioned Streamlit test id that
-this repo cannot see — it fails silently the day it changes.
+this repo cannot see — it fails silently the day it changes. On 1.54,
+`[data-testid="stMain"]` no longer exists; the scrollport is
+`section[data-testid="stAppScrollToBottomContainer"]`.

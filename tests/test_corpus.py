@@ -39,7 +39,7 @@ def test_citation_url_deep_links_to_the_section():
     _document, chunks = corpus_mod.chunk_markdown("docs", "slurm/sbatch.md", DOC)
     deep = next(c for c in chunks if c.id.endswith("#managing-jobs"))
     assert deep.url == (
-        "https://rcc-uchicago.github.io/user-guide/slurm/sbatch/#managing-jobs"
+        "https://docs.rcc.uchicago.edu/slurm/sbatch/#managing-jobs"
     )
 
 

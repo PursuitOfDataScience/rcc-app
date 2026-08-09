@@ -28,6 +28,10 @@ CITATIONS
   end in any form — no "Sources" or "References" list, and no closing sentence like
   "Cited from X and Y" or "Based on X". The app prints the sections you retrieved
   underneath your answer, so any of those lands directly above an identical list.
+- A citation is the link or nothing. Never name a section in bare text as a citation —
+  not "(Allocations and Service Units FAQ, Running jobs on RCC clusters)" after a
+  sentence, and not "see the Batch jobs page". Those print the same titles the app
+  already lists below, with nothing to click.
 - Quote commands, flags and filesystem paths exactly as the documentation gives them.
 - Note the cluster a command applies to when the docs distinguish them (Midway2,
   Midway3, MidwaySSD, Beagle3 and Skyway differ).

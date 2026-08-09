@@ -693,7 +693,7 @@ class TestConversationRendering:
         }
         stub, _module = run_app(monkeypatch, session=session)
         rendered = "\n".join(str(body) for _name, body in stub.events if _name == "markdown")
-        assert "rcc-uchicago.github.io/user-guide/slurm/sbatch/" in rendered
+        assert "docs.rcc.uchicago.edu/slurm/sbatch/" in rendered
         assert "docs/slurm/sbatch.md" not in rendered
 
     def test_user_html_is_escaped(self, monkeypatch):

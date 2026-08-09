@@ -198,6 +198,100 @@ def _pages(line: str, corpus: Corpus) -> set[str] | None:
     return pages
 
 
+# The fourth shape, and the one that survives every rule above: a parenthetical of
+# bare section titles dropped into a sentence — "…used on a cluster (Allocations and
+# Service Units FAQ, Running jobs on RCC clusters)." It is not a trailing line, so the
+# line-oriented rules never see it; it holds no links, so `_pages` cannot judge it; and
+# it names the very sections the strip lists three lines below.
+#
+# Judged against what the strip is actually showing rather than by shape, because shape
+# alone cannot tell a citation from prose: the same sentence also contains
+# "(CPUs/GPUs/time)", which has to stay. Every comma-separated part must name a
+# retrieved section, so one ordinary aside anywhere inside the brackets keeps the whole
+# parenthetical.
+_PAREN = re.compile(r"[ \t]*\(([^()]*)\)")
+# Tried in order, widest first, because "and" is both a separator between citations
+# ("Batch jobs and Partitions") and a word inside one ("Allocations and Service Units
+# FAQ"). Splitting on it up front cuts that title in half and the match is lost, so the
+# unsplit string and the comma-only split both get a turn before it is used.
+_PAREN_SPLITS = (None, re.compile(r"[,;]"), re.compile(r"[,;&]|\band\b"))
+# A citation the model introduces rather than states bare: "(see Batch jobs)".
+_CITE_LEAD = frozenset({
+    "see", "from", "per", "source", "sources", "cited", "citing", "citation",
+    "citations", "reference", "references", "based", "on", "according", "to", "in",
+    "the", "also", "further", "more", "detail", "details",
+})
+
+
+def _norm_title(text: str) -> str:
+    """A section title reduced to what two spellings of it have in common."""
+    text = _MARKDOWN_LINK.sub(r"\1", text)
+    text = re.sub(r"[`*_]+", "", text)
+    text = re.sub(r"\s+", " ", text).strip().lower()
+    return text.strip(" .,;:!?—–-")
+
+
+def _source_names(sources: list[dict]) -> set[str]:
+    """Every name the Sources strip is already showing a reader.
+
+    A chip reads `Doc title — Section heading`, and a model citing it in prose picks
+    one end or the other, so both halves count as the same reference.
+
+    Single-word names are left out on purpose. `Storage` or `Python` is a title *and*
+    an ordinary word, and "(Python)" after a package name is an aside, not a citation —
+    the two-word floor is what keeps this rule off that sentence.
+    """
+    names: set[str] = set()
+    for item in sources:
+        label = str(item.get("label", ""))
+        head, sep, tail = label.partition(" — ")
+        for candidate in (label, head, tail) if sep else (label,):
+            name = _norm_title(candidate)
+            if name and len(name.split()) >= 2:
+                names.add(name)
+    return names
+
+
+def strip_inline_citations(text: str, sources: list[dict] | None = None) -> str:
+    """Drop parenthetical asides that only name sections the strip already lists.
+
+    Left alone when the brackets contain a real markdown link: `([Batch jobs](path))`
+    is the citation form the system prompt asks for, it gives the reader something to
+    click, and removing it would delete the only pointer at the claim's source.
+    """
+    if not text or not sources:
+        return text
+    names = _source_names(sources)
+    if not names:
+        return text
+
+    def cited(part: str) -> bool:
+        name = _norm_title(part)
+        # "see Batch jobs" cites the same section "Batch jobs" does.
+        while name:
+            first, _, rest = name.partition(" ")
+            if first in _CITE_LEAD and rest:
+                name = rest
+                continue
+            break
+        return name in names
+
+    def replace(match: re.Match[str]) -> str:
+        inner = match.group(1)
+        if "](" in inner:
+            return match.group(0)
+        for pattern in _PAREN_SPLITS:
+            parts = (
+                [inner] if pattern is None
+                else [part for part in pattern.split(inner) if part.strip()]
+            )
+            if parts and all(cited(part) for part in parts):
+                return ""
+        return match.group(0)
+
+    return _PAREN.sub(replace, text)
+
+
 def strip_source_footer(
     text: str, corpus: Corpus | None = None, sources: list[dict] | None = None
 ) -> str:

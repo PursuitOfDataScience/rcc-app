@@ -12,24 +12,32 @@ import os
 # --- helpers ---------------------------------------------------------------
 
 
-def _env_int(name: str, default: int) -> int:
+def _env_int(name: str, default: int, minimum: int | None = None) -> int:
+    """An integer setting, falling back to `default` on anything unusable.
+
+    `minimum` is for the settings where a non-positive value is not a choice but a
+    typo: `SAGE_MAX_TOKENS=-1` used to be handed straight to the provider, which
+    fails the request with a message about the model rather than about the setting.
+    """
     raw = os.getenv(name)
-    if not raw:
+    if raw is None or not raw.strip():
         return default
     try:
-        return int(raw)
+        value = int(raw)
     except ValueError:
         return default
+    return default if minimum is not None and value < minimum else value
 
 
-def _env_float(name: str, default: float) -> float:
+def _env_float(name: str, default: float, minimum: float | None = None) -> float:
     raw = os.getenv(name)
-    if not raw:
+    if raw is None or not raw.strip():
         return default
     try:
-        return float(raw)
+        value = float(raw)
     except ValueError:
         return default
+    return default if minimum is not None and value < minimum else value
 
 
 def _env_list(name: str, default: tuple[str, ...]) -> tuple[str, ...]:
@@ -114,10 +122,10 @@ MODEL = os.getenv("SAGE_MODEL", "mistral-small-latest")
 # way: the reader cannot tell a finished thought from a severed one, and asking again
 # costs another full request. A walkthrough with two code blocks and a Sources strip
 # runs well past 1600, and no answer this app gives is improved by being truncated.
-MAX_TOKENS = _env_int("SAGE_MAX_TOKENS", 8000)
-TEMPERATURE = _env_float("SAGE_TEMPERATURE", 0.2)
-MAX_TOOL_ROUNDS = _env_int("SAGE_MAX_TOOL_ROUNDS", 6)
-REQUEST_RETRIES = _env_int("SAGE_REQUEST_RETRIES", 2)
+MAX_TOKENS = _env_int("SAGE_MAX_TOKENS", 8000, minimum=1)
+TEMPERATURE = _env_float("SAGE_TEMPERATURE", 0.2, minimum=0.0)
+MAX_TOOL_ROUNDS = _env_int("SAGE_MAX_TOOL_ROUNDS", 6, minimum=1)
+REQUEST_RETRIES = _env_int("SAGE_REQUEST_RETRIES", 2, minimum=0)
 
 # --- corpus ----------------------------------------------------------------
 
@@ -157,17 +165,17 @@ EXCLUDED_FILES = _env_list(
 # docs/slurm/sbatch.md — the single most important page in the corpus. Indexing
 # heading-sized chunks removes the need to truncate at all.
 
-MAX_CHUNK_CHARS = _env_int("SAGE_MAX_CHUNK_CHARS", 6000)
-MIN_CHUNK_CHARS = _env_int("SAGE_MIN_CHUNK_CHARS", 120)
+MAX_CHUNK_CHARS = _env_int("SAGE_MAX_CHUNK_CHARS", 6000, minimum=1)
+MIN_CHUNK_CHARS = _env_int("SAGE_MIN_CHUNK_CHARS", 120, minimum=1)
 # Cap for reading a whole page. Pages above it return an outline plus their
 # opening, so the model asks for the section it actually needs.
-MAX_DOC_CHARS = _env_int("SAGE_MAX_DOC_CHARS", 20000)
-WEB_CHUNK_CHARS = _env_int("SAGE_WEB_CHUNK_CHARS", 2400)
-WEB_CHUNK_OVERLAP = _env_int("SAGE_WEB_CHUNK_OVERLAP", 240)
+MAX_DOC_CHARS = _env_int("SAGE_MAX_DOC_CHARS", 20000, minimum=1)
+WEB_CHUNK_CHARS = _env_int("SAGE_WEB_CHUNK_CHARS", 2400, minimum=1)
+WEB_CHUNK_OVERLAP = _env_int("SAGE_WEB_CHUNK_OVERLAP", 240, minimum=0)
 
 # --- search ----------------------------------------------------------------
 
-SEARCH_RESULTS = _env_int("SAGE_SEARCH_RESULTS", 6)
+SEARCH_RESULTS = _env_int("SAGE_SEARCH_RESULTS", 6, minimum=1)
 # Sections of a single page allowed in one result set. A third of the golden-set
 # questions used to come back with all of the top three from one page, so a search
 # asking for six sections really returned two pages and the model saw one page's view.
@@ -187,8 +195,8 @@ SEARCH_RESULTS = _env_int("SAGE_SEARCH_RESULTS", 6)
 # 1.4 sections of depth on average to get there. 1 buys recall@3 as well and takes
 # depth down to almost nothing, which is too much to pay: a model handed one section
 # per page has pointers, not evidence.
-MAX_PER_PAGE = _env_int("SAGE_MAX_PER_PAGE", 2)
-SNIPPET_CHARS = _env_int("SAGE_SNIPPET_CHARS", 240)
+MAX_PER_PAGE = _env_int("SAGE_MAX_PER_PAGE", 2, minimum=1)
+SNIPPET_CHARS = _env_int("SAGE_SNIPPET_CHARS", 240, minimum=1)
 
 # When retrieval should admit it is weak, so the model can decline instead of
 # answering from whatever happened to match. Two thresholds, because one cannot do it:
@@ -206,42 +214,44 @@ SNIPPET_CHARS = _env_int("SAGE_SNIPPET_CHARS", 240)
 # Both are pinned by tests/test_search.py::TestAssessment, on the labelled queries the
 # numbers came from. Moving either constant fails them, which is the point: the last
 # version of this idea shipped a threshold that no test constrained at all.
-MIN_CONFIDENT_SCORE = _env_float("SAGE_MIN_CONFIDENT_SCORE", 20.0)
-STRONG_SCORE = _env_float("SAGE_STRONG_SCORE", 26.0)
+MIN_CONFIDENT_SCORE = _env_float("SAGE_MIN_CONFIDENT_SCORE", 20.0, minimum=0.0)
+STRONG_SCORE = _env_float("SAGE_STRONG_SCORE", 26.0, minimum=0.0)
 
-BM25_K1 = _env_float("SAGE_BM25_K1", 1.5)
-BM25_B = _env_float("SAGE_BM25_B", 0.75)
-TITLE_BOOST = _env_float("SAGE_TITLE_BOOST", 2.5)
-PATH_BOOST = _env_float("SAGE_PATH_BOOST", 1.2)
+BM25_K1 = _env_float("SAGE_BM25_K1", 1.5, minimum=0.0)
+BM25_B = _env_float("SAGE_BM25_B", 0.75, minimum=0.0)
+TITLE_BOOST = _env_float("SAGE_TITLE_BOOST", 2.5, minimum=0.0)
+PATH_BOOST = _env_float("SAGE_PATH_BOOST", 1.2, minimum=0.0)
 # 0.8 measured best on tests/test_retrieval_eval.py (recall@3 94%→97%, p@1 76%→79%)
 # without raising scores for off-topic queries. Re-run that eval if you change it.
-SYNONYM_WEIGHT = _env_float("SAGE_SYNONYM_WEIGHT", 0.8)
+SYNONYM_WEIGHT = _env_float("SAGE_SYNONYM_WEIGHT", 0.8, minimum=0.0)
 
 # --- conversation ----------------------------------------------------------
 
 # Rough character budget for the history sent upstream. Trimming happens oldest
 # first; the system prompt and the current question are never dropped.
-HISTORY_CHAR_BUDGET = _env_int("SAGE_HISTORY_CHAR_BUDGET", 48000)
+HISTORY_CHAR_BUDGET = _env_int("SAGE_HISTORY_CHAR_BUDGET", 48000, minimum=1)
 # Older attachments collapse to a stub so a PDF is not re-uploaded every turn.
-ATTACHMENT_FULL_TEXT_TURNS = _env_int("SAGE_ATTACHMENT_FULL_TEXT_TURNS", 1)
-MAX_PROMPT_CHARS = _env_int("SAGE_MAX_PROMPT_CHARS", 8000)
+ATTACHMENT_FULL_TEXT_TURNS = _env_int("SAGE_ATTACHMENT_FULL_TEXT_TURNS", 1, minimum=0)
+MAX_PROMPT_CHARS = _env_int("SAGE_MAX_PROMPT_CHARS", 8000, minimum=1)
 
 # --- uploads ---------------------------------------------------------------
 
-MAX_UPLOAD_BYTES = _env_int("SAGE_MAX_UPLOAD_BYTES", 10 * 1024 * 1024)
+MAX_UPLOAD_BYTES = _env_int("SAGE_MAX_UPLOAD_BYTES", 10 * 1024 * 1024, minimum=1)
 # Across all files on one turn, which the per-file limit above does not bound: four
 # 9 MB screenshots are four legal uploads and one 50 MB request, and the only thing
 # that stopped it was the provider's own 413 — surfaced to the reader as "this
 # conversation got too long. Clear the chat", about a conversation of one question.
-MAX_ATTACHED_BYTES = _env_int("SAGE_MAX_ATTACHED_BYTES", 20 * 1024 * 1024)
-MAX_FILE_TEXT_CHARS = _env_int("SAGE_MAX_FILE_TEXT_CHARS", 30000)
+MAX_ATTACHED_BYTES = _env_int("SAGE_MAX_ATTACHED_BYTES", 20 * 1024 * 1024, minimum=1)
+MAX_FILE_TEXT_CHARS = _env_int("SAGE_MAX_FILE_TEXT_CHARS", 30000, minimum=1)
 
 
 # --- links -----------------------------------------------------------------
 
-DOCS_BASE_URL = os.getenv(
-    "RCC_DOCS_BASE_URL", "https://rcc-uchicago.github.io/user-guide/"
-)
+# The canonical host, which is what `docs/CNAME` in this repository publishes. The
+# github.io address that used to be here still works, but only as a 301 to this one:
+# every citation cost a redirect, showed the reader a github.io hostname on hover for
+# a University service, and would break the day GitHub Pages stopped forwarding.
+DOCS_BASE_URL = os.getenv("RCC_DOCS_BASE_URL", "https://docs.rcc.uchicago.edu/")
 # The email, not a page: it is what the system prompt hands a user whose question the
 # documentation cannot answer, and it goes into the answer text. There was a
 # HELP_DESK_URL beside this for the caveat line under the input; that line is gone and

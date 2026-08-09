@@ -403,13 +403,41 @@
         // count — was never settled. That is the dead space that survived two rounds.
         if (!latest || end === null || !bar) return;
 
-        // Counted on questions, not on answers. An errored turn appends no assistant
+        // Counted on questions, not on answers. An errored turn appends no answer
         // message, so an answer count carries over from the previous turn and this
         // reads as already done; every turn has exactly one question.
         var stamp = String(messages.length);
-        if (doc.body.dataset.sageSettled === stamp) return;
-
         var excess = composerTop(bar) - end - TAIL_GAP;
+
+        // The tail is UNDER the composer, not above it, so there is no dead space to
+        // close — there is answer hidden behind the input bar, and the rest of this
+        // function can only scroll up.
+        //
+        // How a finished turn gets here: the follow in `autoScroll()` runs only while
+        // `#processing-signal` is in the DOM, and that marker belongs to the processing
+        // block. The rerun that renders the stored answer appends the Sources strip,
+        // the Related list and the rating row — measured at 130–290px — after the last
+        // follow has run, and nothing brought the view down over them. The reader was
+        // left with the newest answer cut off mid-code-block and its citations and
+        // 👍/👎 below the fold, which are the two things this app is built around.
+        //
+        // Keyed on the page's height as well as the turn, and that is the whole care
+        // here. Scrolling does not change `scrollHeight`, so a reader who scrolls up to
+        // re-read is never dragged back down — the key still matches and this returns.
+        // Content arriving does change it, so a rating row that lands a frame after the
+        // strip re-arms the correction exactly once and the tail is followed again.
+        if (excess < -4) {
+            var reached = stamp + ':' + Math.round(el.scrollHeight / 4);
+            if (doc.body.dataset.sageFollowed === reached) return;
+            doc.body.dataset.sageFollowed = reached;
+            scrollView(el, Math.min(
+                Math.max(0, el.scrollHeight - el.clientHeight),
+                el.scrollTop - excess
+            ));
+            return;
+        }
+
+        if (doc.body.dataset.sageSettled === stamp) return;
         if (excess <= 4) return;
 
         // Never buy that space by pushing a still-visible question off the top.
