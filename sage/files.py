@@ -133,7 +133,53 @@ class Attachment:
     def as_data_url(self) -> str:
         import base64  # noqa: PLC0415  (only images need it)
 
-        return f"data:{self.mime};base64,{base64.b64encode(self.data).decode()}"
+        data, mime = _downscaled(self.data, self.mime)
+        return f"data:{mime};base64,{base64.b64encode(data).decode()}"
+
+
+def _downscaled(data: bytes, mime: str) -> tuple[bytes, str]:
+    """Shrink an image to something a model can still read, or return it unchanged.
+
+    A 10 MB screenshot base64s to ~13 MB and is re-sent on every turn it survives in
+    the history, which is the single largest per-request cost this app can incur —
+    and it buys nothing. No model reads a terminal screenshot better at 4000px than
+    at 1568, which is the longest edge the vision APIs downscale to anyway; sending
+    the original just pays to transmit pixels the provider throws away.
+
+    Deliberately never raises. Pillow is an optional dependency and an image can be
+    malformed, animated or a format it declines to open, and none of those are worth
+    failing an upload over — the fallback is exactly today's behaviour.
+    """
+    if not data or not mime.startswith("image/"):
+        return data, mime
+    try:
+        import io  # noqa: PLC0415
+
+        from PIL import Image  # noqa: PLC0415
+
+        with Image.open(io.BytesIO(data)) as image:
+            if (max(image.size) <= config.IMAGE_MAX_EDGE
+                    and len(data) <= config.IMAGE_MAX_BYTES):
+                return data, mime
+            image = image.convert("RGB")
+            edge = config.IMAGE_MAX_EDGE
+            image.thumbnail((edge, edge), Image.LANCZOS)
+            buffer = io.BytesIO()
+            # JPEG regardless of what came in: a screenshot re-encoded at 85 is
+            # indistinguishable to a reader and a fraction of a lossless PNG, and
+            # the alternative is carrying a format matrix for no benefit.
+            image.save(buffer, format="JPEG", quality=85, optimize=True)
+            shrunk = buffer.getvalue()
+        if len(shrunk) < len(data):
+            logger.info(
+                "Downscaled image for the model: %d KB -> %d KB",
+                len(data) // 1024, len(shrunk) // 1024,
+            )
+            return shrunk, "image/jpeg"
+        return data, mime
+    except Exception:
+        logger.debug("Could not downscale an image; sending it as-is", exc_info=True)
+        return data, mime
 
 
 def _extract_pdf(data: bytes) -> tuple[str, int]:

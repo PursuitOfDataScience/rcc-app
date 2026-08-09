@@ -124,7 +124,18 @@ MODEL = os.getenv("SAGE_MODEL", "mistral-small-latest")
 # runs well past 1600, and no answer this app gives is improved by being truncated.
 MAX_TOKENS = _env_int("SAGE_MAX_TOKENS", 8000, minimum=1)
 TEMPERATURE = _env_float("SAGE_TEMPERATURE", 0.2, minimum=0.0)
-MAX_TOOL_ROUNDS = _env_int("SAGE_MAX_TOOL_ROUNDS", 6, minimum=1)
+# Four, not six. Every round is another provider call carrying everything read so
+# far, so the cost of a turn grows faster than the round count: the tail rounds were
+# the most expensive and the least productive. The retrieval eval answers its golden
+# set at a mean depth of 2.1 reads, so four leaves headroom over twice what a real
+# question needs, and caps the worst case at five calls instead of seven.
+MAX_TOOL_ROUNDS = _env_int("SAGE_MAX_TOOL_ROUNDS", 4, minimum=1)
+# Total characters of tool output one turn may accumulate, across every round.
+# `history.build()` trims to HISTORY_CHAR_BUDGET once, *before* the loop, and the
+# loop then appended up to MAX_TOOL_ROUNDS reads of MAX_DOC_CHARS each with nothing
+# checking again — six 20k reads put 120k on top of a 48k budget, and the reader was
+# told "this conversation got too long" about a conversation of one question.
+TOOL_RESULT_CHAR_BUDGET = _env_int("SAGE_TOOL_RESULT_CHAR_BUDGET", 60000, minimum=1)
 REQUEST_RETRIES = _env_int("SAGE_REQUEST_RETRIES", 2, minimum=0)
 
 # --- corpus ----------------------------------------------------------------
@@ -237,6 +248,13 @@ MAX_PROMPT_CHARS = _env_int("SAGE_MAX_PROMPT_CHARS", 8000, minimum=1)
 # --- uploads ---------------------------------------------------------------
 
 MAX_UPLOAD_BYTES = _env_int("SAGE_MAX_UPLOAD_BYTES", 10 * 1024 * 1024, minimum=1)
+# What an image is shrunk to before it is sent, not what may be uploaded. 1568px is
+# the longest edge the major vision APIs downscale to on receipt, so anything above
+# it is paid for twice — once in upload and once in the request — and discarded.
+IMAGE_MAX_EDGE = _env_int("SAGE_IMAGE_MAX_EDGE", 1568, minimum=64)
+# Below this an image is left alone whatever its dimensions: re-encoding a small
+# sharp PNG as JPEG to save a few KB is a bad trade for a screenshot of text.
+IMAGE_MAX_BYTES = _env_int("SAGE_IMAGE_MAX_BYTES", 256 * 1024, minimum=1)
 # Across all files on one turn, which the per-file limit above does not bound: four
 # 9 MB screenshots are four legal uploads and one 50 MB request, and the only thing
 # that stopped it was the provider's own 413 — surfaced to the reader as "this
@@ -257,6 +275,56 @@ DOCS_BASE_URL = os.getenv("RCC_DOCS_BASE_URL", "https://docs.rcc.uchicago.edu/")
 # HELP_DESK_URL beside this for the caveat line under the input; that line is gone and
 # nothing else linked it, so it went too rather than sitting here unused.
 HELP_DESK_EMAIL = os.getenv("RCC_HELP_EMAIL", "help@rcc.uchicago.edu")
+
+# --- limits ----------------------------------------------------------------
+#
+# On by default, and deliberately so. The failure this guards against is not abuse
+# but arithmetic: one shared key, one public URL, and a turn that costs up to
+# MAX_TOOL_ROUNDS + 1 provider calls. A key spent at lunchtime does not slow the app
+# down, it ends it for everyone until a human notices.
+#
+# The defaults are set to be invisible to a reader using this as intended. An answer
+# takes 20–60s to read, so sustained demand is well under the refill rate, and the
+# burst covers the real case of already knowing your next two questions.
+
+# Questions a reader may fire back-to-back before the sustained rate applies.
+RATE_BURST = _env_int("SAGE_RATE_BURST", 5, minimum=0)
+# One token back per this many seconds: 15s ≈ 4/min sustained, ≈ 20 per 5 minutes.
+RATE_REFILL_SECONDS = _env_float("SAGE_RATE_REFILL_SECONDS", 15.0, minimum=0.0)
+# Per person per day. Generous: it is a backstop against a loop, not a quota.
+DAILY_TURNS = _env_int("SAGE_DAILY_TURNS", 100, minimum=0)
+DAILY_WINDOW_SECONDS = _env_float("SAGE_DAILY_WINDOW_SECONDS", 86_400.0, minimum=1.0)
+# Provider calls for the WHOLE deployment per window. 0 = no budget, which is the
+# default only because the right number depends on a plan this repo cannot see.
+# Set it from real spend: daily budget ÷ measured cost per call. Until it is set,
+# nothing bounds what the shared key can be charged in a day.
+CALL_BUDGET = _env_int("SAGE_CALL_BUDGET", 0, minimum=0)
+BUDGET_WINDOW_SECONDS = _env_float("SAGE_BUDGET_WINDOW_SECONDS", 86_400.0, minimum=1.0)
+
+# --- access ----------------------------------------------------------------
+#
+# Off unless configured, because turning it on without an OIDC provider in
+# `.streamlit/secrets.toml` would lock everyone out of a working app, including
+# whoever set the variable. `require_login()` checks both.
+REQUIRE_LOGIN = os.getenv("SAGE_REQUIRE_LOGIN", "0").strip().lower() in (
+    "1", "true", "yes", "on"
+)
+# Email domains allowed past the login gate. Empty = any account the provider
+# authenticates, which for a Google client means the whole internet — so set it.
+ALLOWED_EMAIL_DOMAINS = _env_list("SAGE_ALLOWED_EMAIL_DOMAINS", ())
+
+
+def email_allowed(email: str) -> bool:
+    """Is this address inside one of the allowed domains? Empty list allows all."""
+    if not ALLOWED_EMAIL_DOMAINS:
+        return True
+    lowered = (email or "").strip().lower()
+    return any(
+        lowered.endswith("@" + domain.strip().lower().lstrip("@"))
+        for domain in ALLOWED_EMAIL_DOMAINS
+        if domain.strip()
+    )
+
 
 # --- ops -------------------------------------------------------------------
 

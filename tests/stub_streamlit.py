@@ -85,6 +85,18 @@ class StubStreamlit(ModuleType):
         self._upload = upload
         self._selections = selections or {}
         self.secrets = SimpleNamespace(get=lambda _key, default="": default)
+        # `st.user` exists on every Streamlit the requirements allow (>=1.42), and
+        # on an app with no `[auth]` configured it is present with `is_logged_in`
+        # False rather than absent. Modelling it as missing would have let the login
+        # gate raise AttributeError in the app while the tests stayed green — the
+        # same "model the real shape" mistake that left the control-flow guard dead.
+        self.user = SimpleNamespace(is_logged_in=False, email="", sub="")
+
+    def login(self, *_args, **_kwargs):
+        self.events.append(("login", None))
+
+    def logout(self, *_args, **_kwargs):
+        self.events.append(("logout", None))
 
     # --- layout -----------------------------------------------------------
     def set_page_config(self, **kwargs):
