@@ -325,21 +325,66 @@ def render_user(message: dict) -> None:
     )
 
 
+def citations(chunks: list) -> list[dict]:
+    """The Sources strip: one entry per destination, in the order they were read.
+
+    Deduplicated on the URL and not the chunk id, because the id is an index key and
+    the URL is what the reader is given. The two come apart wherever indexing cuts
+    finer than the published page can be linked: a scraped page is windowed and every
+    window shares the page URL, and `search_docs` may return two windows of one page
+    (MAX_PER_PAGE allows two sections of any page). "Who is the director of the RCC"
+    listed four citations that were two pages. An over-long docs section splits the
+    same way and its parts share one anchor.
+
+    The first read of a destination keeps the slot: it is the one the answer was built
+    from first, and its label is the page's own name rather than a later cut's.
+    """
+    out: list[dict] = []
+    seen: set[str] = set()
+    for chunk in chunks:
+        if chunk.url in seen:
+            continue
+        seen.add(chunk.url)
+        out.append(
+            {
+                "id": chunk.id,
+                "label": chunk.label,
+                "url": chunk.url,
+                "source": chunk.source,
+            }
+        )
+    return out
+
+
 def related_sections(sources: list[dict], limit: int = 3) -> list[dict]:
     """Sibling sections of the pages actually cited — discovery for free.
 
     No extra model call: the chunks are already indexed, so neighbouring sections
     of a cited page are known and are always real documentation.
+
+    A lead is somewhere the reader is not already being sent, so what has to be new is
+    the destination — the URL — and not the chunk id. Filtering on the id let one page
+    arrive three times: asking who directs the RCC cited "Our Team" and then offered
+    "Our Team (part 2)", "(part 3)" and "(part 4)", which were three of that page's
+    thirteen indexing windows, three identical links, and the link already listed
+    directly above them under Sources. Three windows of one page is not discovery, it
+    is the citation again with a number after it.
+
+    Showing nothing is the right answer when a page has nothing else to point at, and
+    for a scraped page that is always: it has no anchors, so no window of it is ever a
+    second destination. `render_sources` omits the block entirely when this is empty.
     """
-    cited = {source["id"] for source in sources}
+    seen = {source.get("url", "") for source in sources}
     pages = {source["id"].split("#", 1)[0] for source in sources}
     out: list[dict] = []
     for chunk in CORPUS.chunks:
         if len(out) >= limit:
             break
         page = f"{chunk.source}/{chunk.path}"
-        if page in pages and chunk.id not in cited and chunk.heading:
-            out.append({"label": chunk.heading, "url": chunk.url})
+        if page not in pages or chunk.url in seen or not chunk.heading:
+            continue
+        seen.add(chunk.url)
+        out.append({"label": chunk.heading, "url": chunk.url})
     return out
 
 
@@ -1054,15 +1099,7 @@ if st.session_state.processing:
             turn = start(messages, TOOL_SCHEMAS)
 
         status.empty()
-        sources = [
-            {
-                "id": chunk.id,
-                "label": chunk.label,
-                "url": chunk.url,
-                "source": chunk.source,
-            }
-            for chunk in runner.sources
-        ]
+        sources = citations(runner.sources)
 
         # Re-render once with links resolved, so a raw `docs/...md` target never flashes.
         answer.empty()

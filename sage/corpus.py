@@ -112,14 +112,6 @@ def _is_excluded(source: str, rel_path: str, url: str) -> bool:
     return source == "web" and bool(url) and _host(url) in config.EXCLUDED_HOSTS
 
 
-def _first_heading(text: str) -> str:
-    for line in text.splitlines()[:40]:
-        match = _HEADING.match(line)
-        if match:
-            return plain_heading(match.group("text"))
-    return ""
-
-
 # --- markdown chunking -----------------------------------------------------
 
 
@@ -170,6 +162,26 @@ def _split_sections(text: str) -> list[_Section]:
     return sections
 
 
+def _document_title(sections: list[_Section]) -> str:
+    """The page's H1, which is the title mkdocs publishes it under.
+
+    Any heading used to do, taken from a 40-line window. Five pages in the guide have no
+    H1, so each was named after whichever subsection came first: the R page was cited as
+    "Table of Contents", `software/index.md` as "Private Software", and
+    `tutorials/sde3/data-transfer.md` as "Step 1. From Data Provider to SDE Virtual
+    Desktop" — a name that page also carries as a real section, so its citation and its
+    own Related entry read identically while linking to two different places.
+
+    The window was what kept a code comment out of the title, not a rule: the R page has
+    five `# Install renv …` lines inside an R fence, 274 lines down. Reading the split
+    sections rather than raw lines is fence-aware for free, so the H1 looked for here is
+    always a real one wherever it sits, and a page without one falls back to its path.
+    """
+    return next(
+        (item.heading for item in sections if item.level == 1 and item.heading), ""
+    )
+
+
 def _split_oversized(body: str, limit: int) -> list[str]:
     """Break a long section on paragraph boundaries, never inside a fence."""
     if len(body) <= limit:
@@ -213,7 +225,8 @@ def _split_oversized(body: str, limit: int) -> list[str]:
 
 def chunk_markdown(source: str, rel_path: str, raw: str) -> tuple[Document, list[Chunk]]:
     text = normalize_markdown(raw)
-    doc_title = _first_heading(text) or pretty_title(rel_path)
+    sections = _split_sections(text)
+    doc_title = _document_title(sections) or pretty_title(rel_path)
     document = Document(
         source=source,
         path=rel_path,
@@ -225,7 +238,7 @@ def chunk_markdown(source: str, rel_path: str, raw: str) -> tuple[Document, list
     chunks: list[Chunk] = []
     seen_anchors: dict[str, int] = {}
 
-    for section in _split_sections(text):
+    for section in sections:
         body = section.body
         if section.heading:
             indent = "  " * max(section.level - 1, 0)
@@ -300,7 +313,17 @@ def chunk_scraped(source: str, rel_path: str, raw: str) -> tuple[Document, list[
             source=source,
             path=rel_path,
             doc_title=doc_title,
-            heading=doc_title if index == 0 else f"{doc_title} (part {index + 1})",
+            # The page title, for every window. `(part 3)` used to go here, and it was
+            # the index's private arithmetic wearing a section heading's clothes: a
+            # scraped page has no headings to cut on, so window 3 is not a section
+            # called "part 3", it is the same page cut at 2400 characters — and it
+            # carries the same URL, because there is no anchor to deep-link to either.
+            # The reader saw the cut and could not act on it, since `Our Team — Our
+            # Team (part 3)` in the Sources strip and `Our Team (part 3)` under Related
+            # both land exactly where plain `Our Team` lands. The window number is kept
+            # where it is needed and nowhere else: in the id, which is what `read_doc`
+            # takes to fetch one window in full.
+            heading=doc_title,
             breadcrumb=doc_title,
             text=window,
             url=document.url,

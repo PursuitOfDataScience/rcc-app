@@ -147,5 +147,31 @@ def test_plain_heading_drops_emphasis():
     )
 
 
+def test_plain_heading_unescapes_what_markdown_would_have_rendered():
+    r"""`## 1\. Formatting Data` escapes the period so mkdocs does not read the line as
+    an ordered list. mkdocs renders `1.`; the citation strip showed `1\.`, backslash and
+    all, on all four headings of the geocoding tutorial. The published anchor is
+    slugified from the rendered text, and this leaves it alone — the backslash was
+    already being dropped there as punctuation."""
+    assert normalize.plain_heading(r"1\. Formatting Data for Processing") == (
+        "1. Formatting Data for Processing"
+    )
+    assert normalize.slugify(r"1\. Formatting Data for Processing") == (
+        "1-formatting-data-for-processing"
+    )
+    # Only punctuation is escapable in markdown, so a backslash in front of a letter
+    # is a literal one and stays — `\n` in a heading about escape sequences.
+    assert normalize.plain_heading(r"What \n means") == r"What \n means"
+
+
 def test_pretty_title():
     assert normalize.pretty_title("a/b/data-management.md") == "Data management"
+
+
+def test_pretty_title_of_an_index_page_names_its_directory():
+    """`docs_url` publishes `software/index.md` at `software/`; "Index" is not a page
+    name a reader can place in a citation."""
+    assert normalize.pretty_title("software/index.md") == "Software"
+    assert normalize.pretty_title("tutorials/gis/index.md") == "Gis"
+    # Nothing above it to borrow a name from.
+    assert normalize.pretty_title("index.md") == "Index"

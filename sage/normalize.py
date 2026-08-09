@@ -215,19 +215,30 @@ def parse_scraped(text: str) -> tuple[str, str, str]:
 
 
 _INLINE_LINK = re.compile(r"\[([^\]]*)\]\([^)]*\)")
+# A markdown backslash escape, which is a backslash and one ASCII punctuation mark.
+# Restricted to punctuation on purpose: `\.` is an escape and mkdocs renders a bare
+# `.`, while `\n` in a heading about escape sequences is two literal characters.
+_ESCAPE = re.compile(r"\\([!\"#$%&'()*+,\-./:;<=>?@\[\\\]^_`{|}~])")
 
 
 def plain_heading(text: str) -> str:
-    """Heading text as a reader sees it: links unwrapped, emphasis dropped.
+    r"""Heading text as a reader sees it: links unwrapped, emphasis dropped.
 
     Backticks and asterisks are markdown. An underscore in this corpus is almost
     never emphasis — it is inside an identifier, and deleting it turned
     `EVP_KDF_ctrl` into `EVPKDFctrl` and `<job_id>` into `<jobid>` in the citation
     the reader sees, on precisely the FAQ headings people find by pasting an error
     message.
+
+    A backslash escape is markdown too, and this used to keep it. `## 1\. Formatting
+    Data` escapes the period so mkdocs does not read the line as an ordered list; the
+    page shows `1.` and the citation strip showed `1\.` — on every heading of the
+    geocoding tutorial, which numbers all four. `slugify` is built on this function and
+    is unaffected: it strips the backslash anyway as punctuation.
     """
     cleaned = _INLINE_LINK.sub(r"\1", text.strip())
     cleaned = re.sub(r"[`*]+", "", cleaned)
+    cleaned = _ESCAPE.sub(r"\1", cleaned)
     return re.sub(r"\s+", " ", cleaned).strip()
 
 
@@ -250,8 +261,15 @@ def slugify(text: str) -> str:
 
 
 def pretty_title(rel_path: str) -> str:
-    """Readable title from a path, for documents with no usable heading."""
-    name = rel_path.rsplit("/", 1)[-1]
-    name = re.sub(r"\.(md|txt)$", "", name, flags=re.IGNORECASE)
-    name = name.replace("-", " ").replace("_", " ").strip()
+    """Readable title from a path, for documents with no usable heading.
+
+    An index page is named after the directory it indexes, which is the same mapping
+    `docs_url` makes when it publishes `software/index.md` at `software/`. "Index"
+    names no page a reader could place in a citation, and that is what the software
+    index would otherwise be called now that a page with no H1 falls back to here.
+    """
+    slug = re.sub(r"\.(md|txt)$", "", rel_path, flags=re.IGNORECASE).strip("/")
+    if "/" in slug and slug.rsplit("/", 1)[-1].lower() == "index":
+        slug = slug.rsplit("/", 1)[0]
+    name = slug.rsplit("/", 1)[-1].replace("-", " ").replace("_", " ").strip()
     return name[:1].upper() + name[1:] if name else rel_path
