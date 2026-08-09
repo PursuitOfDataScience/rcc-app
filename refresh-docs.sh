@@ -32,7 +32,25 @@ BACKUP_DIR="$APP_DIR/.doc-backups"
 STAMP="$APP_DIR/docs_snapshot.json"
 KEEP_BACKUPS=5
 DO_SCRAPE=0
-[ "${1:-}" = "--scrape" ] && DO_SCRAPE=1
+case "${1:-}" in
+    "")         ;;
+    --scrape)   DO_SCRAPE=1 ;;
+    -h|--help)
+        cat <<USAGE
+Usage: ${0##*/} [--scrape]
+
+Sync docs/ from the upstream RCC User Guide and rewrite docs_snapshot.json.
+
+  --scrape    also re-scrape web/ (needs RCC_WEB_SCRAPER; left as-is otherwise)
+  -h, --help  show this and do nothing
+USAGE
+        exit 0 ;;
+    *)
+        # Anything else used to fall through to a full sync, so a mistyped flag —
+        # `--help` included — silently rewrote the corpus.
+        printf 'Unknown argument: %s\nTry: %s --help\n' "$1" "${0##*/}" >&2
+        exit 2 ;;
+esac
 
 log()  { printf '\n=== %s ===\n' "$*"; }
 warn() { printf 'WARN: %s\n' "$*" >&2; }

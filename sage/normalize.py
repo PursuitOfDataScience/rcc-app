@@ -218,9 +218,16 @@ _INLINE_LINK = re.compile(r"\[([^\]]*)\]\([^)]*\)")
 
 
 def plain_heading(text: str) -> str:
-    """Heading text as a reader sees it: links unwrapped, emphasis dropped."""
+    """Heading text as a reader sees it: links unwrapped, emphasis dropped.
+
+    Backticks and asterisks are markdown. An underscore in this corpus is almost
+    never emphasis — it is inside an identifier, and deleting it turned
+    `EVP_KDF_ctrl` into `EVPKDFctrl` and `<job_id>` into `<jobid>` in the citation
+    the reader sees, on precisely the FAQ headings people find by pasting an error
+    message.
+    """
     cleaned = _INLINE_LINK.sub(r"\1", text.strip())
-    cleaned = re.sub(r"[`*_]+", "", cleaned)
+    cleaned = re.sub(r"[`*]+", "", cleaned)
     return re.sub(r"\s+", " ", cleaned).strip()
 
 
@@ -229,10 +236,15 @@ def slugify(text: str) -> str:
 
     mkdocs slugifies *rendered* text, so `[GM4](https://gm4...)` becomes `gm4` —
     unwrapping the link first is what keeps generated anchors valid.
+
+    Underscores survive as themselves. mkdocs' slugify replaces whitespace and its
+    separator, and `_` is neither — it is a `\\w` character, so the published id for
+    `EVP_KDF_ctrl` is `evp_kdf_ctrl`. Mapping it to `-` here is the same lost anchor
+    as deleting it, one character further on.
     """
     slug = plain_heading(text).lower()
     slug = re.sub(r"[^\w\s-]", "", slug)
-    slug = re.sub(r"[\s_]+", "-", slug.strip())
+    slug = re.sub(r"\s+", "-", slug.strip())
     slug = re.sub(r"-{2,}", "-", slug)
     return slug.strip("-")
 

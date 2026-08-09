@@ -12,11 +12,18 @@ from contextlib import contextmanager
 from types import ModuleType, SimpleNamespace
 
 
-class Rerun(Exception):
-    """Raised in place of st.rerun(), which halts a real script run."""
+class Rerun(BaseException):
+    """Raised in place of st.rerun(), which halts a real script run.
+
+    Derived from BaseException, not Exception, because that is what Streamlit does:
+    `RerunException` and `StopException` subclass `ScriptControlException`, which
+    subclasses `BaseException` directly. Modelling them as ordinary exceptions meant
+    every test of the turn loop's control-flow guard exercised the one hierarchy where
+    it worked, and the guard was dead in the app for as long as it existed.
+    """
 
 
-class Stop(Exception):
+class Stop(BaseException):
     """Raised in place of st.stop()."""
 
 

@@ -406,6 +406,20 @@ def start_new_turn(question: str, attachments=None) -> None:
     )
     st.session_state.processing = True
     st.session_state.error = None
+    # Both of these belong to the turn that just ended, and a new question is where
+    # they stop being true.
+    #
+    # `failed_over` is the once-per-turn guard that stops a bad key ping-ponging
+    # between providers. Cleared only on a *successful* answer, it survived a failover
+    # that then failed for some other reason and stayed set for the rest of the
+    # session — so every later quota error showed an error card instead of failing
+    # over, until the reader picked a model by hand.
+    #
+    # `notice` is the "X was unavailable, Y answered instead" line. It renders under
+    # the transcript, which puts a notice about the previous turn directly above the
+    # new question while the new one generates, reading as if it belonged to it.
+    st.session_state.failed_over = False
+    st.session_state.notice = ""
     st.session_state.attachments = []
     # Both, together: the widget is reset so its files stop being reported, and the
     # dismissal list is emptied because the keys in it refer to a widget that no
@@ -603,8 +617,11 @@ else:
         if retry or switch:
             if switch:
                 st.session_state.model = alternative.key
-                st.session_state.failed_over = False
                 st.session_state.switched_from = None
+            # On both paths, not just the deliberate switch: "Try again" is the reader
+            # asking for another attempt, and leaving the guard set means the retry
+            # cannot fail over even though this is a fresh attempt at the question.
+            st.session_state.failed_over = False
             st.session_state.error = None
             st.session_state.error_detail = ""
             if st.session_state.messages[-1]["role"] == "user":
@@ -924,7 +941,14 @@ if st.session_state.processing:
                 # example teaching the model to write another one. Handed the strip's
                 # own contents, so an unlabelled list of links can be checked against
                 # what the reader is already being shown rather than guessed at.
-                "text": links.strip_source_footer(final_text, CORPUS, sources),
+                #
+                # Two passes because the duplication has two shapes: a footer under the
+                # answer, and a parenthetical of section titles inside a sentence. The
+                # inline one goes first so the footer rules judge the prose that is
+                # actually left.
+                "text": links.strip_source_footer(
+                    links.strip_inline_citations(final_text, sources), CORPUS, sources
+                ),
                 "sources": sources,
                 "rating": None,
                 "model": MODEL.key,
@@ -987,13 +1011,33 @@ if st.session_state.processing:
     except Exception as exc:  # last-resort guard so the UI never dies
         if is_control_flow(exc):
             # Streamlit's own control flow, not a failure. Re-raised so the rerun or
-            # stop it represents actually happens.
+            # stop it represents actually happens. Still checked here because the
+            # hierarchy has moved before and an older build may put these under
+            # Exception; on 1.54 the handler below is the one that fires.
             interrupted = True
             raise
         status.empty()
         answer.empty()
         logger.exception("Unexpected failure")
         fail(llm.classify(exc).user_message, _detail(exc))
+    except BaseException:
+        # Streamlit's control flow does NOT derive from Exception. On 1.54
+        # `RerunException.__mro__` is (RerunException, ScriptControlException,
+        # BaseException) — so a real rerun, raised at the next `st.*` call inside
+        # `st.write_stream` when the reader touches the page mid-answer, sailed past
+        # the handler above with `interrupted` still False. The `finally` then cleared
+        # `processing` and fired a second `st.rerun()` over the one already in flight,
+        # which is exactly the "no answer, no error card, nothing to click" dead end
+        # its own comment describes.
+        #
+        # Below `except Exception`, not above it: an earlier clause wins, so putting
+        # BaseException first would make the real-failure handler unreachable.
+        #
+        # Set for every BaseException, not only the control-flow ones. A
+        # KeyboardInterrupt or a SystemExit is also a run that is ending, and calling
+        # `st.rerun()` underneath one replaces it with a rerun just the same.
+        interrupted = True
+        raise
     finally:
         switch_to = st.session_state.pop("failover_to", None)
         if switch_to:

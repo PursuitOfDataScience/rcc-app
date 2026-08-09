@@ -784,8 +784,22 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
      * The bottom margin is the gap between a question and its own answer, which
      * belong together — but at 19–25px measured they read as one block, with the
      * answer looking like a continuation of the question rather than a reply to
-     * it. Both ends are bounded by tools/render_check.py. */
-    margin: clamp(2.5rem, 5vw, 3.5rem) 0 clamp(2.25rem, 3.4vw, 2.75rem) 0;
+     * it. Both ends are bounded by tools/render_check.py.
+     *
+     * The BOTTOM one is 1rem larger than the gap it draws, and only the bottom one.
+     * Streamlit wraps everything given to `st.markdown` in a
+     * `[data-testid="stMarkdownContainer"]` carrying `margin-bottom: -1rem`, which
+     * collapses with this element's and takes 16px back off what follows. Written as
+     * 2.25–2.75rem for a 36–44px gap, the app drew 20–28px — the exact band the check
+     * calls a bug and the exact complaint that set the bound. The replica had no such
+     * wrapper, so it measured the number that was written rather than the one drawn
+     * and passed; it renders the wrapper now, which is what holds this value honest.
+     *
+     * The top margin needs no such compensation and was measured, not assumed: what
+     * precedes a question is an answer container, whose own trailing space is already
+     * past that collapse. It draws ~86px at 1280 against a 43px gap below, so the
+     * break between turns stays the larger of the two. */
+    margin: clamp(2.5rem, 5vw, 3.5rem) 0 clamp(3.5rem, 4.6vw, 4rem) 0;
     padding-right: clamp(0.25rem, 2vw, 1rem);
 }
 

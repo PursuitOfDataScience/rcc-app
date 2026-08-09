@@ -14,7 +14,7 @@ def build() -> Corpus:
             heading="GPU jobs",
             breadcrumb="Batch jobs › GPU jobs",
             text="body",
-            url="https://rcc-uchicago.github.io/user-guide/slurm/sbatch/#gpu-jobs",
+            url="https://docs.rcc.uchicago.edu/slurm/sbatch/#gpu-jobs",
         ),
         Chunk(
             id="web/faqs.txt#1",
@@ -32,7 +32,7 @@ def build() -> Corpus:
             "docs",
             "slurm/sbatch.md",
             "Batch jobs",
-            "https://rcc-uchicago.github.io/user-guide/slurm/sbatch/",
+            "https://docs.rcc.uchicago.edu/slurm/sbatch/",
             "body",
         ),
         "web/faqs.txt": Document(
@@ -54,13 +54,13 @@ def test_scraped_pages_cite_their_own_host():
 def test_chunk_ids_resolve_to_a_deep_link():
     out = links.fix_links("[GPU jobs](docs/slurm/sbatch.md#gpu-jobs)", CORPUS)
     assert out == (
-        "[GPU jobs](https://rcc-uchicago.github.io/user-guide/slurm/sbatch/#gpu-jobs)"
+        "[GPU jobs](https://docs.rcc.uchicago.edu/slurm/sbatch/#gpu-jobs)"
     )
 
 
 def test_page_paths_resolve_without_an_anchor():
     out = links.fix_links("[Batch jobs](docs/slurm/sbatch.md)", CORPUS)
-    assert out == "[Batch jobs](https://rcc-uchicago.github.io/user-guide/slurm/sbatch/)"
+    assert out == "[Batch jobs](https://docs.rcc.uchicago.edu/slurm/sbatch/)"
 
 
 def test_unknown_anchor_still_produces_a_page_link():
@@ -328,3 +328,119 @@ class TestCitationSentenceFooter:
         text = "Answer.\n\nThe quota is set per source, and cited limits vary."
         assert links.strip_source_footer(text, real_corpus, sources) == text
 
+
+
+class TestInlineParentheticalCitations:
+    """The shape none of the rules above can see: a parenthetical of bare section
+    titles inside a sentence.
+
+    Reported from a real answer — "…used on a cluster (Allocations and Service Units
+    FAQ, Running jobs on RCC clusters)." — where the same two titles were printed in
+    the Sources strip three lines below. It is not a trailing line, it holds no links,
+    and it carries no label, so the labelled, bare-link and citation-sentence rules
+    all pass over it.
+    """
+
+    SOURCES = [
+        {
+            "label": "Allocations and Service Units FAQ — How do I check how many "
+            "service units I have remaining on my allocation?",
+            "url": "https://docs.rcc.uchicago.edu/facts/allocations-faq/#check",
+        },
+        {
+            "label": "Running jobs on RCC clusters",
+            "url": "https://docs.rcc.uchicago.edu/slurm/main/#running",
+        },
+        {
+            "label": "Batch jobs — Submitting a sbatch script",
+            "url": "https://docs.rcc.uchicago.edu/slurm/sbatch/#submitting",
+        },
+        {
+            "label": "Partitions — Midway3 partitions",
+            "url": "https://docs.rcc.uchicago.edu/slurm/partitions/#midway3",
+        },
+    ]
+
+    def test_the_reported_answer_loses_only_its_citation(self):
+        text = (
+            "For reference, service units are what your jobs consume — they measure "
+            "the computing resources (CPUs/GPUs/time) used on a cluster (Allocations "
+            "and Service Units FAQ, Running jobs on RCC clusters)."
+        )
+        assert links.strip_inline_citations(text, self.SOURCES) == (
+            "For reference, service units are what your jobs consume — they measure "
+            "the computing resources (CPUs/GPUs/time) used on a cluster."
+        )
+
+    @pytest.mark.parametrize(
+        "text,expected,why",
+        [
+            (
+                "Submit with sbatch (see Batch jobs).",
+                "Submit with sbatch.",
+                "a citation the model introduces rather than states bare",
+            ),
+            (
+                "Use --gres=gpu:1 (Batch jobs) to reserve the device.",
+                "Use --gres=gpu:1 to reserve the device.",
+                "mid-sentence, not only at the end",
+            ),
+            (
+                "Check the FAQ (Allocations and Service Units FAQ).",
+                "Check the FAQ.",
+                "'and' inside a title must not split it",
+            ),
+            (
+                "Pick one (Batch jobs and Running jobs on RCC clusters).",
+                "Pick one.",
+                "'and' between two titles is a separator",
+            ),
+        ],
+    )
+    def test_citation_shapes_that_come_off(self, text, expected, why):
+        assert links.strip_inline_citations(text, self.SOURCES) == expected, why
+
+    @pytest.mark.parametrize(
+        "text,why",
+        [
+            (
+                "They measure the resources (CPUs/GPUs/time) used on a cluster.",
+                "an ordinary aside in the very sentence that carried the bug",
+            ),
+            (
+                "Run it on the login node (not a compute node).",
+                "prose in brackets",
+            ),
+            (
+                "Submit with sbatch ([Batch jobs](docs/slurm/sbatch.md)).",
+                "a real link is the citation form the prompt asks for",
+            ),
+            (
+                "Quotas differ (Allocations and Service Units FAQ, but ask your PI).",
+                "one real aside keeps the whole parenthetical",
+            ),
+            (
+                "Install the package (Python) first.",
+                "a single-word title is also an ordinary word",
+            ),
+            (
+                "Install both (Python and R) first.",
+                "two single-word titles are still ordinary words",
+            ),
+            (
+                "Jobs land on a partition (see the scheduler docs).",
+                "a name the strip is not showing",
+            ),
+            (
+                "Pick one (Batch jobs and Partitions).",
+                "one single-word title is enough to keep the bracket",
+            ),
+        ],
+    )
+    def test_prose_in_brackets_survives(self, text, why):
+        assert links.strip_inline_citations(text, self.SOURCES) == text, why
+
+    def test_no_strip_means_nothing_to_duplicate(self):
+        text = "Service units are what jobs consume (Running jobs on RCC clusters)."
+        assert links.strip_inline_citations(text, []) == text
+        assert links.strip_inline_citations(text, None) == text

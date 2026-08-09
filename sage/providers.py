@@ -27,6 +27,11 @@ logger = logging.getLogger(__name__)
 MISTRAL = "mistral"
 OPENCODE = "opencode"
 
+# One bound for both providers, so a hung stream cannot hold a script run open on
+# whichever one the reader happened to pick. The OpenAI-compatible client below spells
+# the same 120s as an `httpx.Timeout`.
+STREAM_TIMEOUT_MS = 120_000
+
 
 @dataclass(frozen=True)
 class Model:
@@ -125,7 +130,18 @@ class MistralProvider:
     def __init__(self, api_key: str) -> None:
         from mistralai import Mistral  # noqa: PLC0415
 
-        self._client = Mistral(api_key=api_key)
+        # The OpenAI-compatible provider below bounds its stream at 120s; this one
+        # took the SDK default, so a Mistral stream that stopped sending held the
+        # whole script run open with the status row spinning and no way out.
+        #
+        # Guarded because the keyword is SDK-version-dependent and this path cannot
+        # be exercised where the package is broken: if it is not accepted, the client
+        # is built exactly as it was before and nothing is worse than today.
+        try:
+            self._client = Mistral(api_key=api_key, timeout_ms=STREAM_TIMEOUT_MS)
+        except TypeError:
+            logger.debug("mistralai takes no timeout_ms; using the SDK default")
+            self._client = Mistral(api_key=api_key)
 
     def models(self) -> list[Model]:
         return [Model(MISTRAL, name) for name in config.MISTRAL_MODELS]
