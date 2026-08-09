@@ -69,9 +69,57 @@ Environment-driven; defaults in [`sage/config.py`](sage/config.py).
 | `SAGE_MAX_UPLOAD_BYTES` | `10485760` | Upload size limit, per file |
 | `SAGE_MAX_ATTACHED_BYTES` | `20971520` | Upload size limit, across one turn |
 | `SAGE_FEEDBACK_LOG` | *(unset)* | JSONL sink for 👍/👎 and zero-result queries. Unset = nothing recorded |
+| `SAGE_IMAGE_MAX_EDGE` | `1568` | Longest edge an image is downscaled to before it is sent |
 | `LOG_LEVEL` | `WARNING` | Python log level |
 
 Server settings live in [`.streamlit/config.toml`](.streamlit/config.toml). `base` is deliberately unset so Streamlit follows the browser's colour scheme and stays in sync with the stylesheet.
+
+## Sharing a deployment
+
+One key, one public URL, and a turn that costs up to `SAGE_MAX_TOOL_ROUNDS + 1` provider calls. A spent key does not make the app slower, it ends it for everyone until a human notices — so there are two limits, protecting two different things.
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `SAGE_RATE_BURST` | `5` | Questions one person may ask back-to-back before the sustained rate applies |
+| `SAGE_RATE_REFILL_SECONDS` | `15` | One question back per this many seconds (≈4/min sustained, ≈20 per 5 min) |
+| `SAGE_DAILY_TURNS` | `100` | Questions per person per day. A backstop against a loop, not a quota |
+| `SAGE_CALL_BUDGET` | `0` (off) | **Provider calls for the whole deployment** per window. See below |
+| `SAGE_BUDGET_WINDOW_SECONDS` | `86400` | The window the budget resets over |
+| `SAGE_TOOL_RESULT_CHAR_BUDGET` | `60000` | Total tool output one turn may accumulate across all rounds |
+
+Set any of them to `0` to switch that limit off.
+
+**The per-person limits are a token bucket, not a fixed window**, because a window is worse at both ends: it lets someone spend a whole allowance at 11:59 and another at 12:00, and it refuses a legitimate quick follow-up that lands just inside a boundary. The defaults are invisible to normal use — an answer takes 20–60s to read, so sustained demand is well under the refill rate.
+
+**`SAGE_CALL_BUDGET` is the one that protects the key, and it is off by default** only because the right number depends on a plan this repo cannot see. Set it from real spend: `daily budget ÷ measured cost per call`. Note it counts *calls*, not questions — one question is one to `MAX_TOOL_ROUNDS + 1` requests, so a limit counted in messages says nothing about what the key is charged. Until it is set, nothing bounds a day's spend.
+
+Counters live in memory, shared across sessions in the one process Streamlit runs. They reset when the app restarts — which on a platform that hibernates idle apps is roughly daily. A deployment that needs the budget to survive a restart needs external storage.
+
+### Requiring a login
+
+Off unless configured, and the highest-leverage control here by some distance: it turns "anyone with the URL" into "people with an account you named".
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `SAGE_REQUIRE_LOGIN` | `0` | Require a signed-in account |
+| `SAGE_ALLOWED_EMAIL_DOMAINS` | *(empty = any)* | Comma-separated domains allowed past the gate |
+
+Needs an OIDC provider in `.streamlit/secrets.toml` ([Streamlit's guide](https://docs.streamlit.io/develop/concepts/connections/authentication)):
+
+```toml
+[auth]
+redirect_uri = "https://your-app.example/oauth2callback"
+cookie_secret = "a long random string"
+client_id = "…"
+client_secret = "…"
+server_metadata_url = "https://accounts.google.com/.well-known/openid-configuration"
+```
+
+Then `SAGE_REQUIRE_LOGIN=1` and `SAGE_ALLOWED_EMAIL_DOMAINS=uchicago.edu`. **Leave the domain list empty and a Google client authenticates the entire internet**, so set it. Setting the flag *without* an `[auth]` block does not lock the app — it runs open and logs an error, because the alternative is a sign-in button that cannot work, locking out whoever set the flag.
+
+Signing in also makes the limits enforceable rather than advisory: anonymous readers are keyed by session, and a new private window is a new session. Identity is never keyed on IP address — campus NAT and the VPN put hundreds of people behind one, so a per-IP cap either does nothing or locks out a whole building.
+
+One consequence worth deciding on deliberately: with a login, the feedback log becomes attributable to named people, and readers paste job scripts into this app.
 
 ## Keeping docs fresh
 

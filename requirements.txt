@@ -16,3 +16,6 @@ mistralai>=1.0,<2
 httpx>=0.27
 pypdf>=4.0
 pymupdf>=1.24
+# Optional at runtime: without it images are sent at their original size, which
+# for a 10 MB screenshot is ~13 MB on every turn it survives in the history.
+pillow>=10.0

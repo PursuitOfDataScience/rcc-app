@@ -5,6 +5,9 @@ that the sections actually read become the Sources strip, and that a failure lan
 a typed, user-readable error instead of taking the page down.
 """
 
+import time
+from types import SimpleNamespace
+
 import pytest
 
 import stub_streamlit
@@ -1106,3 +1109,165 @@ class TestCitationApparatus:
         html = self.markup(stub)
         assert "source-list" not in html
         assert "sources-label" not in html
+
+
+def configure(monkeypatch, **values):
+    """Override settings the way the app reads them.
+
+    `sage/config.py` resolves every setting at import time, so `monkeypatch.setenv`
+    after the module is loaded changes nothing — the same import-time coupling that
+    made this suite depend on the developer's shell. Setting the attribute is what
+    actually takes effect, and monkeypatch puts it back.
+    """
+    for name, value in values.items():
+        monkeypatch.setattr(config, name, value)
+
+
+def with_auth(stub, **user):
+    """A stub with an `[auth]` block configured, and optionally someone signed in."""
+    stub.secrets = SimpleNamespace(
+        get=lambda key, default="": {"client_id": "x"} if key == "auth" else default
+    )
+    if user:
+        stub.user = SimpleNamespace(**user)
+    return stub
+
+
+class TestUsageLimits:
+    """The gate in `start_new_turn()`, the one place a turn can begin.
+
+    The arithmetic is covered in `tests/test_limits.py` without a browser. What
+    matters here is that a refusal leaves the app in a state a reader can understand.
+    """
+
+    def test_a_refused_turn_leaves_the_transcript_alone(self, monkeypatch):
+        """The failure to avoid is a question on screen with no answer under it.
+
+        Appending the message and then declining to process it produces exactly the
+        dead end the turn loop's own comments are about, so the check runs before any
+        state is touched.
+        """
+        configure(monkeypatch, RATE_BURST=1, RATE_REFILL_SECONDS=600.0,
+                  DAILY_TURNS=0, CALL_BUDGET=0)
+        stub, _ = run_app(monkeypatch, chat_input=None)
+        import app  # noqa: PLC0415
+
+        with pytest.raises(stub_streamlit.Rerun):
+            app.start_new_turn("first question")      # spends the only token
+        stub.session_state["processing"] = False
+        before = list(stub.session_state["messages"])
+
+        with pytest.raises(stub_streamlit.Rerun):
+            app.start_new_turn("second question")     # refused
+
+        assert stub.session_state["messages"] == before, "nothing was appended"
+        assert not stub.session_state["processing"], "no turn was started"
+        assert "minute" in stub.session_state["notice"], "and it says how long"
+
+    def test_the_budget_refusal_blames_the_deployment(self, monkeypatch):
+        """A reader on their first question must not be told they asked too much."""
+        configure(monkeypatch, RATE_BURST=0, DAILY_TURNS=0, CALL_BUDGET=1)
+        stub, _ = run_app(monkeypatch, chat_input=None)
+        import app  # noqa: PLC0415
+
+        # The same clock the app uses. Spending at 0.0 while the app checks at
+        # `time.monotonic()` puts the two more than a window apart, and the budget
+        # legitimately rolls over between them.
+        app.get_limiter().record_calls(1, time.monotonic())
+        with pytest.raises(stub_streamlit.Rerun):
+            app.start_new_turn("a question")
+
+        assert stub.session_state["messages"] == []
+        assert "deployment" in stub.session_state["notice"]
+
+    def test_limits_configured_off_let_everything_through(self, monkeypatch):
+        configure(monkeypatch, RATE_BURST=0, RATE_REFILL_SECONDS=0.0,
+                  DAILY_TURNS=0, CALL_BUDGET=0)
+        stub, _ = run_app(monkeypatch, chat_input=None)
+        import app  # noqa: PLC0415
+
+        for index in range(25):
+            with pytest.raises(stub_streamlit.Rerun):
+                app.start_new_turn(f"question {index}")
+            stub.session_state["processing"] = False
+        assert len(stub.session_state["messages"]) == 25
+
+    def test_each_session_gets_its_own_allowance(self, monkeypatch):
+        """Anonymous identity is per session, so one tab cannot spend another's."""
+        configure(monkeypatch, RATE_BURST=1, RATE_REFILL_SECONDS=600.0,
+                  DAILY_TURNS=0, CALL_BUDGET=0)
+        stub, _ = run_app(monkeypatch, chat_input=None)
+        import app  # noqa: PLC0415
+
+        first = app.whoami()
+        stub.session_state.pop("session_id")
+        assert app.whoami() != first
+
+
+class TestLoginGate:
+    """Auth is opt-in, and neither way of misconfiguring it may lock people out of
+    an otherwise working app."""
+
+    def test_the_flag_alone_does_not_gate(self, monkeypatch, caplog):
+        """`SAGE_REQUIRE_LOGIN` with no `[auth]` block would send every reader to a
+        sign-in button that cannot work — including whoever set the flag. It fails
+        open, and says so loudly enough to be found in the logs."""
+        configure(monkeypatch, REQUIRE_LOGIN=True)
+        with caplog.at_level("ERROR"):
+            _stub, module = run_app(monkeypatch, chat_input=None)
+        assert module is not None, "the app rendered rather than stopping"
+        assert any("running OPEN" in record.message for record in caplog.records)
+
+    def test_a_configured_gate_stops_an_anonymous_visitor(self, monkeypatch):
+        configure(monkeypatch, REQUIRE_LOGIN=True)
+        monkeypatch.setenv("MISTRAL_API_KEY", "test-key")
+        stub = with_auth(stub_streamlit.install(chat_input=None))
+        with pytest.raises(stub_streamlit.Stop):
+            import app  # noqa: F401,PLC0415
+        # Stopping is not enough on its own: a stop with nothing on screen is a
+        # blank page, which reads as broken rather than as private.
+        assert "Sign in" in stub.button_labels, "there is a way in"
+        assert not any(kind == "chat_input" for kind, _ in stub.events), (
+            "and the composer never rendered"
+        )
+
+    def test_a_wrong_domain_is_refused(self, monkeypatch):
+        configure(monkeypatch, REQUIRE_LOGIN=True,
+                  ALLOWED_EMAIL_DOMAINS=("uchicago.edu",))
+        monkeypatch.setenv("MISTRAL_API_KEY", "test-key")
+        stub = with_auth(
+            stub_streamlit.install(chat_input=None),
+            is_logged_in=True, email="someone@example.com", sub="abc",
+        )
+        with pytest.raises(stub_streamlit.Stop):
+            import app  # noqa: F401,PLC0415
+        assert any("outside the domains" in text for text in stub.errors)
+
+    def test_the_right_domain_gets_in(self, monkeypatch):
+        configure(monkeypatch, REQUIRE_LOGIN=True,
+                  ALLOWED_EMAIL_DOMAINS=("uchicago.edu",))
+        monkeypatch.setenv("MISTRAL_API_KEY", "test-key")
+        with_auth(
+            stub_streamlit.install(chat_input=None),
+            is_logged_in=True, email="someone@uchicago.edu", sub="abc",
+        )
+        import app  # noqa: PLC0415
+
+        assert app.whoami() == "user:abc", "limits key off the account, not the tab"
+
+
+class TestAllowedDomains:
+    @pytest.mark.parametrize("email,domains,allowed", [
+        ("a@uchicago.edu", ("uchicago.edu",), True),
+        ("a@UChicago.EDU", ("uchicago.edu",), True),
+        ("a@example.com", ("uchicago.edu",), False),
+        # The trap: a domain check by substring lets anyone register the suffix.
+        ("a@notuchicago.edu", ("uchicago.edu",), False),
+        ("a@uchicago.edu.evil.com", ("uchicago.edu",), False),
+        ("a@cs.uchicago.edu", ("cs.uchicago.edu", "uchicago.edu"), True),
+        ("", ("uchicago.edu",), False),
+        ("anyone@anywhere.test", (), True),
+    ])
+    def test_domains_are_matched_whole(self, monkeypatch, email, domains, allowed):
+        monkeypatch.setattr(config, "ALLOWED_EMAIL_DOMAINS", domains)
+        assert config.email_allowed(email) is allowed

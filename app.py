@@ -12,11 +12,13 @@ import hashlib
 import html
 import logging
 import os
+import time
+import uuid
 
 import streamlit as st
 import streamlit.components.v1 as components
 
-from sage import config, feedback, files, history, links, llm, providers
+from sage import config, feedback, files, history, limits, links, llm, providers
 from sage import corpus as corpus_mod
 from sage.prompts import SYSTEM_PROMPT
 from sage.search import Index
@@ -123,6 +125,93 @@ if not READY:
         "OpenCode Zen keys are free and start with `sk-zen-`."
     )
     st.stop()
+
+
+# --- who is asking ---------------------------------------------------------
+
+
+def login_configured() -> bool:
+    """Is there an OIDC provider for `st.login()` to send anyone to?
+
+    Checked separately from `SAGE_REQUIRE_LOGIN`, because the two failure modes are
+    not the same. A missing `[auth]` block with the flag on would lock every reader
+    out of a working app — including whoever set the flag — so the flag alone is
+    never enough to gate on.
+    """
+    try:
+        return bool(st.secrets.get("auth"))
+    except Exception:  # no secrets.toml at all
+        return False
+
+
+def gate() -> None:
+    """Require a signed-in, allowed account before the app renders anything."""
+    if not (config.REQUIRE_LOGIN and login_configured()):
+        if config.REQUIRE_LOGIN:
+            # Loud, because the deployment asked to be private and is not.
+            logger.error(
+                "SAGE_REQUIRE_LOGIN is set but no [auth] section is configured; "
+                "the app is running OPEN. Add an OIDC provider to secrets.toml."
+            )
+        return
+    if not getattr(st.user, "is_logged_in", False):
+        st.markdown("### Sage — RCC documentation assistant")
+        st.write("Sign in with your University account to continue.")
+        st.button("Sign in", on_click=st.login, type="primary")
+        st.stop()
+    if not config.email_allowed(getattr(st.user, "email", "") or ""):
+        st.error(
+            "That account is outside the domains this deployment allows. "
+            "Sign in with your University account."
+        )
+        st.button("Sign out", on_click=st.logout)
+        st.stop()
+
+
+gate()
+
+
+def whoami() -> str:
+    """A stable key for the rate limiter.
+
+    The signed-in subject when there is one, because that is the only identity a
+    reader cannot shed by opening a new tab. Falling back to a per-session id keeps
+    the limiter useful when the app is open — it still stops a loop and a leaning
+    Enter key — while being honest that it is a courtesy, not enforcement: a new
+    private window is a new session.
+
+    Not the IP address, which `st.context` will happily hand over. Campus NAT and the
+    VPN put hundreds of people behind one, so a per-IP cap either does nothing or
+    locks out a whole building, and on a hosted platform the value can be the
+    proxy's rather than the reader's.
+    """
+    if getattr(st.user, "is_logged_in", False):
+        subject = getattr(st.user, "sub", "") or getattr(st.user, "email", "")
+        if subject:
+            return f"user:{subject}"
+    if "session_id" not in st.session_state:
+        st.session_state.session_id = uuid.uuid4().hex
+    return f"session:{st.session_state.session_id}"
+
+
+@st.cache_resource(show_spinner=False)
+def get_limiter() -> limits.Limiter:
+    """One limiter for the whole process.
+
+    `cache_resource` is shared across every session in the process, which is what
+    makes the deployment budget a real total rather than a per-tab one. It is also
+    the ceiling on this design: the counters live in memory, so they reset when the
+    app restarts — which on a platform that hibernates idle apps is roughly daily.
+    A deployment that needs the budget to survive a restart needs external storage.
+    """
+    return limits.Limiter(
+        burst=config.RATE_BURST,
+        refill_seconds=config.RATE_REFILL_SECONDS,
+        daily_turns=config.DAILY_TURNS,
+        daily_window=config.DAILY_WINDOW_SECONDS,
+        call_budget=config.CALL_BUDGET,
+        budget_window=config.BUDGET_WINDOW_SECONDS,
+    )
 
 INDEX = get_index()
 CORPUS = INDEX.corpus
@@ -401,6 +490,21 @@ def describe(calls: list[dict]) -> str:
 
 
 def start_new_turn(question: str, attachments=None) -> None:
+    # The one place every turn begins — the composer and the starter cards both come
+    # through here — so it is the one place a turn can be refused. Checked before any
+    # state is touched: a refused question must leave the transcript exactly as it
+    # was, or the reader is left looking at their own question with no answer under
+    # it and nothing to click, which is the shape of a broken app rather than a busy
+    # one. The refusal goes to `notice`, the same neutral strip a failover uses, so
+    # it reads as information and not as an error with a Try-again button that would
+    # be refused too.
+    verdict = get_limiter().check(whoami(), time.monotonic())
+    if not verdict.allowed:
+        logger.info("Turn refused for %s: %s", whoami(), verdict.message)
+        st.session_state.notice = verdict.message
+        st.rerun()
+        return
+
     st.session_state.messages.append(
         {"role": "user", "text": question, "attachments": list(attachments or [])}
     )
@@ -870,6 +974,21 @@ if st.session_state.processing:
             *messages[1:],
         ]
 
+    # What the deployment budget is actually counting. A turn is one message to the
+    # reader and anywhere from one to MAX_TOOL_ROUNDS + 1 requests to the provider,
+    # so this — not the message count — is what the shared key is charged for.
+    # Cumulative across every round of this turn — see TOOL_RESULT_CHAR_BUDGET.
+    tool_chars = 0
+
+    def start(msgs, schemas):
+        # Charged as each request is made, not tallied and committed at the end. A
+        # turn that fails halfway, or that the reader abandons by touching the page,
+        # still cost the provider the calls it made — and a counter that only commits
+        # on success drifts loose exactly when things are going wrong and requests
+        # are being retried.
+        get_limiter().record_calls(1, time.monotonic())
+        return llm.start(provider, MODEL.id, msgs, schemas)
+
     try:
         provider = get_provider(MODEL.provider)
         messages = history.build(
@@ -881,7 +1000,7 @@ if st.session_state.processing:
 
         if use_tools:
             try:
-                turn = llm.start(provider, MODEL.id, messages, TOOL_SCHEMAS)
+                turn = start(messages, TOOL_SCHEMAS)
             except llm.AssistantError as exc:
                 if not llm.rejects_tools(exc.original or exc):
                     raise
@@ -890,7 +1009,7 @@ if st.session_state.processing:
                 use_tools = False
         if not use_tools:
             messages = grounded(messages)
-            turn = llm.start(provider, MODEL.id, messages, None)
+            turn = start(messages, None)
 
         for round_number in range(config.MAX_TOOL_ROUNDS + 1):
             with answer.container(), st.chat_message("assistant"):
@@ -915,10 +1034,24 @@ if st.session_state.processing:
             show_status(status, describe(turn.tool_calls))
             messages.append(turn.as_message())
             for call in turn.tool_calls:
-                messages.append(
-                    llm.tool_result_message(call, runner.run(call["name"], call["input"]))
-                )
-            turn = llm.start(provider, MODEL.id, messages, TOOL_SCHEMAS)
+                result = runner.run(call["name"], call["input"])
+                # The budget is cumulative across rounds, which is the whole point:
+                # each result is individually legal at MAX_DOC_CHARS and it is the
+                # sum that overruns what was trimmed for before the loop started.
+                # Clipped rather than dropped, and told so, because a model handed a
+                # truncated section can still answer from it or ask for a narrower
+                # one — whereas a silent empty result reads as "no such page".
+                room = config.TOOL_RESULT_CHAR_BUDGET - tool_chars
+                if len(result) > room:
+                    result = (
+                        result[: max(0, room)]
+                        + "\n\n[Truncated: this turn has reached its reading limit. "
+                        "Answer from what you have, or say which section you still "
+                        "need.]"
+                    )
+                tool_chars += len(result)
+                messages.append(llm.tool_result_message(call, result))
+            turn = start(messages, TOOL_SCHEMAS)
 
         status.empty()
         sources = [
