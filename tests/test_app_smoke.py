@@ -1111,6 +1111,75 @@ class TestCitationApparatus:
         assert "sources-label" not in html
 
 
+class TestDistinctDestinations:
+    """A citation and a lead are both a place to click, so two of them are only two if
+    they land somewhere different.
+
+    Reported from the app: asking who directs the RCC cited "Our Team" and then offered
+    "Our Team (part 2)", "(part 3)" and "(part 4)" under Related — four links, one page,
+    and the three leads pointed at the citation directly above them. The page is
+    windowed for indexing at 2400 characters, and every one of its thirteen windows
+    carries the page's own URL because a scraped page has no anchors to deep-link to.
+    Filtering leads by chunk id could not see that; the id was what differed.
+    """
+
+    @staticmethod
+    def source(module, chunk_id):
+        chunk = module.CORPUS.chunk(chunk_id)
+        assert chunk is not None, f"{chunk_id} is not in the bundled corpus"
+        return {
+            "id": chunk.id,
+            "label": chunk.label,
+            "url": chunk.url,
+            "source": chunk.source,
+        }
+
+    def test_the_reported_answer_offers_no_lead_back_to_its_own_citation(
+        self, monkeypatch
+    ):
+        _stub, module = run_app(monkeypatch)
+        cited = self.source(module, "web/about-rcc_our-team.txt#1")
+        related = module.related_sections([cited])
+        assert [item["url"] for item in related] == []
+
+    def test_every_lead_is_somewhere_the_reader_is_not_already_being_sent(
+        self, monkeypatch
+    ):
+        """Swept over the whole corpus, not just the page that was reported: 62 of the
+        536 chunks that produce a Related list led back to their own citation, and 36
+        listed one destination twice."""
+        _stub, module = run_app(monkeypatch)
+        for chunk in module.CORPUS.chunks:
+            cited = self.source(module, chunk.id)
+            urls = [item["url"] for item in module.related_sections([cited])]
+            assert len(urls) == len(set(urls)), f"{chunk.id} repeats a lead"
+            assert chunk.url not in urls, f"{chunk.id} leads back to itself"
+
+    def test_leads_still_reach_the_other_sections_of_a_real_page(self, monkeypatch):
+        """The rule above is satisfied by showing nothing, so hold the feature down
+        too: an anchored docs page still offers its siblings."""
+        _stub, module = run_app(monkeypatch)
+        cited = self.source(module, "docs/storage/main.md#quotas")
+        related = module.related_sections([cited])
+        assert len(related) == 3
+        assert all(item["url"].startswith("https://") for item in related)
+
+    def test_the_sources_strip_lists_each_destination_once(self, monkeypatch):
+        """Same defect one row up. `search_docs` may return two windows of one page
+        (MAX_PER_PAGE allows two sections of any page), and for a scraped page those
+        two are one link — so "who is the director of the RCC" cited four sections
+        that were two pages."""
+        _stub, module = run_app(monkeypatch)
+        from sage import tools
+
+        _context, chunks = tools.gather_context(
+            module.INDEX, "who is the director of the rcc"
+        )
+        assert len(chunks) > 1, "expected a multi-section retrieval to test against"
+        urls = [item["url"] for item in module.citations(chunks)]
+        assert len(urls) == len(set(urls))
+
+
 def configure(monkeypatch, **values):
     """Override settings the way the app reads them.
 

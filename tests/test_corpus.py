@@ -59,6 +59,55 @@ def test_oversized_sections_split_without_breaking_fences():
     assert fence_owner[0].text.count("```") == 2
 
 
+def test_the_page_title_is_its_h1_and_not_its_first_subsection():
+    """Five pages in the bundled guide have no H1, and the title scan took whatever
+    heading came first — so `software/apps-and-envs/r.md` was cited as "Table of
+    Contents" and `software/index.md` as "Private Software".
+
+    On this page the borrowed title is also a real section, so the citation strip named
+    the page "Step 1. From Data Provider to SDE Virtual Desktop" and Related then
+    offered a section of the same name: one name, two links, no way to tell them apart.
+    """
+    source = (
+        "Transferring data from a Data Provider Server to the SDE3 HPC system involves "
+        "a two-step process, using the Secure Data Enclave Virtual Desktop as an "
+        "intermediate staging area — long enough to be indexed as the page's intro.\n\n"
+        "## Step 1. From Data Provider to SDE Virtual Desktop\n\nLog in and copy.\n"
+    )
+    document, chunks = corpus_mod.chunk_markdown(
+        "docs", "tutorials/sde3/data-transfer.md", source
+    )
+    assert document.title == "Data transfer"
+    assert {chunk.heading for chunk in chunks} == {
+        "Data transfer",
+        "Step 1. From Data Provider to SDE Virtual Desktop",
+    }
+
+
+def test_a_heading_inside_a_code_fence_is_not_the_page_title():
+    """`# Install renv if not already installed` is an R comment, and the R page has
+    five of them. The old scan was not fence-aware and was saved from them only by a
+    40-line window — which is also what hid the page's real problem, so widening the
+    window to look for an H1 would have found a comment instead.
+    """
+    source = (
+        "## Table of Contents\n\nA list of what is on this page, long enough to keep.\n\n"
+        "```r\n# Install renv if not already installed\ninstall.packages('renv')\n```\n"
+    )
+    document, _chunks = corpus_mod.chunk_markdown(
+        "docs", "software/apps-and-envs/r.md", source
+    )
+    assert document.title == "R"
+
+
+def test_an_index_page_is_titled_after_the_directory_it_indexes():
+    """`docs_url` already publishes `software/index.md` at `software/`. "Index" names
+    no page a reader could recognise in a citation."""
+    source = "## Private Software\n\nBody text long enough to be kept as a chunk.\n"
+    document, _chunks = corpus_mod.chunk_markdown("docs", "software/index.md", source)
+    assert document.title == "Software"
+
+
 def test_duplicate_headings_get_distinct_ids():
     source = "# T\n\n## Notes\n\nFirst body here, long enough.\n\n## Notes\n\nSecond body.\n"
     _document, chunks = corpus_mod.chunk_markdown("docs", "d.md", source)
@@ -78,6 +127,31 @@ def test_scraped_pages_window_and_keep_their_real_url():
     assert document.title == "Software"
     assert len(chunks) > 1
     assert all(c.url == document.url for c in chunks)
+
+
+def test_a_window_is_not_a_section_named_part_2():
+    """`(part 3)` was bookkeeping in a section heading's clothes.
+
+    A scraped page has no headings, so a window of one is not a section — it is the
+    same page, cut for indexing, and every cut carries the page's own URL. Naming the
+    cuts put the index's private arithmetic in front of the reader: the Sources strip
+    said `Our Team — Our Team (part 3)`, and Related offered parts 2, 3 and 4 as three
+    leads that were one link, the very link listed above them under Sources.
+    """
+    raw = (
+        "URL: https://rcc.uchicago.edu/about-rcc/our-team\n"
+        "Title: Our Team | RCC\n"
+        "=====================\n"
+        + "\n".join(f"Staff member {n} supports research computing." for n in range(200))
+    )
+    _document, chunks = corpus_mod.chunk_scraped("web", "about-rcc_our-team.txt", raw)
+
+    assert len(chunks) > 3
+    assert {chunk.heading for chunk in chunks} == {"Our Team"}
+    assert {chunk.label for chunk in chunks} == {"Our Team"}
+    # The window number is kept where it is needed and nowhere else: in the id, which
+    # is what `read_doc` is handed to fetch one window in full.
+    assert len({chunk.id for chunk in chunks}) == len(chunks)
 
 
 class TestRealCorpus:
@@ -102,6 +176,11 @@ class TestRealCorpus:
 
     def test_every_chunk_has_an_absolute_citation_url(self, real_corpus):
         assert all(c.url.startswith("https://") for c in real_corpus.chunks)
+
+    def test_no_citation_label_advertises_a_window_number(self, real_corpus):
+        """40 of the 83 scraped chunks were named after the cut that made them."""
+        named = [c.id for c in real_corpus.chunks if "(part " in c.label]
+        assert not named, f"{len(named)} chunks named after their window: {named[:3]}"
 
     def test_chunk_ids_are_unique(self, real_corpus):
         ids = [c.id for c in real_corpus.chunks]
