@@ -7,6 +7,7 @@ and both halves shipped broken because nothing held them together.
 from __future__ import annotations
 
 import os
+import re
 
 import tomllib
 
@@ -87,3 +88,37 @@ class TestTheme:
             dark = theme["dark"].get("primaryColor")
             if light and dark:
                 assert light.lower() != dark.lower()
+
+    def test_the_send_button_states_its_own_fill(self):
+        """The dark primary is a text tint, and Streamlit spends it on a fill.
+
+        It paints the chat input's send button as a filled pill with a white arrow on
+        it, coloured by `primaryColor` — so the tint that keeps brand *text* readable
+        on a near-black page arrived as a pale pink button, reported as "very pink".
+        app.css has to say what that fill is, because config.toml cannot say it for
+        one widget without saying it for every other use of the primary.
+        """
+        css = stylesheet()
+        rule = re.search(
+            r"\.stChatInput button:not\(#paperclip-btn\):not\(:disabled\)\s*\{([^}]*)\}",
+            css,
+        )
+        assert rule, (
+            "app.css must pin the send button's fill; without it dark mode takes "
+            "[theme.dark] primaryColor, which is the lighter text tint"
+        )
+        assert "background: var(--brand)" in rule.group(1)
+
+    def test_the_brand_fill_is_the_same_maroon_in_both_schemes(self):
+        """--brand is for fills, and white on #800000 reads in either theme.
+
+        The dark block retints --brand-text, --brand-line and the gradient stops
+        because each of those is brand colour *against* the page. Retinting --brand
+        itself would take the send button's fill back to pink with it.
+        """
+        css = stylesheet()
+        dark = css[css.index("@media (prefers-color-scheme: dark)") :]
+        assert not re.search(r"^\s*--brand:", dark, re.MULTILINE), (
+            "--brand is the fill token: white text on maroon works on a light page "
+            "and a dark one, so it must not be retinted per scheme"
+        )

@@ -688,6 +688,23 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
     z-index: 102 !important;
 }
 
+/* And its colour, which Streamlit takes from `primaryColor` rather than from here.
+ *
+ * That is the wrong source for this one control. `[theme.dark] primaryColor` is the
+ * *text* tint — the lighter one the brand needs to stay readable as a word or as a
+ * 1px line on a near-black page — and Streamlit paints this button as a filled pill
+ * with a white glyph on it. So dark mode got a pale pink pill, reported as "very
+ * pink". A fill is the one place #800000 works in either theme, which is the
+ * distinction --brand carries at the top of this file: what has to be read here is
+ * the white arrow on the maroon (12.6:1), not the maroon against the page.
+ *
+ * `:not(:disabled)` leaves the empty-composer state alone. Streamlit greys it out,
+ * and that is how the box says there is nothing to send yet. */
+.stChatInput button:not(#paperclip-btn):not(:disabled) {
+    background: var(--brand) !important;
+    color: #ffffff !important;
+}
+
 /* Room for it, so a long line of text does not run underneath. Matches the button's
  * 36px plus its 10px inset and a little air. */
 .stChatInput > div { padding-right: 56px !important; }
