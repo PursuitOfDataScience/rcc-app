@@ -27,5 +27,10 @@ tools/*.html
 
 # Scratch git worktrees created for background agents. Transient by definition:
 # each is a checkout of this repo, so committing one would commit the repo into
-# itself. `.claude/` config that is meant to be shared can still be added by path.
+# itself. `.claude/` config that is meant to be shared can still be added by path —
+# `.claude/settings.json` and `.claude/hooks/` are shared and tracked.
 .claude/worktrees/
+
+# Personal overrides: one developer's allowed commands and MCP servers, which have
+# nothing to say to anybody else's checkout.
+.claude/settings.local.json
