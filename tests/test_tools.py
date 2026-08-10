@@ -1,3 +1,5 @@
+import pytest
+
 from sage import tools
 from sage.search import Index
 
@@ -78,6 +80,29 @@ class TestPathSafety:
 
 def test_unknown_tool_name_is_reported(real_index):
     assert "Unknown tool" in runner(real_index).run("rm_rf", {})
+
+
+class TestArgumentsAreWhateverTheModelTyped:
+    """`llm._parse` guarantees a dict and nothing about what is in it.
+
+    A weak model typing its query as a number — `{"query": 123}` — used to raise
+    AttributeError out of `.strip()`, which ended the turn with an error card blaming
+    the network for a mistake the model made.
+    """
+
+    @pytest.mark.parametrize("query", [123, 4.5, ["gpu", "jobs"], {"q": "x"}, True])
+    def test_a_search_argument_of_any_type_answers(self, real_index, query):
+        assert runner(real_index).run(tools.SEARCH_DOCS, {"query": query})
+
+    @pytest.mark.parametrize("path", [123, ["docs/slurm/sbatch.md"], {"p": 1}])
+    def test_a_read_argument_of_any_type_answers(self, real_index, path):
+        assert "Error" in runner(real_index).run(tools.READ_DOC, {"path": path})
+
+    def test_a_missing_argument_is_not_searched_for_as_the_word_none(self, real_index):
+        tool = runner(real_index)
+        assert tool.run(tools.SEARCH_DOCS, {}) == tool.run(
+            tools.SEARCH_DOCS, {"query": ""}
+        )
 
 
 def test_tool_schemas_are_well_formed():

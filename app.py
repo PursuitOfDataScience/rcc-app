@@ -388,6 +388,25 @@ def related_sections(sources: list[dict], limit: int = 3) -> list[dict]:
     return out
 
 
+def render_notice() -> None:
+    """The neutral strip: a failover, or a turn the limiter would not start.
+
+    Rendered on the landing screen too, and that is the point. It used to live inside
+    the branch that draws a conversation, so a refusal with nothing on screen yet had
+    nowhere to appear: clear the chat, click a starter card with the token bucket
+    empty, and the click did nothing at all — no question, no answer, no reason, on a
+    screen whose only controls are those cards.
+    """
+    if st.session_state.notice:
+        # `role="status"` because this is often the only account of why a click did
+        # nothing, and a reader who cannot see it has no other way to be told.
+        st.markdown(
+            f'<div class="notice" role="status">'
+            f"{html.escape(st.session_state.notice)}</div>",
+            unsafe_allow_html=True,
+        )
+
+
 def render_sources(sources: list[dict], related: list[dict]) -> None:
     """The citations under an answer, and the sibling sections worth a look.
 
@@ -448,7 +467,19 @@ def render_rating(position: int, message: dict) -> None:
             (columns[1], "down", "👎", "This was wrong or unhelpful"),
         ):
             with column:
-                if st.button(glyph, key=f"rate-{position}-{verdict}", help=hint):
+                if st.button(
+                    glyph,
+                    key=f"rate-{position}-{verdict}",
+                    help=hint,
+                    # Not while an answer is arriving. Any click reruns the script,
+                    # and a rerun mid-turn abandons the half-written answer and runs
+                    # the whole turn again from the first provider call — so rating an
+                    # earlier answer while the next one streams silently costs a
+                    # second turn and loses the one on screen. `disabled` is what
+                    # stops the click reaching the server at all; an inert callback
+                    # would not, because the rerun is the click, not the handler.
+                    disabled=st.session_state.processing,
+                ):
                     question = next(
                         (
                             item.get("text", "")
@@ -519,19 +550,50 @@ def clearing(stream, slot):
         slot.empty()
 
 
+def argument(call: dict, name: str) -> str:
+    """One tool argument, as a string. A model types whatever it likes in there.
+
+    `llm._parse` guarantees a dict and nothing about its values, so a query typed as
+    a number — `{"query": 123}` — used to raise AttributeError here and end the turn
+    with an error card blaming the network. `sage/tools.py` coerces the same way.
+    """
+    value = call.get("input", {}).get(name)
+    return "" if value is None else str(value).strip()
+
+
 def describe(calls: list[dict]) -> str:
     """Say what is actually happening instead of a generic shimmer."""
     for call in calls:
         if call["name"] == SEARCH_DOCS:
-            query = (call["input"].get("query") or "").strip()
+            query = argument(call, "query")
             return f"Searching the docs for “{query}”" if query else "Searching the docs"
     for call in calls:
         if call["name"] == READ_DOC:
-            path = (call["input"].get("path") or "").strip()
+            path = argument(call, "path")
             chunk = CORPUS.chunk(path)
             label = chunk.label if chunk else path.split("/")[-1]
             return f"Reading {label}" if label else "Reading documentation"
     return "Working"
+
+
+def may_start_turn() -> bool:
+    """Ask the limiter whether a turn may run, and say why if not.
+
+    One gate, and every path that spends provider calls goes through it. "Try again"
+    did not: it set `processing` directly, so a deployment whose call budget was
+    spent refused new questions while the button under the error card kept making
+    requests, one per click, for as long as anyone cared to click it.
+
+    The refusal goes to `notice`, the same neutral strip a failover uses, so it reads
+    as information rather than as an error with a Try-again button that would itself
+    be refused.
+    """
+    verdict = get_limiter().check(whoami(), time.monotonic())
+    if verdict.allowed:
+        return True
+    logger.info("Turn refused for %s: %s", whoami(), verdict.message)
+    st.session_state.notice = verdict.message
+    return False
 
 
 def start_new_turn(question: str, attachments=None) -> None:
@@ -540,13 +602,8 @@ def start_new_turn(question: str, attachments=None) -> None:
     # state is touched: a refused question must leave the transcript exactly as it
     # was, or the reader is left looking at their own question with no answer under
     # it and nothing to click, which is the shape of a broken app rather than a busy
-    # one. The refusal goes to `notice`, the same neutral strip a failover uses, so
-    # it reads as information and not as an error with a Try-again button that would
-    # be refused too.
-    verdict = get_limiter().check(whoami(), time.monotonic())
-    if not verdict.allowed:
-        logger.info("Turn refused for %s: %s", whoami(), verdict.message)
-        st.session_state.notice = verdict.message
+    # one.
+    if not may_start_turn():
         st.rerun()
         return
 
@@ -711,6 +768,9 @@ if not has_messages:
                         # them, a file attached on the landing screen — where the
                         # chips do render — was cleared by the send and never seen.
                         start_new_turn(question, st.session_state.attachments)
+
+    # Under the cards, where a refused starter card can be seen from.
+    render_notice()
 else:
     # Marker only: app.js keys page-scroll behaviour off its presence — without it
     # the screen is the landing screen, which always starts at the top.
@@ -726,11 +786,7 @@ else:
         elif message.get("text"):
             render_assistant(position, message)
 
-    if st.session_state.notice:
-        st.markdown(
-            f'<div class="notice">{html.escape(st.session_state.notice)}</div>',
-            unsafe_allow_html=True,
-        )
+    render_notice()
 
     if st.session_state.error and not st.session_state.processing:
         st.markdown(
@@ -764,17 +820,30 @@ else:
                         use_container_width=True,
                     )
         if retry or switch:
+            # Switching model happens either way, before the gate. It costs nothing
+            # and it is the remedy the card itself recommends — refusing it while a
+            # bucket refills would take the fix away from the reader at the moment
+            # they reached for it, and leave "switch to another model and try again"
+            # printed above a button that does neither.
             if switch:
                 st.session_state.model = alternative.key
                 st.session_state.switched_from = None
-            # On both paths, not just the deliberate switch: "Try again" is the reader
-            # asking for another attempt, and leaving the guard set means the retry
-            # cannot fail over even though this is a fresh attempt at the question.
-            st.session_state.failed_over = False
-            st.session_state.error = None
-            st.session_state.error_detail = ""
-            if st.session_state.messages[-1]["role"] == "user":
-                st.session_state.processing = True
+            # The turn, though, goes through the same gate as a new question: it
+            # costs the same one-to-five provider calls, and skipping the check meant
+            # a spent deployment budget stopped new questions while this button went
+            # on spending, one turn per click. On a refusal the error card and its
+            # buttons stay exactly where they are — clearing them would take away the
+            # only way back — and the notice above says how long to wait.
+            if may_start_turn():
+                # On both paths, not just the deliberate switch: "Try again" is the
+                # reader asking for another attempt, and leaving the guard set means
+                # the retry cannot fail over even though this is a fresh attempt at
+                # the question.
+                st.session_state.failed_over = False
+                st.session_state.error = None
+                st.session_state.error_detail = ""
+                if st.session_state.messages[-1]["role"] == "user":
+                    st.session_state.processing = True
             st.rerun()
 
 
@@ -874,8 +943,18 @@ for key, item in keyed:
     held.add(key)
 
 st.session_state.upload_refusals = refusals
-for why in refusals.values():
-    st.warning(f"⚠️ {why}")
+if refusals:
+    # In a container of its own, and the key is the point: these land at the end of
+    # the page, below the last message, and app.js measures the end of the page to
+    # decide how much room the composer needs and where to scroll. It had no idea
+    # these existed, so on a conversation the reason a file was refused rendered
+    # 65 of its 80 pixels *behind* the input bar — a file that did not attach, and
+    # an explanation the reader could not see. `.st-key-upload-notes` is what makes
+    # it part of the tail. Created only when there is something to say, so an empty
+    # container is never in the way of that measurement.
+    with st.container(key="upload-notes"):
+        for why in refusals.values():
+            st.warning(f"⚠️ {why}")
 
 
 def render_attachments() -> None:
@@ -951,17 +1030,22 @@ if prompt and prompt.strip():
         # The cap the counter used to advertise. Said once, at the moment it matters,
         # instead of counted out on screen for every question that was never near it.
         over = len(asked) - config.MAX_PROMPT_CHARS
-        st.warning(
-            f"⚠️ That question is {over:,} characters over the "
-            f"{config.MAX_PROMPT_CHARS:,}-character limit. Shorten it, or attach the "
-            "long part as a file."
-        )
-        # And handed back, because `st.chat_input` empties its box on submit: without
-        # this, "shorten it" asks the reader to shorten something the app has just
-        # destroyed. The counter that used to enforce this made overrunning impossible
-        # in the first place, so losing the text is a regression this pays off.
-        with st.expander("Your question, to copy back out", expanded=True):
-            st.code(asked, language=None)
+        # Keyed for the same reason the upload refusals are: this is the end of the
+        # page, and app.js has to know it is there or it reserves room to the last
+        # message and leaves the explanation under the composer.
+        with st.container(key="prompt-notes"):
+            st.warning(
+                f"⚠️ That question is {over:,} characters over the "
+                f"{config.MAX_PROMPT_CHARS:,}-character limit. Shorten it, or attach "
+                "the long part as a file."
+            )
+            # And handed back, because `st.chat_input` empties its box on submit:
+            # without this, "shorten it" asks the reader to shorten something the app
+            # has just destroyed. The counter that used to enforce this made
+            # overrunning impossible in the first place, so losing the text is a
+            # regression this pays off.
+            with st.expander("Your question, to copy back out", expanded=True):
+                st.code(asked, language=None)
     else:
         start_new_turn(asked, st.session_state.attachments)
 
@@ -1099,6 +1183,18 @@ if st.session_state.processing:
             turn = start(messages, TOOL_SCHEMAS)
 
         status.empty()
+
+        # An answer that is not there. The turn succeeded — no exception, maybe even a
+        # search and a read — and the stream carried nothing but whitespace, which the
+        # renderer then had nothing to draw: the transcript skips an assistant message
+        # with no text, so what the reader was left with was their own question, no
+        # reply, no error card and no button. Raised rather than papered over with a
+        # sentence, because the useful thing here is the retry and the model switch the
+        # error card already offers.
+        if not final_text.strip():
+            logger.warning("%s returned an empty answer", MODEL.key)
+            raise llm.AssistantError("empty")
+
         sources = citations(runner.sources)
 
         # Re-render once with links resolved, so a raw `docs/...md` target never flashes.

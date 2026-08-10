@@ -1,14 +1,46 @@
-# `base` is deliberately unset so Streamlit follows the browser's colour scheme.
-# static/app.css keys off `prefers-color-scheme`, and pinning a base here would
-# desync the app's palette from Streamlit's own chrome.
+# One theme per colour scheme, and both of them stated.
+#
+# This used to be a single `[theme]` block, with a comment claiming `base` was left
+# unset so Streamlit would follow the browser. It does not work that way: setting any
+# `[theme]` value at all makes the theme a *custom* one, and a custom theme's `base`
+# defaults to light. So on a dark-mode device Streamlit painted a white page while
+# static/app.css — which keys off `prefers-color-scheme` — went dark underneath it,
+# and the reader got the dark palette on a white page: source links at #b6bcc7 on
+# white (1.9:1, invisible), a near-black popover panel, and the model name under the
+# input in pale grey. Measured in the running app, not reasoned about.
+#
+# `[theme.light]` and `[theme.dark]` are per-scheme sections, so the browser
+# preference decides again and the two stylesheets agree. The dark primary is the
+# tint app.css already uses for brand text on a dark page; #800000 on near-black
+# reads at 1.73:1.
 [theme]
-primaryColor = "#800000"
 font = "sans serif"
 
+[theme.light]
+primaryColor = "#800000"
+
+[theme.dark]
+primaryColor = "#f0a8ac"
+
 [server]
-# Uploads are truncated to ~30k characters anyway; the old 200 MB default meant a
-# huge PDF was read into memory before anything checked its size.
-maxUploadSize = 10
+# Deliberately ABOVE SAGE_MAX_UPLOAD_BYTES (10 MB), so the app is the one that
+# refuses an oversized file rather than Streamlit.
+#
+# Streamlit renders its own "File must be 10.0MB or smaller" *inside* the uploader
+# widget — and app.css hides that widget, because uploads are driven from the
+# paperclip in the composer instead. At 10 MB the two limits were the same number, so
+# an 11 MB file was turned away by Streamlit and the reason went with it: no chip, no
+# warning, nothing anywhere on the page. `sage/files.py` checks the length before it
+# parses anything, so what the headroom costs is one upload of at most this size
+# arriving before it is turned away with a message the reader can actually read.
+#
+# It moves the silent cliff rather than removing it: a 25 MB file still disappears
+# into the hidden widget, and `accept_multiple_files` means the memory exposure is
+# this number times however many files arrive at once. Twice the app's own limit is
+# the compromise — it covers the case people actually hit (a PDF a little over the
+# line) without holding a quarter of a gigabyte per session for one refusal.
+# tests/test_streamlit_config.py holds the two numbers in that order.
+maxUploadSize = 20
 enableXsrfProtection = true
 
 [browser]

@@ -94,6 +94,57 @@ def test_text_that_is_not_utf8_is_still_read():
     assert "caf" in attachment.text
 
 
+class TestUtf16:
+    """PowerShell's `>` writes UTF-16LE.
+
+    Text in that encoding is half NUL bytes, so the binary sniff refused it and told
+    the reader — about a log their laptop had just written — that a text file is not
+    text. Recognised by its byte-order mark, which is a declaration; the encoding is
+    never guessed at, because `bytes.decode("utf-16")` accepts any even-length input
+    and would turn every cp1252 log into 慣霠渠.
+    """
+
+    def test_a_utf16_log_is_read(self):
+        attachment, error = files.process(
+            "job.log", "srun: job 1 queued\nOOM killed\n".encode("utf-16")
+        )
+        assert error is None
+        assert "OOM killed" in attachment.text
+
+    def test_big_endian_too(self):
+        attachment, error = files.process(
+            "job.log", b"\xfe\xff" + "exceeded memory".encode("utf-16-be")
+        )
+        assert error is None
+        assert attachment.text == "exceeded memory"
+
+    def test_a_cp1252_log_is_not_read_as_utf16(self):
+        attachment, _error = files.process("legacy.log", "café".encode("cp1252"))
+        assert attachment.text == "café"
+
+    def test_a_real_binary_is_still_refused(self):
+        _attachment, error = files.process("core.dump", bytes(range(256)) * 40)
+        assert "does not look like text" in error
+
+    @pytest.mark.parametrize(
+        ("why", "payload"),
+        [
+            # `Out-File -Encoding utf32` writes FF FE 00 00, which starts with the
+            # UTF-16 mark. Matching two bytes let it through and decoded it to
+            # alternating NULs: the same reader, handed garbage instead of a reason.
+            ("utf-32le", b"\xff\xfe\x00\x00" + "hello".encode("utf-32-le")),
+            ("utf-32be", b"\x00\x00\xfe\xff" + "hello".encode("utf-32-be")),
+            # A BOM is a claim, not a proof: what comes out still has to read as text.
+            ("binary that happens to start FF FE", b"\xff\xfe" + bytes(range(256)) * 8),
+            ("odd-length blob", b"\xff\xfe\x01\x02\x03"),
+        ],
+    )
+    def test_a_bom_alone_does_not_make_it_text(self, why, payload):
+        attachment, error = files.process("f.log", payload)
+        assert attachment is None, why
+        assert "does not look like text" in error
+
+
 def test_undecodable_text_is_reported():
     """Nothing in the fallback chain can fail, so this is the belt-and-braces path:
     a byte string that gets past the binary sniff but decodes as nothing."""

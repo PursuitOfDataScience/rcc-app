@@ -322,8 +322,15 @@
         // the status row and the streaming answer both render inside one. Without
         // it the slack above a short conversation is measured to the bottom of the
         // *question*, which pushes the answer being streamed under the input bar.
+        // The two keyed note containers are on the list for the same reason the
+        // notice is: they render at the END of the page, after the last message, and
+        // a tail measured without them reserves room to the wrong edge. A refused
+        // upload put 65 of its 80 pixels behind the input bar — the file did not
+        // attach and the reason why was underneath the composer — because nothing
+        // here had ever heard of it.
         var nodes = doc.querySelectorAll('[class*="st-key-answer-"], .user-message,' +
-            '.stChatMessage, .notice, .error-card, [class*="st-key-error-actions"]');
+            '.stChatMessage, .notice, .error-card, [class*="st-key-error-actions"],' +
+            '[class*="st-key-upload-notes"], [class*="st-key-prompt-notes"]');
         nodes.forEach(function (node) {
             var bottom = node.getBoundingClientRect().bottom;
             if (edge === null || bottom > edge) edge = bottom;
@@ -963,7 +970,13 @@
         answers.forEach(function (message) {
             if (message.dataset.sageCopy === 'true') return;
             message.dataset.sageCopy = 'true';
-            message.style.setProperty('position', 'relative');
+            // Anchored to the keyed container, not to the message, because app.css
+            // reserves the gutter there — on the message alone the prose and the code
+            // blocks shrank while the Sources strip beside them did not, leaving the
+            // answer with three different right edges. The button still lands in the
+            // same corner: the container's top edge IS the message's.
+            var host = message.closest('[class*="st-key-answer-"]') || message;
+            host.style.setProperty('position', 'relative');
             var btn = makeCopyButton(function () {
                 var body = message.querySelector('[data-testid="stChatMessageContent"]') || message;
                 return body.innerText || body.textContent || '';
@@ -971,7 +984,7 @@
             btn.style.top = '0';
             btn.style.right = '0';
             btn.style.opacity = '0.65';
-            message.appendChild(btn);
+            host.appendChild(btn);
         });
     }
 

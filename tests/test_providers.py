@@ -83,6 +83,27 @@ class TestParseSSE:
         lines = ["data: {not json", 'data: {"choices":[{"delta":{"content":"ok"}}]}']
         assert "".join(c.text for c in providers.parse_sse(iter(lines))) == "ok"
 
+    @pytest.mark.parametrize("event", [
+        # Quoted, which some OpenAI-compatible gateways send instead of the bare form.
+        'data: "[DONE]"',
+        "data: [1, 2]",
+        "data: 42",
+        "data: null",
+        'data: {"choices": ["not an object"]}',
+        'data: {"choices": [{"delta": "not an object"}]}',
+    ])
+    def test_an_event_of_the_wrong_shape_is_skipped_not_raised(self, event):
+        """Parsed is not the same as shaped.
+
+        Every `.get` here assumed a dict. A valid-JSON string or array reached them
+        and raised AttributeError, which `Turn.deltas` then classified as an unknown
+        provider failure — so an answer that had been streaming for twenty seconds was
+        thrown away and replaced with "something went wrong reaching the assistant" at
+        the very end of it.
+        """
+        lines = [event, 'data: {"choices":[{"delta":{"content":"ok"}}]}']
+        assert "".join(c.text for c in providers.parse_sse(iter(lines))) == "ok"
+
     def test_bytes_lines_are_decoded(self):
         lines = [b'data: {"choices":[{"delta":{"content":"bytes"}}]}']
         assert "".join(c.text for c in providers.parse_sse(iter(lines))) == "bytes"

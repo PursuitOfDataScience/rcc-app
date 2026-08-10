@@ -293,10 +293,21 @@ def parse_sse(lines: Iterator[str]) -> Iterator[Chunk]:
         except json.JSONDecodeError:
             logger.warning("Skipping unparseable stream event: %r", body[:200])
             continue
-        choices = event.get("choices") or []
-        if not choices:
+        # Parsed is not the same as shaped. `data: "[DONE]"` — quoted, which some
+        # OpenAI-compatible gateways send — is valid JSON and a string, and every
+        # `.get` below assumed a dict: the AttributeError left `Turn.deltas` to
+        # classify it as an unknown failure, so a half-streamed answer was thrown
+        # away and replaced with "something went wrong" at the very end of it. An
+        # event this code does not understand is one to skip, which is what the
+        # JSONDecodeError branch above already decided.
+        if not isinstance(event, dict):
             continue
-        delta = choices[0].get("delta") or {}
+        choices = event.get("choices") or []
+        if not choices or not isinstance(choices[0], dict):
+            continue
+        delta = choices[0].get("delta")
+        if not isinstance(delta, dict):
+            delta = {}
         yield Chunk(
             text=_flatten(delta.get("content")),
             tool_calls=_tool_fragments(delta.get("tool_calls")),

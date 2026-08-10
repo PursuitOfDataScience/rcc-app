@@ -60,6 +60,18 @@ _BINARY_BYTES = bytes(range(1, 8)) + bytes(range(14, 27)) + bytes(range(28, 32))
 # is a poor reason not to read six thousand lines of Slurm output.
 _ENCODINGS = ("utf-8", "utf-8-sig", "cp1252", "latin-1")
 
+# UTF-16 byte-order marks. Text in this encoding is half NUL bytes, so `_looks_binary`
+# refused it outright — and the file it refused is not exotic: PowerShell's `>` writes
+# UTF-16LE, so a log captured on a Windows laptop and attached here was told, in as
+# many words, that a text file is not text. Checked by BOM rather than by counting
+# NULs, because a BOM is a declaration and a guess is not.
+_UTF16_BOMS = (b"\xff\xfe", b"\xfe\xff")
+# …and UTF-32's, which start with UTF-16's. `Out-File -Encoding utf32` writes
+# `FF FE 00 00`, and matching only the first two bytes let that through as UTF-16 and
+# decoded it to alternating NULs: the same reader, the same session, handed garbage
+# instead of a refusal. Excluded first, so the BOM check answers about one encoding.
+_UTF32_BOMS = (b"\xff\xfe\x00\x00", b"\x00\x00\xfe\xff")
+
 
 # Images, by magic bytes rather than by extension — a screenshot pasted from the
 # clipboard arrives with a name this app invented, so the name says nothing. Checked
@@ -201,8 +213,26 @@ def _extract_pdf(data: bytes) -> tuple[str, int]:
     return "\n".join(pages), len(reader.pages)
 
 
-def _looks_binary(data: bytes) -> bool:
-    """Is this something a person could read? Judged on the bytes, not the name.
+def _utf16_text(data: bytes) -> str | None:
+    """The file as UTF-16, or None if that is not what it is.
+
+    A BOM is a declaration, so it is the only thing that gets to claim this encoding
+    — `bytes.decode("utf-16")` accepts any even-length input, and putting it in the
+    fallback chain turned a cp1252 log into 慣霠渠 inside a minute. The decode still
+    has to succeed, and what comes out still has to read as text: a binary blob that
+    happens to open with `FF FE` is not a Windows log.
+    """
+    if data.startswith(_UTF32_BOMS) or not data.startswith(_UTF16_BOMS):
+        return None
+    try:
+        text = data.decode("utf-16")
+    except UnicodeDecodeError:
+        return None
+    return None if _control_heavy(text.encode("utf-8", "replace")) else text
+
+
+def _control_heavy(data: bytes) -> bool:
+    """Bytes that no text a person wrote would contain, in quantity.
 
     Only the first 8 KB is sampled: enough for the header of every format that would
     fail, and it keeps a 10 MB upload from being scanned twice.
@@ -214,6 +244,14 @@ def _looks_binary(data: bytes) -> bool:
     return control > len(sample) * 0.02
 
 
+def _looks_binary(data: bytes) -> bool:
+    """Is this something a person could read? Judged on the bytes, not the name."""
+    text = _utf16_text(data)
+    if text is not None:
+        return False
+    return _control_heavy(data)
+
+
 def _decode(data: bytes) -> str:
     """Text, always. The last encoding in the chain cannot fail.
 
@@ -222,7 +260,16 @@ def _decode(data: bytes) -> str:
     branch for it — dead code that read like a safety net, with a test in the suite
     conceding as much. What actually guards against nonsense is `_looks_binary`
     upstream; this is only about which encoding renders the text best.
+
+    UTF-16 is tried only behind its BOM, and never as another link in the chain:
+    `bytes.decode("utf-16")` accepts any even-length input, so putting it in the list
+    turned a cp1252 log into 慣霠渠 — the suite caught that within a minute.
+    A BOM is a declaration; everything else here is a guess, and a guess that always
+    succeeds is the worst kind.
     """
+    text = _utf16_text(data)
+    if text is not None:
+        return text
     for encoding in _ENCODINGS:
         try:
             return data.decode(encoding)
