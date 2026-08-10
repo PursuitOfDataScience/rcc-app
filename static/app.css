@@ -125,6 +125,11 @@
      * why it is 25 and not the 10 it was. */
     --composer-btn-bottom: 25px;
 
+    /* Everything in the model picker's trigger that is not the model's name: 18px of
+     * padding, 2px of border, and the 20px chevron Streamlit puts after the label with
+     * a 2px gap. Named so the width below can be about the name and nothing else. */
+    --picker-chrome: 42px;
+
     --content-max: min(820px, 92vw);
     --input-max: min(780px, 88vw);
     --user-bubble-max: 78%;
@@ -324,10 +329,30 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
  * and moved the panel anchored to it. That is the jitter: not an animation, a layout
  * that depended on the length of the current selection.
  *
- * A fixed width instead, wide enough for the longest name the picker offers and
- * ellipsed past that, so switching models changes the text and nothing else. */
+ * So the width is fixed, and set from the longest name the picker can offer rather
+ * than from the one showing: independent of the selection, which is what kills the
+ * jitter, but no wider than it has to be. `app.py` publishes that length in
+ * `--picker-chars`, because only it knows what the provider actually served — the
+ * lineup is discovered at runtime and differs per deployment.
+ *
+ * It was a flat 15rem, which was 240px for a name that needed 136, and read as a wide
+ * empty box with a word at one end of it. That is still the ceiling: a name long
+ * enough to pass it ellipses rather than pushing the row off the corner.
+ *
+ * `ch` is the width of a "0", so this runs a little generous for lowercase ids — about
+ * 10% — which is the safe direction: slack looks like padding, a shortfall truncates
+ * the name. The 21 fallback is the longest name in the configured lists, for a page
+ * that gets this stylesheet without app.py's variable.
+ *
+ * The 0.78 is the label's own font size in rem, below. `ch` resolves against the
+ * element it is written on, and that is this button, which Streamlit leaves at 16px
+ * while the name inside it renders at 0.78rem — so an unscaled `ch` measured
+ * characters a third larger than the ones on screen, and the width never came down off
+ * the 15rem ceiling at all. Keep the two in step; the harness fails if the name stops
+ * fitting. */
 .st-key-composer-strip [data-testid="stPopover"] button {
-    width: 15rem !important;
+    width: min(calc(var(--picker-chars, 21) * 0.78ch + var(--picker-chrome)), 15rem)
+        !important;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
