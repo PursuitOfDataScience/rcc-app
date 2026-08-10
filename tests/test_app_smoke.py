@@ -279,7 +279,7 @@ class TestModelPicker:
         offered = " | ".join(self._offered(stub).values())
         assert offered, "expected a model picker"
         assert "mistral-small-latest" in offered
-        assert "deepseek-v4-flash-free" in offered
+        assert "deepseek-v4-flash" in offered
         assert "big-pickle" in offered
 
     def test_the_trigger_names_the_model_in_use(self, monkeypatch):
@@ -288,7 +288,19 @@ class TestModelPicker:
         zen = ScriptedProvider([], name="opencode", models=("deepseek-v4-flash-free",))
         stub, _m = run_app(monkeypatch, client=mistral, extra={"opencode": zen},
                            session=self.session(), opencode=True)
-        assert ("popover", "mistral-small-latest") in stub.events
+        assert ("popover", "deepseek-v4-flash") in stub.events
+
+    def test_a_fresh_session_starts_on_the_configured_default(self, monkeypatch):
+        """Not on whichever provider happens to be listed first. `configured_providers`
+        puts Mistral at the head of the list, so the two orders differ and a default
+        that was quietly being ignored would look identical to one that was honoured.
+        """
+        mistral = ScriptedProvider([], name="mistral", models=("mistral-small-latest",))
+        zen = ScriptedProvider([], name="opencode", models=("deepseek-v4-flash-free",))
+        stub, _m = run_app(monkeypatch, client=mistral, extra={"opencode": zen},
+                           session=self.session(), opencode=True)
+        assert stub.session_state["model"] == config.DEFAULT_MODEL
+        assert stub.session_state["model"] == "opencode:deepseek-v4-flash-free"
 
     def test_it_is_not_a_selectbox(self, monkeypatch):
         """A selectbox kept its own value and clobbered an automatic failover on
@@ -390,7 +402,7 @@ class TestComposerStrip:
         """Reported from the running app: the picker did not show up on the
         landing page at all — not until a prompt had been entered."""
         stub, _m = self.two_providers(monkeypatch, {"messages": [], "processing": False})
-        assert ("popover", "mistral-small-latest") in stub.events
+        assert ("popover", "deepseek-v4-flash") in stub.events
         assert [key for key in stub.button_labels if str(key).startswith("pick-")]
 
     def test_the_picker_is_still_there_mid_conversation(self, monkeypatch):
@@ -399,7 +411,7 @@ class TestComposerStrip:
             "processing": False,
         }
         stub, _m = self.two_providers(monkeypatch, session)
-        assert ("popover", "mistral-small-latest") in stub.events
+        assert ("popover", "deepseek-v4-flash") in stub.events
 
     def test_clear_appears_only_once_there_is_something_to_clear(self, monkeypatch):
         stub, _m = self.two_providers(monkeypatch, {"messages": [], "processing": False})

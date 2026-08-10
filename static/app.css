@@ -101,8 +101,13 @@
      * Derived from `--strip-h` rather than guessed, because the bar's band IS the
      * strip it reserves plus the input and its padding. Two hand-tuned numbers agreed
      * with each other by luck and were both ~20px under the real first-frame band;
-     * this way one of them changing cannot silently break the other. */
-    --bar-band: calc(var(--strip-h) + 5.25rem);
+     * this way one of them changing cannot silently break the other.
+     *
+     * The 5.5rem is the input: an 86px box and the padding around it. It was 5.25rem
+     * — 84px — which is 2px under the box alone, and the chips duly landed 2px inside
+     * it on the first frame. Nothing had said so, because the harness modelled the box
+     * without the 12px of padding Streamlit puts above and below the field. */
+    --bar-band: calc(var(--strip-h) + 5.5rem);
     /* Raised from 12rem when the Sources strip became a numbered list: a heading on
      * its own line is ~30px taller than the chip row it replaced, and the first frame
      * — before app.js has measured anything — put the newest content 5px under the
@@ -114,6 +119,11 @@
     /* What is left between the last message and the bar. Also how far the page
      * can scroll past its last message, so it is dead space, one gap's worth. */
     --tail-gap: 1.75rem;
+
+    /* How far above the floor of the composer box the paperclip and the send button
+     * are parked. One value because they are one row; see the paperclip's rule for
+     * why it is 25 and not the 10 it was. */
+    --composer-btn-bottom: 25px;
 
     --content-max: min(820px, 92vw);
     --input-max: min(780px, 88vw);
@@ -630,7 +640,7 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
 .stChatInput button:not(#paperclip-btn) {
     position: absolute !important;
     right: 10px !important;
-    bottom: 10px !important;
+    bottom: var(--composer-btn-bottom) !important;
     z-index: 102 !important;
 }
 
@@ -644,11 +654,24 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
  * Pinned to the bottom, like the send button across from it. Both used to be centred
  * by the box's own `align-items: center`; pinning only the send button left them 67px
  * apart once a paragraph was typed, one at the vertical middle and one at the floor.
- * They are a pair — the same row of the same box. */
+ * They are a pair — the same row of the same box.
+ *
+ * 25px above that floor, not the 10px it was, because 10px was measured from the wrong
+ * edge. Streamlit gives the box 12px of its own padding and a 2px border under the
+ * field, so 10px off the box's floor is only 4px under the field — and with one line
+ * of text centred in an 86px box, that hung the clip 15px below the sentence it starts.
+ * Reported from the running app as the clip sitting "slightly below the message".
+ *
+ * What the extra 15px does not change: there is still 10px of air under the field
+ * itself, so a box with a paragraph in it parks the pair by the last line rather than
+ * floating them up the side of it. `tools/render_check.py` now measures each button
+ * against the middle of the first line and fails past 6px — the check that was missing
+ * when the 10px shipped, and which passed on a replica that gave the box no vertical
+ * padding at all. */
 #paperclip-btn {
     position: absolute;
     left: 12px;
-    bottom: 10px;
+    bottom: var(--composer-btn-bottom);
     z-index: 1000;
     display: flex;
     align-items: center;

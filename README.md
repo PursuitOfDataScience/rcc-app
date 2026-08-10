@@ -31,7 +31,7 @@ in `.streamlit/secrets.toml` (gitignored) instead of the environment.
 Both sit behind one interface in [`sage/providers.py`](sage/providers.py) and normalise onto the same streaming chunk, so nothing downstream knows which is in use.
 
 - **Mistral** — the official SDK.
-- **OpenCode Zen** — the OpenAI-compatible endpoint at `https://opencode.ai/zen/v1`. Its model list comes from `GET /models` at runtime, because a free tier's lineup changes without notice; `SAGE_OPENCODE_MODELS` is only the fallback. Zen serves its paid lineup from the same endpoint, so the picker keeps only the free ones — matched by naming convention (`-free`, plus stealth codenames) rather than a hardcoded list, since the lineup moves. `SAGE_ZEN_FREE_ONLY=0` shows everything, for a deployment with a balance.
+- **OpenCode Zen** — the OpenAI-compatible endpoint at `https://opencode.ai/zen/v1`. Its model list comes from `GET /models` at runtime, because a free tier's lineup changes without notice; `SAGE_OPENCODE_MODELS` is only the fallback. Zen serves its paid lineup from the same endpoint, so the picker keeps only the free ones — matched by naming convention (`-free`, plus stealth codenames) rather than a hardcoded list, since the lineup moves. `SAGE_ZEN_FREE_ONLY=0` shows everything, for a deployment with a balance. The tier marker is part of the id sent upstream and of the filter that reads it, but not of the name in the picker: `Model.label` drops it as a whole segment, since it is billing plumbing rather than something to pick between models on.
 
 Models that cannot call tools answer from a **single retrieval pass** instead of the search/read loop — searched up front, matching sections in the prompt, still cited. Set `SAGE_TOOLLESS_MODELS`, or let the app detect it: a provider that rejects tools is retried that way.
 
@@ -49,7 +49,7 @@ Environment-driven; defaults in [`sage/config.py`](sage/config.py).
 |---|---|---|
 | `MISTRAL_API_KEY` | *(one required)* | Mistral API key |
 | `OPENCODE_API_KEY` | *(one required)* | OpenCode Zen key (`sk-zen-…`), free tier |
-| `SAGE_DEFAULT_MODEL` | `mistral:mistral-small-latest` | Model a fresh session starts on, `provider:model-id` |
+| `SAGE_DEFAULT_MODEL` | `opencode:deepseek-v4-flash-free` | Model a fresh session starts on, `provider:model-id` |
 | `SAGE_MISTRAL_MODELS` | small/medium/large | Mistral models offered in the picker |
 | `SAGE_OPENCODE_MODELS` | deepseek-v4-flash-free, … | Fallback list if `GET /models` fails |
 | `OPENCODE_BASE_URL` | `https://opencode.ai/zen/v1` | OpenAI-compatible endpoint |

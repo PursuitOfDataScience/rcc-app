@@ -32,6 +32,10 @@ OPENCODE = "opencode"
 # the same 120s as an `httpx.Timeout`.
 STREAM_TIMEOUT_MS = 120_000
 
+# The id segment marking Zen's no-cost tier. Matched on `Model.label` only; the id
+# itself is never rewritten, so what is sent upstream stays exactly what Zen serves.
+_TIER_MARK = "free"
+
 
 @dataclass(frozen=True)
 class Model:
@@ -46,12 +50,19 @@ class Model:
     def label(self) -> str:
         """The model's own name, and nothing else.
 
-        There was a provider prefix — "Zen · deepseek-v4-flash-free" — which spent a
-        third of the picker's width restating what the rest of the row already said,
-        on every line. The id alone identifies the model, and `mistral-` on the front
-        of the Mistral ones does the same job the prefix was doing.
+        There was a provider prefix — "Zen · deepseek-v4-flash" — which spent a third
+        of the picker's width restating what the rest of the row already said, on
+        every line. The id alone identifies the model, and `mistral-` on the front of
+        the Mistral ones does the same job the prefix was doing.
+
+        The tier marker in a Zen id is dropped for the same reason: it is billing
+        plumbing, not part of the model's name. It still belongs in `key`, which is
+        what goes upstream, and in the discovery filter that reads it — but a picker
+        row is where a reader is choosing between models, and the marker says nothing
+        about the choice. Removed by segment, so only a whole `-free-` word goes.
         """
-        return self.id
+        kept = [part for part in self.id.split("-") if part.lower() != _TIER_MARK]
+        return "-".join(kept) or self.id
 
     @property
     def supports_tools(self) -> bool:

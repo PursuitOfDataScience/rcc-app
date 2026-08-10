@@ -1005,7 +1005,7 @@ def render_attachments() -> None:
 # Streamlit's, unversioned, and not visible from this repo, so a rule naming it would
 # be a guess that fails silently the day it changes. Not asking for the counter
 # cannot fail that way.
-prompt = st.chat_input("Ask anything about RCC…")
+prompt = st.chat_input("Ask any question about the RCC…")
 
 # The token app.js watches to know the composer should be emptied. A marker element
 # rather than a callback, for the same reason `#processing-signal` is one: this file
