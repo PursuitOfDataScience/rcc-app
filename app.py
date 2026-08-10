@@ -1021,7 +1021,19 @@ def render_attachments() -> None:
 # Streamlit's, unversioned, and not visible from this repo, so a rule naming it would
 # be a guess that fails silently the day it changes. Not asking for the counter
 # cannot fail that way.
-prompt = st.chat_input("Ask any question about the RCC…")
+# Two prompts, because the box is asking for two different things. On the landing
+# screen it is the only instruction on the page about what this app is for, so it names
+# the subject. Once an answer is on screen the subject is established and the useful
+# thing to say is that the conversation carries: the box takes a follow-up, it is not a
+# fresh search that has forgotten what was just asked.
+#
+# Keyed on an answer existing rather than on there being any messages at all. A question
+# that is still generating, or one that failed and left its retry button, has nothing to
+# follow up on yet — "ask a follow-up" over an empty answer reads as if one arrived.
+answered = any(item["role"] == "assistant" for item in st.session_state.messages)
+prompt = st.chat_input(
+    "Ask a follow-up question…" if answered else "Ask any question about the RCC…"
+)
 
 # The token app.js watches to know the composer should be emptied. A marker element
 # rather than a callback, for the same reason `#processing-signal` is one: this file
