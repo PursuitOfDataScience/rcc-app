@@ -195,9 +195,19 @@
     // where the stylesheet thinks it is, or a rect read mid-rebuild — and
     // reserving that much space would push the conversation off screen. The cap
     // turns that into slightly-wrong spacing rather than an empty page.
+    //
+    // 0.55, not the 0.4 it was, because 0.4 was clipping a bar that was not wrong at
+    // all. At 966x626 — a size CI renders — a composer with a paragraph in it measures
+    // 290-298px, which is 48% of that window: real, correctly measured, and duly cut to
+    // 250. The 40px it lost is 40px the page did not reserve, and on a page with
+    // nothing to scroll that is the end of the newest answer sitting under the composer
+    // with no way to bring it back out. Under-reserving hides content; over-reserving
+    // only makes the page scroll, which is recoverable — so where the two disagree the
+    // cap should lean high. Still a cap: a bar measured as more than half the window
+    // is still capped, which is what keeps a bad rect from emptying the page.
     function band(element) {
         return Math.max(0, Math.min(rawBand(element),
-                                    Math.round(view.innerHeight * 0.4)));
+                                    Math.round(view.innerHeight * 0.55)));
     }
 
     // The same measurement without the cap, for the things that are POSITIONS rather

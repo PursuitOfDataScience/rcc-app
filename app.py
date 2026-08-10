@@ -577,18 +577,46 @@ def argument(call: dict, name: str) -> str:
     return "" if value is None else str(value).strip()
 
 
+# The most of a name or a query the status line will say. Neither is written by this
+# app — a doc title comes from the corpus and a query from the model — so both need a
+# ceiling, and the ceiling has to hold on a phone: at 500px this line has room for
+# about 60 characters before it takes a second row, and a progress cue that grows the
+# page it sits on is worse than one that says less.
+STATUS_MAX = 48
+
+
+def _short(text: str) -> str:
+    """`text`, cut at a word boundary if it is longer than the line has room for."""
+    if len(text) <= STATUS_MAX:
+        return text
+    cut = text[:STATUS_MAX].rsplit(" ", 1)[0] or text[:STATUS_MAX]
+    return f"{cut.rstrip(' ,;:—-')}…"
+
+
 def describe(calls: list[dict]) -> str:
-    """Say what is actually happening instead of a generic shimmer."""
+    """Say what is actually happening instead of a generic shimmer.
+
+    The document, not the section of it. `chunk.label` is `"{title} — {heading}"`,
+    which is right on a citation chip — that is a link, and the heading says which part
+    of a long page it goes to. It is wrong here: this line is on screen for a second
+    while a reader waits, and RCC headings are frequently whole questions, so it was
+    dragging sentences like "Allocations and Service Units FAQ — How do I check how many
+    service units I have remaining on my allocation?" across the page. 146 characters at
+    the worst, 38 at the median; the titles alone are 60 and 15. The precise section is
+    not lost, it is in the Sources strip under the answer, next to the link that uses
+    it — and by then the reader is deciding whether to click, which is when it helps.
+    """
     for call in calls:
         if call["name"] == SEARCH_DOCS:
             query = argument(call, "query")
-            return f"Searching the docs for “{query}”" if query else "Searching the docs"
+            return (f"Searching the docs for “{_short(query)}”" if query
+                    else "Searching the docs")
     for call in calls:
         if call["name"] == READ_DOC:
             path = argument(call, "path")
             chunk = CORPUS.chunk(path)
-            label = chunk.label if chunk else path.split("/")[-1]
-            return f"Reading {label}" if label else "Reading documentation"
+            title = chunk.doc_title if chunk else path.split("/")[-1]
+            return f"Reading {_short(title)}" if title else "Reading documentation"
     return "Working"
 
 

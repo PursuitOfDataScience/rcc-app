@@ -1040,7 +1040,47 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
     grid-template-columns: auto minmax(0, 1fr);
     align-items: start;
     column-gap: 10px;
-    margin: 0.55rem 0 0;
+    /* 20px off the end of the answer, up from the 8.8px it was — which is tighter than
+     * the gap between two paragraphs of the answer itself, so the references read as a
+     * last line of it rather than as the apparatus underneath. Reported as "too close",
+     * and it was: the strip is a different kind of thing, and a block boundary should
+     * look like one.
+     *
+     * Not more than 20px, though. These belong to the answer above them, and pushed
+     * further they start to read as belonging to whatever comes next — which is the
+     * 👍/👎 row and then the next question. */
+    margin: 1.25rem 0 0;
+}
+
+/* The one place Streamlit's `margin-bottom: -1rem` on a markdown container has to go.
+ *
+ * Everywhere else it is a nuisance the margins above are written 1rem larger to absorb.
+ * Here it is a bug: the references are the LAST thing in an answer's container, and a
+ * negative bottom margin on a last child does not just pull the next element up — it
+ * puts the child's box 16px past the parent's bottom edge. The strip overflowed the
+ * answer, the answer overflowed the block, and `scrollHeight` came out 16px over
+ * `clientHeight` on a page that fits the window perfectly.
+ *
+ * `fill()` in app.js reads exactly that comparison to decide whether a short
+ * conversation has slack to take. It saw a page that scrolls, took the early return,
+ * and published no fill at all — so a one-answer conversation sat at the top of the
+ * window with a screenful of nothing between it and the composer. Measured in the
+ * running app before this: 167px of it, and `--fill: 0px`.
+ *
+ * Nothing is lost by zeroing it. The -1rem exists to tighten the gap to whatever
+ * follows a markdown block; what follows this one is the 👍/👎 row, which wants the
+ * separation anyway. */
+[data-testid="stMarkdownContainer"]:has(.sources) {
+    margin-bottom: 0 !important;
+}
+
+/* Related sits closer to Sources than Sources does to the answer: 12px against 20px.
+ * The two strips are one thing — where this came from, and where to go next — and the
+ * hierarchy has to say so, or Related reads as a third section of the page rather than
+ * as the second half of the references. Enough to separate two lists, not enough to
+ * break them apart. */
+.sources.related {
+    margin-top: 0.75rem;
 }
 
 .sources-label {

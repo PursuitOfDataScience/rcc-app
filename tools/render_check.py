@@ -194,6 +194,12 @@ PICKER_LABEL = "mistral-medium-latest"
 PLACEHOLDERS = {True: "Ask any question about the RCC…",
                 False: "Ask a follow-up question…"}
 
+# The worst the status line gets: "Reading " and the longest document title in the
+# corpus, 60 characters of it. It said "Reading SSH (Secure Shell)" — 26 characters,
+# which fits anywhere and so measured nothing. `app.py` caps the variable half at 48,
+# and this is what that cap has to survive at 500px.
+STATUS_LABEL = "Reading Artificial Intelligence in the Spotlight…"
+
 
 def base_css(scheme: str) -> str:
     return f"""
@@ -494,8 +500,25 @@ def related_list(related=None) -> str:
             f'<div class="related-list">{items}</div></div>')
 
 
-SOURCE_LIST = source_list()
-RELATED_LIST = related_list()
+def references(sources=None, related=None) -> str:
+    """Both strips, in the wrapper `st.markdown` puts around them.
+
+    One call renders both in `app.py`, so one wrapper holds the pair — and it is
+    `[data-testid="stMarkdownContainer"]`, which carries `margin-bottom: -1rem`. As
+    bare siblings of the answer, which is how they were rendered here, the gap above
+    Sources was a plain margin between two divs; in the app it is that margin against
+    a negative one on the block above. The two agreed by luck at 0.55rem and would
+    have stopped agreeing the moment the value moved, which is the whole reason this
+    wrapper is modelled anywhere.
+    """
+    return ('<div class="element-container"><div class="stMarkdown">'
+            '<div data-testid="stMarkdownContainer">'
+            f"{source_list(sources)}"
+            f"{related_list(related) if related is not False else ''}"
+            "</div></div></div>")
+
+
+REFERENCES = references()
 
 
 def answer_block(index: int) -> str:
@@ -518,8 +541,7 @@ def answer_block(index: int) -> str:
 module load cuda/11.8
 python train.py --epochs 100 --batch-size 64 --output /scratch/midway3/$USER/run</code></pre>
  </div></div></div>
- {SOURCE_LIST}
- {RELATED_LIST}
+ {REFERENCES}
 </div>"""
 
 
@@ -566,7 +588,8 @@ WIDE_ANSWER = """
  </div></div></div>
  {sources}
 </div>""".format(
-    sources=source_list([("Partitions — Which partition should I use?", "docs")])
+    sources=references([("Partitions — Which partition should I use?", "docs")],
+                       related=False)
 )
 
 # One question and a two-line reply: the shape that used to leave 121–566px of
@@ -582,8 +605,8 @@ SHORT_ANSWER = f"""
  <div></div>
  <div class="stMarkdown"><div data-testid="stMarkdownContainer"><p>Submit it with <code>sbatch ./my_job.sbatch</code>, and the
  scheduler prints the job id it assigned.</p></div></div></div>
- {source_list([("Batch jobs — Submitting a job", "docs")])}
- {related_list(["Checking job status in the terminal"])}
+ {references([("Batch jobs — Submitting a job", "docs")],
+             ["Checking job status in the terminal"])}
 </div>
 <div class="element-container"><div class="stMarkdown"><div data-testid="stMarkdownContainer">
   <div class="notice">Mistral · small-latest was unavailable (out of credit), so Zen ·
@@ -672,7 +695,7 @@ TYPED = (
 # app.js puts above a short conversation stayed small there and the check below had
 # nothing to catch. On this screen it is the whole page, which is how the question
 # ended up halfway down the window with the answer arriving underneath it.
-IN_FLIGHT = """
+IN_FLIGHT = f"""
 <div class="element-container"><div class="stMarkdown"><div data-testid="stMarkdownContainer">
   <div class="user-message"><div class="user-bubble">How do I connect to Midway via
   SSH?</div></div>
@@ -682,7 +705,7 @@ IN_FLIGHT = """
  <div class="stMarkdown"><div data-testid="stMarkdownContainer">
   <div class="status-row" role="status" aria-live="polite">
     <span class="status-dot" aria-hidden="true"></span>
-    <span class="status-text">Reading SSH (Secure Shell)</span>
+    <span class="status-text">{STATUS_LABEL}</span>
     <span class="status-dots" aria-hidden="true"><span></span><span></span><span></span></span>
   </div>
  </div></div></div></div>"""
@@ -761,7 +784,13 @@ LINE_LIMITS = {
 # Line budgets that apply BELOW 641px too, where the general gate does not. Empty
 # since the caveat line — the one element that had to hold at a phone width — was
 # removed from under the input.
-NARROW_LINE_LIMITS: dict[str, int] = {}
+NARROW_LINE_LIMITS: dict[str, int] = {
+    # The status line, at a phone width too — this is the one place the general gate
+    # would be wrong to let go. It is a progress cue over an empty answer, so a second
+    # row is the page growing under a reader who is waiting and has nothing else to
+    # look at. Holding it here is what the cap in `app.py`'s `describe` is for.
+    ".status-text": 1,
+}
 
 MEASURE = """
 <script>
@@ -917,6 +946,42 @@ function snapshot() {
   // colour the check would read is the fallback nobody is looking at. Every stop is
   // pulled out of the gradient instead and measured against what is behind the text —
   // the worst of them is the moment the highlight is over the word.
+  // Where the answer stops and its references start, and where Sources stops and
+  // Related starts. Two gaps rather than one because they are a hierarchy: the strips
+  // are one block, set apart from the prose, and Related is the second half of that
+  // block rather than a third section of the page. Measured off the last thing the
+  // answer actually drew — a paragraph on one screen, a code block or a table on
+  // another — because the margins that produce the gap are collapsing against
+  // whatever that is, not against a container.
+  var refs = document.querySelector('.sources:not(.related)');
+  var refsRel = refs && refs.parentElement
+      ? refs.parentElement.querySelector('.sources.related') : null;
+  // The last thing the answer drew BEFORE this strip, not the last on the page: a
+  // conversation has several answers, and pairing the first Sources with the final
+  // paragraph of the last reply measured most of the page as a gap.
+  var prose = [].slice.call(document.querySelectorAll(
+      '.stChatMessage p, .stChatMessage pre, .stChatMessage table, .stChatMessage h2'))
+      .filter(function (el) {
+        return refs && (el.compareDocumentPosition(refs)
+                        & Node.DOCUMENT_POSITION_FOLLOWING);
+      });
+  var lastProse = prose.length ? prose[prose.length - 1] : null;
+  var answerToRefs = (refs && lastProse) ? Math.round(
+      refs.getBoundingClientRect().top - lastProse.getBoundingClientRect().bottom)
+      : null;
+  var refsToRelated = (refs && refsRel) ? Math.round(
+      refsRel.getBoundingClientRect().top - refs.getBoundingClientRect().bottom)
+      : null;
+  // How far the last strip hangs out of the bottom of the answer holding it. Should be
+  // nothing: a child outside its parent's box is content the page cannot account for,
+  // and the last time this was 16px it made a window-sized page report itself as
+  // scrollable, which is the one question `fill()` asks before deciding a short
+  // conversation has no slack to take.
+  var refsOwner = refs ? refs.closest('[class*="st-key-answer-"]') : null;
+  var lastStrip = refsRel || refs;
+  var refsOverhang = (refsOwner && lastStrip) ? Math.round(
+      lastStrip.getBoundingClientRect().bottom
+      - refsOwner.getBoundingClientRect().bottom) : null;
   var statusEl = document.querySelector('.status-text');
   var statusStops = null;
   if (statusEl) {
@@ -956,6 +1021,8 @@ function snapshot() {
            panelBg: panelBg, cursorGap: cursorGap,
            clipDrop: clipDrop, sendDrop: sendDrop, pickerSlack: pickerSlack,
            statusStops: statusStops,
+           answerToRefs: answerToRefs, refsToRelated: refsToRelated,
+           refsOverhang: refsOverhang,
            scrolled: port ? Math.round(port.scrollTop) : 0,
            // Whether there is anywhere to scroll to. A conversation shorter than
            // the window sits at the bottom of the space reserved for it, so if
@@ -1030,7 +1097,7 @@ SELECTORS = [
     ".stChatMessage code", '[data-testid="stBottomBlockContainer"]',
     ANSWER_COPY, ANSWER_TEXT, ANSWER_TABLE,
     STRIP, INPUT, INPUT_BOX, SEND, CHIPS, ".st-key-attachments button",
-    PANEL, PANEL_BUTTON,
+    PANEL, PANEL_BUTTON, ".status-text",
     ".st-key-composer-strip button",
     # The rightmost control in the strip, so the row is measured end to end: with
     # a model name in it, it is the widest thing under the input.
@@ -1059,6 +1126,12 @@ INTERACTIVE = {
 # three selectors that can reach it are exempt from the overflow check; the emoji
 # button they also reach has nothing to ellipse.
 ELLIPSIS_OK = {PICKER, ".st-key-composer-strip button", "last:.st-key-composer-strip button"}
+
+# Text painted as a gradient clipped to the glyphs. `getComputedStyle().color` on these
+# is the fallback a browser without `background-clip: text` would use, not the colour a
+# reader sees, so the generic contrast check would be reading the wrong number — pass
+# or fail. The status line is measured properly instead, stop by stop, further down.
+CLIPPED_TEXT = {".welcome-title", ".status-text"}
 
 # Elements whose own horizontal overflow is the fix rather than the bug. A table too
 # wide for the answer column has to scroll *somewhere*; the alternative — the one the
@@ -1115,6 +1188,17 @@ MAX_PICKER_SLACK = 30
 # animation: the sweep it replaced ran 11:1 to 7.7:1, two dark maroons 1.42x apart, and
 # read as a static line for as long as it shipped.
 MIN_SHIMMER_SWING = 1.8
+# The two gaps under an answer, both bounded at both ends. Reported as "barely any":
+# at 8.8px the Sources strip was closer to the last line of the answer than two of its
+# own paragraphs are to each other, so the references read as a last line of the prose.
+# Too far is the other failure and the one that is easy to cause fixing this — pushed
+# down the page they stop belonging to the answer above and start belonging to the
+# rating row below.
+ANSWER_TO_REFS = (14, 34)
+# And Related against Sources, which has to stay the tighter of the two: they are one
+# block, and a Related set as far from Sources as Sources is from the answer reads as a
+# third section rather than as the second half of the references.
+REFS_TO_RELATED = (8, 20)
 
 
 # Every check above measures one frame. This one measures a *sequence*, because the
@@ -1645,7 +1729,7 @@ def audit(data, scenario, scheme, width, state: str) -> list[str]:
         # Small text needs 4.5:1; >=18.66px counts as large text at 3:1.
         if b["contrast"] and "chip" not in sel:
             need = 3.0 if b["fontPx"] >= 18.66 else 4.5
-            if b["contrast"] < need and sel not in (".welcome-title",):
+            if b["contrast"] < need and sel not in CLIPPED_TEXT:
                 problems.append(
                     f"{where}: {sel} contrast {b['contrast']}:1 (needs {need}:1)"
                 )
@@ -1676,6 +1760,49 @@ def audit(data, scenario, scheme, width, state: str) -> list[str]:
                 f"which is not a visible change in lightness — it reads as a line "
                 f"that is not animating at all"
             )
+
+    # The references, and how far they sit from the answer and from each other.
+    for what, gap, (low, high) in (
+        ("the Sources strip", data.get("answerToRefs"), ANSWER_TO_REFS),
+        ("Related", data.get("refsToRelated"), REFS_TO_RELATED),
+    ):
+        if gap is None:
+            continue
+        if gap < low:
+            problems.append(
+                f"{where}: {gap}px between {what} and what is above it "
+                f"(want {low}-{high} — any less and it reads as part of it)"
+            )
+        elif gap > high:
+            problems.append(
+                f"{where}: {gap}px between {what} and what is above it "
+                f"(want {low}-{high} — any more and it stops belonging to it)"
+            )
+    # The references have to be inside the answer that owns them. They are its last
+    # child, and Streamlit's markdown wrapper carries `margin-bottom: -1rem`, which puts
+    # a last child's box past its parent's bottom edge rather than merely tightening
+    # what follows. 16px of that made a page exactly the height of the window report
+    # `scrollHeight > clientHeight`, which is the single question `fill()` asks before
+    # deciding a short conversation has no slack — so it published none, and a
+    # one-answer page sat at the top with a screenful of nothing under it.
+    overhang = data.get("refsOverhang")
+    if overhang is not None and overhang > 0:
+        problems.append(
+            f"{where}: the references hang {overhang}px out of the bottom of the "
+            f"answer holding them — content outside its own container is content the "
+            f"page cannot measure, and `fill()` reads that measurement"
+        )
+
+    # …and the hierarchy between the two, which is the point of having both. Checked as
+    # an ordering rather than as two numbers, so tuning either bound cannot quietly
+    # invert it.
+    outer, inner = data.get("answerToRefs"), data.get("refsToRelated")
+    if outer is not None and inner is not None and inner >= outer:
+        problems.append(
+            f"{where}: Related is {inner}px under Sources while Sources is {outer}px "
+            f"under the answer — the two strips are one block, so the gap inside it "
+            f"has to be the smaller one"
+        )
 
     # A zero-width picker is the exact bug that shipped twice: present in the DOM,
     # invisible on screen. 80px is narrower than any real label, so anything below

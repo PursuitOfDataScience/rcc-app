@@ -11,7 +11,7 @@ from types import SimpleNamespace
 import pytest
 
 import stub_streamlit
-from sage import config, limits, llm, providers
+from sage import config, limits, llm, providers, tools
 
 
 def event(content=None, tool_calls=None):
@@ -499,6 +499,60 @@ class TestComposerStrip:
         }
         stub, _m = self.two_providers(monkeypatch, session)
         assert self._placeholder(stub) == "Ask any question about the RCC…"
+
+
+class TestStatusLine:
+    """What the row over an empty answer says while a reader waits for it."""
+
+    def app(self, monkeypatch):
+        _stub, module = run_app(monkeypatch, client=ScriptedProvider([], models=("m1",)),
+                                session={"messages": [], "processing": False})
+        return module
+
+    def test_reading_names_the_document_not_the_section(self, monkeypatch):
+        """`chunk.label` is "{title} — {heading}", which belongs on a citation chip:
+        that is a link, and the heading says which part of a long page it goes to.
+        Here it was dragging whole questions across the screen — RCC headings are
+        frequently questions, and the labels run to 146 characters against 60 for the
+        titles alone. The section is still in the Sources strip, on the link that uses
+        it."""
+        module = self.app(monkeypatch)
+        sectioned = next(
+            (c for c in module.CORPUS.chunks if " — " in c.label
+             and len(c.doc_title) < module.STATUS_MAX),
+            None,
+        )
+        assert sectioned, "expected the corpus to have a chunk with its own heading"
+        said = module.describe([{"name": tools.READ_DOC,
+                                 "input": {"path": sectioned.id}}])
+        assert said == f"Reading {sectioned.doc_title}"
+        assert " — " not in said
+
+    def test_a_long_name_is_cut_at_a_word(self, monkeypatch):
+        module = self.app(monkeypatch)
+        said = module.describe([
+            {"name": tools.SEARCH_DOCS,
+             "input": {"query": "how do I check the number of service units my "
+                                "allocation has left on midway3"}}
+        ])
+        assert said.endswith("…”")
+        # The cut lands between words, not mid-syllable.
+        assert "servic…" not in said
+        quoted = said[said.index("“") + 1:said.rindex("”")]
+        assert len(quoted) <= module.STATUS_MAX + 1
+
+    def test_a_short_one_is_left_alone(self, monkeypatch):
+        module = self.app(monkeypatch)
+        assert module.describe([
+            {"name": tools.SEARCH_DOCS, "input": {"query": "gpu partitions"}}
+        ]) == "Searching the docs for “gpu partitions”"
+
+    def test_search_wins_over_read_and_neither_leaves_it_blank(self, monkeypatch):
+        module = self.app(monkeypatch)
+        assert module.describe([{"name": tools.SEARCH_DOCS, "input": {}}]) == (
+            "Searching the docs"
+        )
+        assert module.describe([]) == "Working"
 
 
 class TestToollessModels:
