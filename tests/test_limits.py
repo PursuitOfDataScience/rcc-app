@@ -144,6 +144,37 @@ class TestHousekeeping:
         limiter.prune(2.0)
         assert not limiter.check("me", 3.0).allowed
 
+    def test_the_daily_map_is_swept_even_with_the_bucket_switched_off(self):
+        """`SAGE_RATE_BURST=0` fills only the daily map, and the old sweep walked the
+        bucket map and dropped whatever it found there — so it forgot nothing at all
+        and reported 0 pruned over a map of fifty thousand windows."""
+        limiter = make(burst=0, refill_seconds=0.0, daily_turns=10,
+                       daily_window=100.0)
+        for index in range(5):
+            limiter.check(f"session:{index}", 0.0)
+        assert limiter.snapshot(0.0)["identities"] == 5
+        assert limiter.prune(500.0) == 5
+        assert limiter.snapshot(500.0)["identities"] == 0
+
+    def test_identities_pile_up_no_further_than_the_sweep_threshold(self):
+        """Nothing called `prune`. It existed, it was tested, and `grep` found it in
+        no other file — so both maps grew by one entry per visitor for the life of
+        the process. `check` sweeps them now, because every turn passes through it."""
+        limiter = make(burst=0, refill_seconds=0.0, daily_turns=10,
+                       daily_window=10.0)
+        for index in range(2000):
+            limiter.check(f"session:{index}", float(index))
+        assert limiter.snapshot(2000.0)["identities"] <= 600
+
+    def test_the_sweep_does_not_forget_someone_still_here(self):
+        limiter = make(burst=0, refill_seconds=0.0, daily_turns=2,
+                       daily_window=10_000.0)
+        limiter.check("me", 0.0)
+        limiter.check("me", 1.0)
+        for index in range(600):        # push the maps past the sweep threshold
+            limiter.check(f"other:{index}", 2.0)
+        assert not limiter.check("me", 3.0).allowed, "the daily count survived"
+
     def test_snapshot_reports_the_budget(self):
         limiter = make(call_budget=100)
         limiter.record_calls(12, 0.0)

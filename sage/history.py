@@ -18,13 +18,23 @@ from .files import Attachment, as_context
 def user_content(
     text: str, attachments: list[Attachment] | None, *, full: bool
 ) -> str:
-    """Render one user turn, with the attachments either inlined or stubbed."""
+    """Render one user turn, with the attachments either inlined or stubbed.
+
+    The question comes FIRST, before the files. It used to come last, which is the
+    end `_trim` cuts off: two 30 KB logs are two legal uploads and one 48 KB turn, so
+    the budget clipped the turn at exactly the point the question began and the model
+    was handed two files and no question at all. It answered something anyway, and
+    nothing on screen said what had happened.
+
+    Reordering is the fix rather than a cleverer clip, because it is also the right
+    way round to read: the request, then the evidence for it.
+    """
     attachments = attachments or []
     if not attachments:
         return text
     if full:
         blocks = "\n\n".join(as_context(item) for item in attachments)
-        return f"{blocks}\n\nThe user asks: {text}"
+        return f"The user asks: {text}\n\n{blocks}"
     names = ", ".join(item.filename for item in attachments)
     return (
         f"[earlier in this conversation the user attached {names}; "
@@ -87,6 +97,14 @@ def _trim(built: list[dict]) -> list[dict]:
     while len(built) > 1 and size(built) > config.HISTORY_CHAR_BUDGET:
         built.pop(0)
 
+    # Trimming can leave `[system, assistant, user]`, which looks wrong and is not:
+    # dropping that leading answer was tried and reverted. It costs the follow-up its
+    # referent — "how do I raise it?" with no trace of what `it` was — for a shape
+    # both providers here accept, and it fires on exactly the turn the reorder above
+    # exists to protect: a 60 KB pair of logs evicts the question that carried them
+    # and the 68-character answer to it goes too, against a 48 000-character budget.
+    # An answer with no question above it is worse context than no context, but not
+    # worse than the answer being gone.
     if built and size(built) > config.HISTORY_CHAR_BUDGET:
         keep = config.HISTORY_CHAR_BUDGET
         # The HEAD of the turn, not the tail. Both were tried and the difference
@@ -102,16 +120,31 @@ def _trim(built: list[dict]) -> list[dict]:
     return built
 
 
+# Said out loud, at the cut. A model handed a file that stops mid-line with no
+# closing marker cannot tell truncation from a file that really ends there — and
+# `as_context` promises an `--- END name ---` that is no longer coming.
+_CUT_NOTE = "\n\n[... truncated here to fit the conversation budget ...]"
+
+
 def _clip(content, keep: int):
-    """Trim a message to `keep` characters of text, whichever shape it is in."""
+    """Trim a message to `keep` characters of text, whichever shape it is in.
+
+    The note is paid for out of `keep`, not added on top of it: this function's whole
+    job is to bring a turn under the budget.
+    """
+    room = max(0, keep - len(_CUT_NOTE))
     if isinstance(content, str):
-        return content[:keep]
+        return content if len(content) <= keep else content[:room] + _CUT_NOTE
     if isinstance(content, list):
-        out, budget = [], keep
+        out, budget, noted = [], room, False
         for part in content:
             if isinstance(part, dict) and part.get("type") == "text":
-                text = part.get("text", "")[:budget]
+                original = part.get("text", "")
+                text = original[:budget]
                 budget -= len(text)
+                if len(original) > len(text) and not noted:
+                    text += _CUT_NOTE
+                    noted = True
                 out.append({**part, "text": text})
             else:
                 out.append(part)

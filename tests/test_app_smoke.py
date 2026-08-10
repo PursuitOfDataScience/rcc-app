@@ -11,7 +11,7 @@ from types import SimpleNamespace
 import pytest
 
 import stub_streamlit
-from sage import config, llm, providers
+from sage import config, limits, llm, providers
 
 
 def event(content=None, tool_calls=None):
@@ -1271,6 +1271,191 @@ class TestUsageLimits:
         first = app.whoami()
         stub.session_state.pop("session_id")
         assert app.whoami() != first
+
+    def test_a_refusal_is_visible_on_the_landing_screen(self, monkeypatch):
+        """The screen a refused *first* question is refused on.
+
+        The notice used to be rendered only inside the branch that draws a
+        conversation. Clearing the chat and clicking a starter card with the bucket
+        empty therefore produced nothing whatsoever — no question, no answer, no
+        reason — on a screen whose only controls are those cards. The refusal was
+        recorded and then thrown away by the renderer.
+        """
+        stub, _ = run_app(
+            monkeypatch,
+            chat_input=None,
+            session={"notice": "You are asking faster than Sage answers here."},
+        )
+        assert not stub.session_state["messages"], "this is the landing screen"
+        assert any("asking faster" in body for body in stub.markdown_html), (
+            "the reason a click did nothing has to be on the screen it happened on"
+        )
+
+    def test_try_again_asks_the_limiter_too(self, monkeypatch):
+        """The retry button spends provider calls, so it goes through the gate.
+
+        It used to set `processing` directly. A deployment whose call budget was
+        spent refused new questions while this button went on making requests, one
+        turn per click, for as long as anyone cared to click it.
+        """
+        monkeypatch.setattr(
+            limits.Limiter, "check",
+            lambda self, who, now: limits.Verdict(False, 30.0, "Not right now."),
+        )
+        stub, _ = run_app(
+            monkeypatch,
+            chat_input=None,
+            buttons={"retry": True},
+            session={
+                "messages": [{"role": "user", "text": "why did my job fail?",
+                              "attachments": []}],
+                "error": "The assistant is temporarily unavailable.",
+                "error_detail": "RuntimeError: 503",
+            },
+        )
+        assert stub.session_state["processing"] is False, "no turn was started"
+        assert stub.session_state["notice"] == "Not right now."
+        # And the way back is still on screen: clearing the error here would take the
+        # card and both its buttons away and leave the reader with nothing to click.
+        assert stub.session_state["error"], "the error card survives a refused retry"
+
+    def test_a_refused_retry_still_lets_the_model_be_switched(self, monkeypatch):
+        """The card says "switch to another model and try again".
+
+        Gating the switch on the limiter took the remedy away at the moment the
+        reader reached for it: a few refused retries empty the bucket, and the one
+        button that would have fixed the quota error stopped doing anything.
+        Switching costs nothing; only the turn it would start does.
+        """
+        monkeypatch.setattr(
+            limits.Limiter, "check",
+            lambda self, who, now: limits.Verdict(False, 30.0, "Not right now."),
+        )
+        mistral = ScriptedProvider([], name="mistral", models=("m1",))
+        zen = ScriptedProvider([], name="opencode", models=("z1",))
+        stub, _ = run_app(
+            monkeypatch,
+            chat_input=None,
+            opencode=True,
+            client=mistral,
+            extra={"opencode": zen},
+            buttons={"switch-model": True},
+            session={
+                "messages": [{"role": "user", "text": "why did my job fail?",
+                              "attachments": []}],
+                "model": "mistral:m1",
+                "error": "This model is out of credit or its quota is used up.",
+            },
+        )
+        assert stub.session_state["model"] == "opencode:z1", "the model moved"
+        assert stub.session_state["processing"] is False, "but no turn was started"
+        assert stub.session_state["notice"] == "Not right now."
+        assert mistral.calls == 0 and zen.calls == 0, "and nothing was spent"
+
+    def test_an_allowed_retry_still_runs(self, monkeypatch):
+        """The gate must not break the button it now guards."""
+        stub, _ = run_app(
+            monkeypatch,
+            chat_input=None,
+            buttons={"retry": True},
+            session={
+                "messages": [{"role": "user", "text": "why did my job fail?",
+                              "attachments": []}],
+                "error": "The assistant is temporarily unavailable.",
+            },
+        )
+        assert stub.session_state["processing"] is True
+        assert stub.session_state["error"] is None
+
+
+class TestRatingDuringAGeneration:
+    """👍/👎 go inert while an answer is arriving.
+
+    Every click reruns the script, and a rerun mid-turn abandons the half-written
+    answer and runs the whole turn again from its first provider call. So rating an
+    earlier answer while the next one streams cost a second turn and threw away the
+    one on screen — for a click that should not have touched it at all.
+    """
+
+    def session(self):
+        return {
+            "messages": [
+                {"role": "user", "text": "first", "attachments": []},
+                {"role": "assistant", "text": "an answer", "sources": [],
+                 "rating": None},
+                {"role": "user", "text": "second", "attachments": []},
+            ],
+            "processing": True,
+        }
+
+    def test_they_are_disabled_mid_turn(self, monkeypatch, tmp_path):
+        configure(monkeypatch, FEEDBACK_LOG=str(tmp_path / "feedback.jsonl"))
+        client = ScriptedProvider([[event("the second answer")]])
+        stub, _ = run_app(monkeypatch, client=client, session=self.session())
+        rated = {key: value for key, value in stub.disabled.items()
+                 if str(key).startswith("rate-")}
+        assert rated, "the rating row rendered"
+        assert all(rated.values()), rated
+
+    def test_they_work_again_once_it_has_landed(self, monkeypatch, tmp_path):
+        configure(monkeypatch, FEEDBACK_LOG=str(tmp_path / "feedback.jsonl"))
+        session = self.session() | {"processing": False}
+        session["messages"] = session["messages"][:2]
+        stub, _ = run_app(monkeypatch, session=session)
+        rated = {key: value for key, value in stub.disabled.items()
+                 if str(key).startswith("rate-")}
+        assert rated and not any(rated.values()), rated
+
+
+class TestEmptyAnswers:
+    """A stream that carried no text is a failure, not an answer.
+
+    The transcript skips an assistant message with no text, so an empty completion
+    rendered as the reader's own question with nothing under it: no reply, no error
+    card, no retry, no explanation. Free models do this — a content filter, a stop
+    token on the first byte, a stream that ends cleanly having said nothing.
+    """
+
+    def session(self):
+        return {
+            "messages": [{"role": "user", "text": "what is a service unit?",
+                          "attachments": []}],
+            "processing": True,
+        }
+
+    def test_a_stream_with_no_deltas_becomes_an_error(self, monkeypatch):
+        client = ScriptedProvider([[]])
+        stub, _ = run_app(monkeypatch, client=client, session=self.session())
+
+        assert stub.session_state["error"], "the reader is told something went wrong"
+        assert "empty" in stub.session_state["error"].lower()
+        assert [m["role"] for m in stub.session_state["messages"]] == ["user"], (
+            "no blank assistant turn is stored"
+        )
+        assert stub.session_state["processing"] is False
+
+    def test_whitespace_only_counts_as_empty(self, monkeypatch):
+        client = ScriptedProvider([[event("   "), event("\n")]])
+        stub, _ = run_app(monkeypatch, client=client, session=self.session())
+        assert stub.session_state["error"]
+        assert [m["role"] for m in stub.session_state["messages"]] == ["user"]
+
+    def test_the_error_offers_a_way_out(self, monkeypatch):
+        """It is the one failure a different model usually fixes — and the advice
+        names no control, because a one-model deployment has neither a picker nor a
+        switch button on the card."""
+        message = llm.AssistantError("empty").user_message.lower()
+        assert "try again" in message
+        assert "different model" in message
+        assert "button" not in message
+
+    def test_a_real_answer_is_still_stored(self, monkeypatch):
+        client = ScriptedProvider([[event("Service units are "), event("CPU-hours.")]])
+        stub, _ = run_app(monkeypatch, client=client, session=self.session())
+        assert stub.session_state["messages"][-1]["text"] == (
+            "Service units are CPU-hours."
+        )
+        assert stub.session_state["error"] is None
 
 
 class TestLoginGate:

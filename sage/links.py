@@ -12,9 +12,45 @@ import re
 
 from .corpus import Corpus, docs_url
 
-_MARKDOWN_LINK = re.compile(r"\[([^\]]+)\]\(\s*([^)\s]+)(?:\s+\"[^\"]*\")?\s*\)")
+# One level of nesting inside the label, because `[Batch jobs [beta]](docs/…)` is a
+# link a model writes and `[^\]]+` could not match it: the target was neither resolved
+# nor unlinked, so it shipped as a live relative href, which the browser resolves
+# against the Streamlit app's own host and 404s — the exact confident-wrong-citation
+# this module exists to prevent, and `unresolved()` could not see it either.
+_MARKDOWN_LINK = re.compile(
+    r"\[((?:[^\[\]]|\[[^\[\]]*\])+)\]\(\s*([^)\s]+)(?:\s+\"[^\"]*\")?\s*\)"
+)
 _ATTR_LIST = re.compile(r"\{:[^}]*\}")
 _EXTERNAL = ("http://", "https://", "mailto:", "tel:", "#")
+
+# A markdown image, with the mkdocs-material size attribute that usually follows one.
+# Eighteen indexed sections carry these — the SDE3 connection tutorial is nothing but
+# screenshots — so a model quoting one echoes the syntax into its answer. The link
+# rules below see `[alt](images/avd_login.png)`, cannot resolve an image path in a
+# corpus of documents, and unlink it: what the reader got was `!Screenshot showing AVD
+# login{ width="1000" }`, a stray exclamation mark and a stray attribute list.
+#
+# `[figure: alt]` instead, which is the wording `normalize._replace_img` already gives
+# an HTML image at index time — the same thing said the same way, and honest about
+# there being a picture here that this transcript is not showing.
+_MARKDOWN_IMAGE = re.compile(
+    r"!\[([^\]]*)\]\(\s*([^)\s]+)(?:\s+\"[^\"]*\")?\s*\)(?:\{[^}\n]*\})?"
+)
+
+
+def _as_figure(match: re.Match[str]) -> str:
+    """A relative image reference as text. An absolute one is left to render.
+
+    Only the relative form is broken: there is no image in a corpus of documents for
+    it to resolve against, so it reached the reader as `!alt{ width="1000" }`. An
+    `https://` image is a picture the browser can actually fetch — the geocoding
+    tutorial has four — and replacing those with a caption would take a working
+    figure away, which every other rule in this module is careful not to do.
+    """
+    if match.group(2).startswith(_EXTERNAL):
+        return match.group(0)
+    alt = match.group(1).strip()
+    return f"[figure: {alt}]" if alt else "[figure]"
 
 
 def resolve(target: str, corpus: Corpus) -> str | None:
@@ -61,7 +97,11 @@ def unresolved(text: str, corpus: Corpus) -> list[str]:
     silently tidied away by the renderer.
     """
     missing = []
-    for match in _MARKDOWN_LINK.finditer(_ATTR_LIST.sub("", text)):
+    # Images first, and for the same reason `fix_links` does it: an image path is not
+    # a citation, and counting one as an invented section put a warning in the log
+    # every time a model quoted the SDE3 screenshots.
+    text = _MARKDOWN_IMAGE.sub(_as_figure, _ATTR_LIST.sub("", text))
+    for match in _MARKDOWN_LINK.finditer(text):
         target = match.group(2)
         if target.startswith(_EXTERNAL):
             continue
@@ -83,7 +123,7 @@ def fix_links(text: str, corpus: Corpus) -> str:
     The label now survives as plain text: a section named but not linked, which is
     honest about exactly what happened.
     """
-    text = _ATTR_LIST.sub("", text)
+    text = _MARKDOWN_IMAGE.sub(_as_figure, _ATTR_LIST.sub("", text))
 
     def replace(match: re.Match[str]) -> str:
         label, target = match.group(1), match.group(2)
@@ -158,21 +198,110 @@ def _footer_label(line: str) -> str | None:
     return rest
 
 
-def _is_citation_line(line: str) -> bool:
+# How long a reference may be before it is a sentence, by how it ends.
+#
+# A question mark buys the most room, because RCC section headings run to whole
+# questions: "How do I check how many service units I have remaining on my
+# allocation?" is fourteen words and is a heading, not prose. A phrase that stops
+# like a sentence gets the least, because that is the one ending where a short title
+# and a short sentence look the same. Everything else sits in between — eight words
+# is longer than any chip label in the corpus and shorter than "This work was
+# completed in part with resources provided by the", which is what a citation
+# paragraph looks like when it wraps.
+_MAX_TITLE_WORDS = 14
+_MAX_PLAIN_TITLE_WORDS = 8
+
+
+# A title that closes like a sentence has to be short to still read as a title.
+# `Sources: Storage.` and `Sources: Midway3 partitions.` are footers a model really
+# writes; `The University of Chicago's Research Computing Center is acknowledged.` is
+# an answer, and the only thing separating them by shape is length.
+_MAX_STOPPED_TITLE_WORDS = 6
+
+
+def _looks_like_a_title(text: str) -> bool:
+    """A reference in a citation list, as opposed to a sentence in an answer.
+
+    The rule this replaces was "shorter than 120 characters", and under a `Citation:`
+    label that ate the answer: asked how to acknowledge RCC in a paper, the model
+    printed the wording to copy and the strip deleted it, from the transcript and from
+    the history sent upstream. "This work was completed in part with resources
+    provided by the" is 61 characters.
+
+    A title is a noun phrase — it starts on a capital, a digit or a bracket, and it is
+    short. A trailing `?` costs nothing, because this corpus is full of headings that
+    are questions; a trailing full stop halves the length allowed, because that is the
+    one mark that makes a short phrase and a sentence look alike.
+    """
+    if len(text) > 120:
+        return False
+    words = text.split()
+    if not words:
+        return False
+    # A bare path is a reference whatever its case: `Sources: docs/slurm/sbatch.md`
+    # is the same footer as the linked form, and one token with a slash in it and no
+    # spaces cannot be a sentence.
+    if len(words) == 1 and "/" in text:
+        return True
+    if text.endswith((";", ":")):
+        return False
+    if text.endswith("?"):
+        limit = _MAX_TITLE_WORDS
+    elif text.endswith((".", "!")):
+        limit = _MAX_STOPPED_TITLE_WORDS
+    else:
+        limit = _MAX_PLAIN_TITLE_WORDS
+    if len(words) > limit:
+        return False
+    head = words[0].lstrip("*_“\"'(")
+    return bool(head) and (head[0].isupper() or head[0].isdigit() or head[0] == "[")
+
+
+def _is_citation_payload(text: str, names: set[str]) -> bool:
+    """Is what sits after a `Sources:` label a list of references, or a sentence?
+
+    The label alone used to be enough, and for a list of links or titles it is. It is
+    not enough for `Citation: please reference the University of Chicago's Research
+    Computing Center.` — which is not a footer, it is the answer, and the whole line
+    went.
+
+    A markdown link settles it: that is the citation shape whatever else is on the
+    line. Otherwise every comma-separated part has to be a name the strip is already
+    showing — proof, so punctuation cannot get in the way — or read as a title.
+    """
+    if "](" in text:
+        return True
+    # The whole payload first, before it is split. A comma is the separator between
+    # citations and also a character inside a heading — "Service units, allocations,
+    # and accounts" is one section of the RCC guide — so splitting first turns a name
+    # the strip is showing into three fragments that match nothing.
+    if names and _norm_title(text) in names:
+        return True
+    parts = [part.strip() for part in re.split(r"[,;]", text) if part.strip()]
+    if not parts:
+        return False
+    if names and all(_norm_title(part) in names for part in parts):
+        return True
+    return all(_looks_like_a_title(part) for part in parts)
+
+
+def _is_citation_line(line: str, names: set[str]) -> bool:
     """A line that could only be part of a citation list, never of an answer.
 
     Deliberately narrow. `- Run \\`sbatch job.sh\\`` is a step, not a citation, so a
-    code span disqualifies a line; so does the length of a real paragraph. What is
+    code span disqualifies a line; so does the shape of a real sentence. What is
     left is bullets of titles and bare links, which is what the footer is made of.
     """
     if _FENCE.match(line) or "`" in line:
         return False
     stripped = line.strip()
+    if not stripped:
+        return True          # blank lines inside a block belong to it
     if stripped.startswith("#"):
         return False
     if _ONLY_LINKS.match(line) or _LIST_ITEM.match(line):
         return True
-    return len(stripped) <= 120
+    return _norm_title(stripped) in names or _looks_like_a_title(stripped)
 
 
 def _pages(line: str, corpus: Corpus) -> set[str] | None:
@@ -231,15 +360,18 @@ def _norm_title(text: str) -> str:
     return text.strip(" .,;:!?—–-")
 
 
-def _source_names(sources: list[dict]) -> set[str]:
+def _source_names(sources: list[dict], *, floor: int = 2) -> set[str]:
     """Every name the Sources strip is already showing a reader.
 
     A chip reads `Doc title — Section heading`, and a model citing it in prose picks
     one end or the other, so both halves count as the same reference.
 
-    Single-word names are left out on purpose. `Storage` or `Python` is a title *and*
-    an ordinary word, and "(Python)" after a package name is an aside, not a citation —
-    the two-word floor is what keeps this rule off that sentence.
+    `floor` is why this takes an argument. Single-word names are left out for the
+    inline rule: `Storage` or `Python` is a title *and* an ordinary word, and
+    "(Python)" after a package name is an aside, not a citation. A footer is a
+    different question — `Sources: Storage.` is a whole line whose entire content is
+    that one word — so the footer rules ask for `floor=1`, where an exact match
+    against a chip is proof rather than a guess.
     """
     names: set[str] = set()
     for item in sources:
@@ -247,7 +379,7 @@ def _source_names(sources: list[dict]) -> set[str]:
         head, sep, tail = label.partition(" — ")
         for candidate in (label, head, tail) if sep else (label,):
             name = _norm_title(candidate)
-            if name and len(name.split()) >= 2:
+            if name and len(name.split()) >= floor:
                 names.add(name)
     return names
 
@@ -306,7 +438,11 @@ def strip_source_footer(
     Two shapes, deliberately judged by different evidence:
 
     * **Labelled** — `Sources:`, `**References:**`, `## Citations`. The label is the
-      model declaring what the block is, so the shape is evidence enough.
+      model declaring what the block is, and what follows it has to read as a list of
+      references — or be, provably, names the strip is already showing. The label
+      alone was evidence enough until `Citation: please reference the University of
+      Chicago's Research Computing Center.` turned up, which is not a footer, it is
+      the answer to "how do I acknowledge RCC in a paper".
     * **Unlabelled** — a bare paragraph of nothing but links. This is what asking for
       no "Sources" list actually produced: the label went and the links stayed, which
       is the same duplication with no word to match on. Shape alone is too thin here —
@@ -327,18 +463,31 @@ def strip_source_footer(
     while last >= 0 and not lines[last].strip():
         last -= 1
 
+    # What the strip is showing, when the caller told us. A part of a footer that
+    # matches one of these is provably a duplicate, whatever its punctuation — which
+    # is what recovers `Sources: Storage.`, a real footer the shape rules decline to
+    # judge because one capitalised word and a full stop is also how a sentence looks.
+    names = _source_names(sources or [], floor=1)
+
     cut = None
-    if _footer_label(lines[last]):
-        # The whole list sits on the label's own line: that one line is the footer.
-        cut = last
+    payload = _footer_label(lines[last])
+    if payload is not None:
+        # The label is on the last line, so whatever sits after it is the whole
+        # footer and the decision is about that payload alone. An empty one — `##
+        # Sources` with nothing under it — is a label the model left dangling.
+        if payload == "" or _is_citation_payload(payload, names):
+            cut = last
     else:
         # Otherwise the list is underneath a label of its own. Only the last such
         # label is considered — scanning further back to find a block that happens
         # to look like citations is how a strip like this eats half an answer.
         for idx in range(last, -1, -1):
-            if _footer_label(lines[idx]) is None:
+            found = _footer_label(lines[idx])
+            if found is None:
                 continue
-            if all(_is_citation_line(line) for line in lines[idx + 1 : last + 1]):
+            if (found == "" or _is_citation_payload(found, names)) and all(
+                _is_citation_line(line, names) for line in lines[idx + 1 : last + 1]
+            ):
                 cut = idx
             break
 

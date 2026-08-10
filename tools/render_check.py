@@ -483,6 +483,48 @@ CHAT_MARKER = ('<div class="element-container"><div class="stMarkdown">'
                '<div data-testid="stMarkdownContainer">'
                '<div class="chat-container"></div></div></div></div>')
 
+# An answer made of things that do not fit: a partition table with twelve columns,
+# a generated anchor nobody would shorten, and a scratch path four levels deep.
+#
+# Modelled because none of it was, and the stylesheet had nothing to say about a
+# table at all. Markdown tables size to their content, `html`/`body` here carry
+# `overflow-x: hidden`, and the two together mean a wide table does not scroll and
+# does not spill — it is simply cut off at the window edge with no way to reach the
+# rest. Measured in the running app at a 500px viewport: a 946px table, 490px of it
+# past the edge, on a page whose document could not be scrolled sideways by a pixel.
+# Six of the RCC guide's own pages carry tables this wide.
+WIDE_ANSWER = """
+<div class="element-container"><div class="stMarkdown"><div data-testid="stMarkdownContainer">
+  <div class="user-message"><div class="user-bubble">Which partition should I submit
+  to?</div></div>
+</div></div></div>
+<div class="st-key-answer-0 element-container"><div class="stChatMessage">
+ <div></div>
+ <div class="stMarkdown"><div data-testid="stMarkdownContainer">
+  <p>Every partition on Midway3, with the limits that decide which one you want:</p>
+  <table>
+   <thead><tr><th>Partition</th><th>Nodes</th><th>CPUs/node</th><th>Memory/node</th>
+    <th>GPUs</th><th>Max walltime</th><th>QoS</th><th>Account</th><th>Notes</th>
+    <th>Cost/SU</th><th>Shared</th><th>Preemptible</th></tr></thead>
+   <tbody>
+    <tr><td>caslake</td><td>168</td><td>48</td><td>192 GB</td><td>none</td>
+     <td>36:00:00</td><td>normal</td><td>pi-yourpi</td><td>general purpose compute</td>
+     <td>1.0</td><td>yes</td><td>no</td></tr>
+    <tr><td>gpu</td><td>12</td><td>48</td><td>192 GB</td><td>4x V100</td>
+     <td>36:00:00</td><td>gpu</td><td>pi-yourpi</td><td>CUDA workloads only</td>
+     <td>2.5</td><td>yes</td><td>no</td></tr>
+   </tbody>
+  </table>
+  <p>Full details in the
+  <a href="#">https://docs.rcc.uchicago.edu/slurm/sbatch/#a-generated-anchor-nobody-would-shorten-for-you</a>
+  section, and write your output to
+  <code>/project2/someverylongprojectname/subdirectory/another/deeply/nested/run.tar.gz</code>.</p>
+ </div></div></div>
+ {sources}
+</div>""".format(
+    sources=source_list([("Partitions — Which partition should I use?", "docs")])
+)
+
 # One question and a two-line reply: the shape that used to leave 121–566px of
 # nothing between the answer and the input box, because the page was shorter than
 # the window and there was no scroll left for app.js to close the gap with. The
@@ -634,6 +676,8 @@ SCENARIOS = {
     "picker-open": CHAT_MARKER + SHORT_ANSWER + strip(),
     "picker-open-legacy": CHAT_MARKER + SHORT_ANSWER + strip(),
     "in-flight": CHAT_MARKER + IN_FLIGHT + strip(wrapped=False),
+    # An answer whose content is wider than the column it is drawn in.
+    "wide-answer": CHAT_MARKER + WIDE_ANSWER + strip(),
     "error": CHAT_MARKER
     + """
 <div class="element-container"><div class="stMarkdown"><div data-testid="stMarkdownContainer">
@@ -878,6 +922,15 @@ CHIPS = ".st-key-attachments"
 PANEL = '[data-testid="stPopoverBody"]'
 PANEL_BUTTON = '[data-testid="stPopoverBody"] button p'
 PANEL_CAPTION = '[data-testid="stPopoverBody"] [data-testid="stCaptionContainer"]'
+# What app.js parks in a finished answer's top-right corner, and the prose it is
+# parked on top of. Absolutely positioned inside the message, so the corner it sits
+# in is a corner the text also uses unless the message reserves it — measured in the
+# running app, the button covered the last 30px of every answer's first line.
+ANSWER_COPY = '[class*="st-key-answer-"] .rcc-copy-btn'
+# A paragraph, not the container: a block fills the content box, so its right edge
+# is where a line of the answer is allowed to end.
+ANSWER_TEXT = '[class*="st-key-answer-"] .stChatMessage p'
+ANSWER_TABLE = '[class*="st-key-answer-"] table'
 
 SELECTORS = [
     ".welcome-title", ".welcome-subtitle", ".user-bubble", "last:.user-bubble",
@@ -887,6 +940,7 @@ SELECTORS = [
     ".source-kind",
     ".st-key-answer-5", ".st-key-answer-0", ".stChatMessage pre",
     ".stChatMessage code", '[data-testid="stBottomBlockContainer"]',
+    ANSWER_COPY, ANSWER_TEXT, ANSWER_TABLE,
     STRIP, INPUT, INPUT_BOX, SEND, CHIPS, ".st-key-attachments button",
     PANEL, PANEL_BUTTON, PANEL_CAPTION,
     ".st-key-composer-strip button",
@@ -917,6 +971,12 @@ INTERACTIVE = {
 # three selectors that can reach it are exempt from the overflow check; the emoji
 # button they also reach has nothing to ellipse.
 ELLIPSIS_OK = {PICKER, ".st-key-composer-strip button", "last:.st-key-composer-strip button"}
+
+# Elements whose own horizontal overflow is the fix rather than the bug. A table too
+# wide for the answer column has to scroll *somewhere*; the alternative — the one the
+# `wide-answer` screen was added to catch — is content clipped at the window edge that
+# no gesture can reach, because app.css hides the document's horizontal overflow.
+SCROLLS_OK = {ANSWER_TABLE}
 
 # How far apart things should be, in px. Both ends matter: the first of these was
 # reported twice as "barely any spacing between the user and AI messages", at a
@@ -1454,7 +1514,8 @@ def audit(data, scenario, scheme, width, state: str) -> list[str]:
         # The picker ellipsing a long model id is intended, and <pre> scrolls.
         # (Both selectors that reach the picker trigger are exempt; the trash
         # button, matched by `last:`, is not — it has nothing to ellipse.)
-        if b["overflowX"] > 1 and "pre" not in sel and sel not in ELLIPSIS_OK:
+        if (b["overflowX"] > 1 and "pre" not in sel
+                and sel not in ELLIPSIS_OK and sel not in SCROLLS_OK):
             problems.append(f"{where}: {sel} overflows horizontally by {b['overflowX']}px")
         limit = (LINE_LIMITS.get(sel) if width >= 641
                  else NARROW_LINE_LIMITS.get(sel))
@@ -1650,6 +1711,37 @@ def audit(data, scenario, scheme, width, state: str) -> list[str]:
     if picker and picker["hit"]:
         problems.append(f"{where}: the model picker is unreachable ({picker['hit']})")
 
+    # Inside an answer: the two things that were drawn on top of it or off the end of
+    # it, neither of which any check here could see until the elements were named.
+    copy, prose = els.get(ANSWER_COPY), els.get(ANSWER_TEXT)
+    if prose and state != "unmeasured" and not copy:
+        # Without the button there is nothing to overlap, so the check below would
+        # pass on a screen it cannot judge. app.js matches finished answers by their
+        # keyed container; if that stops matching, this says so rather than going
+        # quiet.
+        problems.append(
+            f"{where}: no copy button on a finished answer — app.js matched nothing, "
+            f"so the overlap check cannot fail here"
+        )
+    if copy and prose and prose["right"] > copy["left"] + 1:
+        problems.append(
+            f"{where}: the copy button is painted over the answer's first line "
+            f"({prose['right'] - copy['left']}px of overlap) — an absolutely "
+            f"positioned corner is only free if the text stops before it"
+        )
+
+    # A table wider than the answer column. `html`/`body` hide the document's
+    # horizontal overflow, so anything past the window edge is not merely ugly, it is
+    # unreachable: at a phone width the partition table lost half its columns with no
+    # gesture that could bring them back.
+    table = els.get(ANSWER_TABLE)
+    if table and prose and table["right"] > prose["right"] + 1:
+        problems.append(
+            f"{where}: the table runs {table['right'] - prose['right']}px past the "
+            f"answer column (the page clips its own horizontal overflow, so that part "
+            f"cannot be scrolled to)"
+        )
+
     asked, answered = els.get(".user-bubble"), els.get(".st-key-answer-0")
     if asked and answered:
         gap = answered["top"] - asked["bottom"]
@@ -1834,6 +1926,12 @@ def main() -> int:
                     states = ["unmeasured", "rest"]
                 elif scenario == "in-flight":
                     states = ["generating"]           # it *is* the mid-turn screen
+                elif scenario == "wide-answer":
+                    # What this screen is for is the width of what is inside an
+                    # answer, and that does not change with the scroll position or
+                    # with a turn being in flight. Two states, for the same reason
+                    # the picker renders two.
+                    states = ["unmeasured", "rest"]
                 else:
                     states = ["unmeasured", "rest", "scrolled", "generating",
                               "settled"]

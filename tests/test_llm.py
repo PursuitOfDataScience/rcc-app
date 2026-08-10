@@ -75,6 +75,48 @@ class TestTurn:
         assert [c["name"] for c in turn.tool_calls] == ["search_docs", "read_doc"]
         assert turn.tool_calls[1]["input"] == {"path": "docs/a.md"}
 
+    def test_two_calls_in_one_delta_survive_a_shared_index(self):
+        """Both calls arrive as index 0, because the SDK defaults the field to 0.
+
+        mistralai 2.x declares `ToolCall.index: Optional[int] = 0`, so a model issuing
+        a search and a read in one delta hands over two fragments that claim the same
+        slot. Keyed on index alone, the second overwrote the first's name and id and
+        their JSON was concatenated into `{"query":"x"}{"path":"y"}` — unparseable, so
+        the turn ran one tool with no arguments at all: the search never happened and
+        the answer shipped with an empty Sources strip.
+        """
+        events = [event(tool_calls=[
+            call(0, "a", "search_docs", '{"query":"x"}'),
+            call(0, "b", "read_doc", '{"path":"docs/a.md"}'),
+        ])]
+        turn = llm.Turn(stream=iter(events)).consume()
+        assert [c["name"] for c in turn.tool_calls] == ["search_docs", "read_doc"]
+        assert turn.tool_calls[0]["input"] == {"query": "x"}
+        assert turn.tool_calls[1]["input"] == {"path": "docs/a.md"}
+
+    def test_a_provider_that_repeats_the_id_still_assembles_one_call(self):
+        """The other shape: the same id on every fragment of one call."""
+        events = [
+            event(tool_calls=[call(0, "a", "search_docs", '{"que')]),
+            event(tool_calls=[call(0, "a", None, 'ry":"gpu"}')]),
+        ]
+        turn = llm.Turn(stream=iter(events)).consume()
+        assert turn.tool_calls == [
+            {"id": "a", "name": "search_docs", "input": {"query": "gpu"}}
+        ]
+
+    def test_two_calls_interleaved_across_chunks_stay_apart(self):
+        events = [
+            event(tool_calls=[call(0, "a", "search_docs", '{"q')]),
+            event(tool_calls=[call(1, "b", "read_doc", '{"path"')]),
+            event(tool_calls=[call(0, None, None, 'uery":"x"}'),
+                              call(1, None, None, ':"docs/y.md"}')]),
+        ]
+        turn = llm.Turn(stream=iter(events)).consume()
+        assert [c["input"] for c in turn.tool_calls] == [
+            {"query": "x"}, {"path": "docs/y.md"}
+        ]
+
     def test_text_and_tool_calls_can_arrive_together(self):
         events = [
             event("Let me look. "),

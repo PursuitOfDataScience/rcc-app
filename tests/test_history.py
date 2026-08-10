@@ -86,6 +86,63 @@ def test_a_single_oversized_turn_is_clipped_rather_than_dropped():
     assert len(built[1]["content"]) <= config.HISTORY_CHAR_BUDGET
 
 
+class TestTheQuestionSurvives:
+    """The one thing a turn cannot be trimmed down to nothing.
+
+    Attachments used to be rendered before the question, and `_trim` clips the head
+    of an over-budget turn — so the question was exactly what fell off the end. Two
+    30 KB logs are two legal uploads (`MAX_FILE_TEXT_CHARS` is 30 000) and one 48 KB
+    turn, which is the budget: attach a job script and the `.out` it wrote, which is
+    what this app is for, and the model was handed two files and no question at all.
+    It answered something anyway, and nothing on screen said what had happened.
+    """
+
+    def two_logs(self):
+        return [
+            Attachment("submit.sbatch", "text", "X" * 30000),
+            Attachment("slurm-1.out", "text", "Y" * 30000),
+        ]
+
+    def test_it_reaches_the_model_under_a_pile_of_attachments(self):
+        built = history.build([user("why did my job die?", *self.two_logs())], "S")
+        assert "why did my job die?" in built[-1]["content"]
+
+    def test_the_question_comes_before_the_files(self):
+        built = history.build([user("why did my job die?", *self.two_logs())], "S")
+        content = built[-1]["content"]
+        assert content.index("why did my job die?") < content.index("submit.sbatch")
+
+    def test_a_clipped_turn_says_it_was_clipped(self):
+        """`as_context` promises an `--- END name ---` that is no longer coming, so a
+        model cannot otherwise tell a truncated file from one that ends there."""
+        built = history.build([user("why?", *self.two_logs())], "S")
+        assert "truncated" in built[-1]["content"][-120:]
+
+    def test_the_budget_still_holds(self):
+        built = history.build([user("why?", *self.two_logs())], "S")
+        assert len(built[-1]["content"]) <= config.HISTORY_CHAR_BUDGET
+
+
+def test_a_surviving_answer_is_kept_even_with_its_question_trimmed_away():
+    """`[system, assistant, user]` looks wrong and is not.
+
+    Dropping that leading answer was tried and reverted: it costs the follow-up its
+    referent — "how do I raise it?" with nothing saying what `it` is — to avoid a
+    shape both providers accept. And it fires on the very turn the question-first
+    ordering exists to protect, where a 60 KB pair of logs has already evicted the
+    question and the 68-character answer would go with it.
+    """
+    messages = [
+        user("why did my job die?",
+             Attachment("a.out", "text", "Z" * 30000),
+             Attachment("b.out", "text", "Y" * 30000)),
+        assistant("Your job hit the memory limit. Raise --mem to 32G."),
+        user("how do I raise it?"),
+    ]
+    built = history.build(messages, "S")
+    assert "Raise --mem to 32G." in "".join(str(m["content"]) for m in built)
+
+
 def test_two_attachments_on_one_turn_both_reach_the_model():
     """One turn used to carry one file. Anything offered while a file was already
     attached was dropped, which from the outside was a control doing nothing."""

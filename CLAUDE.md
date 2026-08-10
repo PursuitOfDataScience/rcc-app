@@ -44,6 +44,32 @@ httpx. Outbound HTTPS works. Chromium is at
 Run the first three before pushing. Each has failed CI at least once for want of
 being run.
 
+### Running the app itself, with no API key
+
+The OpenCode adapter is a plain OpenAI-compatible HTTP client, so a local server is
+a provider. `tools/mock_provider.py` is one; nothing in the app knows it is there.
+
+```bash
+python tools/mock_provider.py 8799 &
+echo '{"mode": "tools"}' > /tmp/mock_provider.json      # search → read → answer
+OPENCODE_API_KEY=sk-zen-test OPENCODE_BASE_URL=http://127.0.0.1:8799/v1 \
+SAGE_DEFAULT_MODEL=opencode:mock-fast-free \
+streamlit run app.py --server.port 8502 --server.headless true
+```
+
+Run it from the repo root, or `RCC_DOCS_PATH=./docs` resolves somewhere with no
+corpus in it and every answer comes back uncited. Then drive it with Playwright
+(`~/.cache/ms-playwright/chromium-1217/chrome-linux64/chrome`), and rewrite the
+control file between turns to pick the next scenario — an empty completion, a 402, a
+tool loop that never finishes, a slow stream you can interact with mid-answer.
+`/tmp/mock_provider.jsonl` records what the app actually sent upstream, which is the
+only way to see the messages the history budget produced.
+
+This is what found the bugs the harness structurally cannot: a rate-limited starter
+card that did nothing at all, a completion with no text rendering as a blank, an
+oversized upload vanishing with its error message inside the hidden uploader, and the
+copy button painted over the first line of every answer.
+
 > This section used to say pytest could not be installed, that ruff lived at
 > `/root/.local/bin/ruff` (it is there, and permission-denied for this user), and that
 > Streamlit usually could not be run. All three were wrong, and the cost was that

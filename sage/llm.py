@@ -31,6 +31,16 @@ _MESSAGES = {
              "Switch to another model and try again.",
     "context": "This conversation got too long for the model. "
                "Clear the chat and ask again.",
+    # Not a transport failure: the request succeeded and the stream carried no text.
+    # Free models do it — a content filter, a stop token on the first byte, a hiccup
+    # that ends the stream cleanly — and the answer has to say so, because the
+    # alternative shipped: an empty bubble under the question, or on a stream with no
+    # deltas at all, nothing whatsoever. No error, no answer, nothing to click.
+    # No "with the button under the input box": a deployment with one model has no
+    # picker and no switch button on the card, and advice that names a control which
+    # is not there is worse than advice that does not.
+    "empty": "The model returned an empty answer. Try again, or use a different "
+             "model.",
     "network": "Could not reach the assistant. Check the connection and retry.",
     "unavailable": "The assistant is temporarily unavailable. Please retry shortly.",
     "unknown": "Something went wrong reaching the assistant. Please try again.",
@@ -106,7 +116,21 @@ class Turn:
     finished: bool = False
 
     def deltas(self) -> Iterator[str]:
-        pending: dict[int, dict] = {}
+        # Fragments are assembled by `index`, which is how an OpenAI-style stream
+        # says which call a later chunk of arguments belongs to — but the index is
+        # not always distinct. mistralai 2.x declares `ToolCall.index` defaulting to
+        # 0, so two calls issued in ONE delta both arrive as index 0: the second
+        # overwrote the first's id and name, their JSON was concatenated into
+        # `{"query":"a"}{"path":"x"}`, `_parse` gave up on it, and the turn ran one
+        # tool with no arguments. A search that never happened, and an answer with
+        # an empty Sources strip.
+        #
+        # So a fragment that carries a DIFFERENT id starts a new call rather than
+        # joining the one already at that index. Argument-only fragments (no id, the
+        # ordinary continuation shape) still land on the newest call at their index,
+        # which is what keeps a normal multi-chunk stream assembling correctly.
+        pending: list[dict] = []
+        newest: dict[int, dict] = {}
         try:
             for chunk in self.stream:
                 if not isinstance(chunk, Chunk):
@@ -115,11 +139,17 @@ class Turn:
                     self.text += chunk.text
                     yield chunk.text
                 for fragment in chunk.tool_calls:
-                    slot = pending.setdefault(
-                        fragment["index"], {"id": "", "name": "", "args": ""}
-                    )
-                    if fragment.get("id"):
-                        slot["id"] = fragment["id"]
+                    index = fragment["index"]
+                    slot = newest.get(index)
+                    identifier = fragment.get("id") or ""
+                    if slot is None or (
+                        identifier and slot["id"] and identifier != slot["id"]
+                    ):
+                        slot = {"id": "", "name": "", "args": ""}
+                        pending.append(slot)
+                        newest[index] = slot
+                    if identifier:
+                        slot["id"] = identifier
                     if fragment.get("name"):
                         slot["name"] = fragment["name"]
                     if fragment.get("arguments"):
@@ -129,7 +159,7 @@ class Turn:
 
         self.tool_calls = [
             {"id": slot["id"], "name": slot["name"], "input": _parse(slot["args"])}
-            for slot in pending.values()
+            for slot in pending
             if slot["name"]
         ]
         self.finished = True

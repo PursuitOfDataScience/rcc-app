@@ -69,6 +69,8 @@ class StubStreamlit(ModuleType):
         # `help=` renders as a hover tooltip. Recorded so tests can hold the line
         # on not putting one on a control that already carries its own label.
         self.tooltips: dict[str, str] = {}
+        # Which controls were rendered inert, keyed the same way.
+        self.disabled: dict[str, bool] = {}
         self.markdown_html: list[str] = []
         # Whatever `st.chat_input` was called with beyond its placeholder. Starts
         # empty rather than None so a test can assert on it without the app having
@@ -154,11 +156,16 @@ class StubStreamlit(ModuleType):
         return "".join(parts)
 
     # --- widgets ----------------------------------------------------------
-    def button(self, label, key=None, help=None, **_kwargs):  # noqa: A002
+    def button(self, label, key=None, help=None, disabled=False, **_kwargs):  # noqa: A002
         self.events.append(("button", key or label))
         self.button_labels[key or label] = label
         if help:
             self.tooltips[key or label] = help
+        # Recorded because `disabled` is the only thing that stops a click reaching
+        # the server: a rerun IS the click, so an inert handler still costs a turn.
+        self.disabled[key or label] = bool(disabled)
+        if disabled:
+            return False
         return bool(self._buttons.get(key, False))
 
     def file_uploader(self, label, key=None, **kwargs):

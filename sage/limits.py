@@ -107,6 +107,14 @@ class Limiter:
     # sections are a few microseconds of arithmetic; one lock is simpler to reason
     # about than per-identity locking and cannot deadlock.
 
+    # How many identities may pile up before `check` sweeps the stale ones out. Not a
+    # cap on visitors: it is the point at which scanning the maps costs less than what
+    # they are holding. Above it the sweep runs on every turn until the maps come back
+    # under — which is fine, and worth being clear about: it is a dictionary scan over
+    # a few hundred entries, microseconds, on a path that is about to spend a second
+    # or more on a provider call.
+    _PRUNE_ABOVE = 512
+
     def check(self, who: str, now: float) -> Verdict:
         """May `who` start a turn now? Consumes a token when the answer is yes.
 
@@ -114,6 +122,14 @@ class Limiter:
         race, and the failure mode of that race is the limit silently not applying.
         """
         with self._lock:
+            # Nothing else called `prune`. It exists, it is tested, and `grep` found
+            # it in no other file — so on a long-running deployment both maps grew by
+            # one entry per person who ever visited and never shrank. Swept here
+            # instead, where every turn passes, so the bound holds without a caller
+            # having to remember it.
+            if len(self._buckets) + len(self._days) > self._PRUNE_ABOVE:
+                self._sweep(now)
+
             if self.call_budget > 0:
                 self._budget.roll(now, self.budget_window)
                 if self._budget.used >= self.call_budget:
@@ -183,7 +199,11 @@ class Limiter:
             return {
                 "calls_used": self._budget.used,
                 "call_budget": self.call_budget,
-                "identities": len(self._buckets),
+                # Both maps, not just the buckets. With `SAGE_RATE_BURST=0` the bucket
+                # map stays empty and the daily one does not, so the number an
+                # operator was shown for a process holding fifty thousand identities
+                # was zero.
+                "identities": len(set(self._buckets) | set(self._days)),
             }
 
     def prune(self, now: float) -> int:
@@ -192,13 +212,28 @@ class Limiter:
         Without this the dictionaries are a slow leak on a long-running deployment:
         one entry per person who ever visited, kept for the life of the process.
         """
-        horizon = 2 * max(self.daily_window, self.refill_seconds * max(self.burst, 1))
         with self._lock:
-            stale = [
-                key for key, bucket in self._buckets.items()
-                if now - bucket.updated > horizon
-            ]
-            for key in stale:
-                self._buckets.pop(key, None)
-                self._days.pop(key, None)
-            return len(stale)
+            return self._sweep(now)
+
+    def _sweep(self, now: float) -> int:
+        """`prune` with the lock already held. Callers inside `check` need this
+        because `threading.Lock` is not reentrant — taking it twice deadlocks.
+
+        Both maps are swept, and each on its own timestamps. The old version walked
+        `_buckets` and dropped the matching `_days` entries, which forgot nothing at
+        all when the bucket is switched off: `SAGE_RATE_BURST=0` populates only
+        `_days`, so it reported "0 pruned" over a map of fifty thousand windows.
+        """
+        horizon = 2 * max(self.daily_window, self.refill_seconds * max(self.burst, 1))
+        stale = {
+            key for key, bucket in self._buckets.items()
+            if now - bucket.updated > horizon
+        }
+        stale |= {
+            key for key, day in self._days.items()
+            if now - day.started > horizon
+        }
+        for key in stale:
+            self._buckets.pop(key, None)
+            self._days.pop(key, None)
+        return len(stale)

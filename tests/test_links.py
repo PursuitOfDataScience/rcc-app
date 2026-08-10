@@ -101,6 +101,68 @@ def test_external_and_anchor_targets_are_not_counted_as_invented():
     assert links.unresolved(text, CORPUS) == []
 
 
+class TestImagesInAnAnswer:
+    """Eighteen indexed sections carry markdown images — the SDE3 connection
+    tutorial is nothing but screenshots — so a model quoting one echoes the syntax.
+
+    The link rules saw `[alt](images/avd_login.png)`, could not resolve an image path
+    in a corpus of documents, and unlinked it: the reader got `!Screenshot showing AVD
+    login{ width="1000" }`. A stray exclamation mark, a stray attribute list, and no
+    hint that the thing being described was a picture.
+    """
+
+    def test_an_image_becomes_a_figure_note(self):
+        out = links.fix_links(
+            'Then: ![Screenshot showing AVD login](images/avd_login.png)'
+            '{ width="1000" } and sign in.',
+            CORPUS,
+        )
+        assert out == "Then: [figure: Screenshot showing AVD login] and sign in."
+
+    def test_an_image_with_no_alt_text_still_says_it_was_there(self):
+        assert links.fix_links("See ![](img/x.png).", CORPUS) == "See [figure]."
+
+    def test_a_real_link_beside_one_is_untouched(self):
+        out = links.fix_links(
+            "![x](img/x.png) then [Batch jobs](docs/slurm/sbatch.md).", CORPUS
+        )
+        assert "slurm/sbatch/" in out
+
+    def test_an_image_path_is_not_logged_as_an_invented_citation(self):
+        assert links.unresolved("![alt](images/x.png)", CORPUS) == []
+
+    def test_an_image_the_browser_can_fetch_is_left_alone(self):
+        """Only the relative form is broken. The geocoding tutorial links four
+        absolute ones, and those render — turning them into a caption would take a
+        working figure away."""
+        text = "![RCC-GIS geocoding](https://gis.rcc.uchicago.edu/x/summary.png)"
+        assert links.fix_links(text, CORPUS) == text
+
+    def test_a_badge_inside_a_link_survives(self):
+        text = "[![build](https://img.shields.io/x.svg)](https://github.com/rcc/x)"
+        assert links.fix_links(text, CORPUS) == text
+
+
+class TestNestedBracketsInALabel:
+    """`[Batch jobs [beta]](docs/…)` is a link a model writes.
+
+    The label pattern could not match one, so the target was neither resolved nor
+    unlinked and shipped as a live relative href — which a browser resolves against
+    the app's own host, giving the reader a 404 that looks exactly like a working
+    citation. `unresolved()` could not see it either, so not even the log knew.
+    """
+
+    def test_it_resolves(self):
+        out = links.fix_links("See [Batch jobs [beta]](docs/slurm/sbatch.md).", CORPUS)
+        assert "docs/slurm/sbatch.md" not in out
+        assert "slurm/sbatch/" in out
+
+    def test_an_unresolvable_one_is_unlinked_and_counted(self):
+        text = "See [Batch jobs [beta]](docs/nope.md)."
+        assert links.fix_links(text, CORPUS) == "See Batch jobs [beta]."
+        assert links.unresolved(text, CORPUS) == ["docs/nope.md"]
+
+
 def test_leaked_kramdown_attributes_are_stripped_from_answers():
     out = links.fix_links("[RCC](https://rcc.uchicago.edu/){:target='_blank'}", CORPUS)
     assert "{:target" not in out
@@ -183,6 +245,75 @@ class TestSourceFooter:
     )
     def test_what_must_survive(self, answer, why):
         assert links.strip_source_footer(answer) == answer, why
+
+    @pytest.mark.parametrize(
+        ("answer", "why"),
+        [
+            (
+                "Use the RCC's own wording.\n\nCitation: please reference the "
+                "University of Chicago's Research Computing Center.",
+                "the citation IS the answer to 'how do I acknowledge RCC'",
+            ),
+            (
+                "Acknowledge it like this.\n\nReference: The University of Chicago's "
+                "Research Computing Center provided the resources for this work.",
+                "a sentence under a label is prose, not a reference list",
+            ),
+            (
+                "Acknowledge RCC like this:\n\nCitation:\nThis work was completed in "
+                "part with resources provided by the\nUniversity of Chicago's "
+                "Research Computing Center.",
+                "and the same thing spread over the lines below the label",
+            ),
+        ],
+    )
+    def test_a_citation_that_is_the_answer_is_not_a_footer(self, answer, why):
+        """The rule was "shorter than 120 characters", and under a `Citation:` label
+        that ate the answer: the model printed the wording to copy into a paper and
+        the strip deleted it — from the transcript, and from the history sent
+        upstream, so the follow-up could not see it either."""
+        assert links.strip_source_footer(answer) == answer, why
+
+    @pytest.mark.parametrize(
+        "footer",
+        [
+            # A full stop is how a model ends a line, and a title and a short
+            # sentence look the same with one on the end. Gating on it alone kept
+            # 115 of the corpus's 572 headings as footers — a duplicate under every
+            # answer that cited a page whose name is one word.
+            "Sources: Storage System Layout — Quotas.",
+            "Sources: Storage.",
+            "Sources: Midway3 partitions.",
+            # A heading with a comma in it: split on commas first and the name the
+            # strip is showing becomes three fragments that match nothing.
+            "Sources: Service units, allocations, and accounts",
+        ],
+    )
+    def test_a_footer_that_ends_like_a_sentence_still_goes(self, footer):
+        sources = [
+            {"id": f"docs/x{n}.md#s", "label": label,
+             "url": f"https://docs.rcc.uchicago.edu/x{n}/#s", "source": "docs"}
+            for n, label in enumerate((
+                "Storage System Layout — Quotas", "Storage", "Midway3 partitions",
+                "Running jobs — Service units, allocations, and accounts",
+            ))
+        ]
+        answer = "Quota on /project2 is 100 GB."
+        assert links.strip_source_footer(f"{answer}\n\n{footer}", None, sources) == answer
+
+    def test_a_footer_the_strip_proves_is_cut_whatever_its_punctuation(self):
+        """The shape rule above is deliberately cautious, so it leaves a footer that
+        ends on a full stop. When the caller hands over what the strip is showing,
+        the duplication is provable and punctuation stops mattering."""
+        sources = [{
+            "id": "docs/storage/main.md#quotas",
+            "label": "Storage System Layout — Quotas",
+            "url": "https://docs.rcc.uchicago.edu/storage/main/#quotas",
+            "source": "docs",
+        }]
+        answer = "Quota on /project2 is 100 GB."
+        text = f"{answer}\n\nSources: Storage System Layout — Quotas."
+        assert links.strip_source_footer(text, None, sources) == answer
 
     def test_a_heading_mid_answer_is_not_a_footer(self):
         """The cut only ever runs to the end of the answer. A `Sources` label with real

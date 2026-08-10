@@ -72,7 +72,7 @@ Environment-driven; defaults in [`sage/config.py`](sage/config.py).
 | `SAGE_IMAGE_MAX_EDGE` | `1568` | Longest edge an image is downscaled to before it is sent |
 | `LOG_LEVEL` | `WARNING` | Python log level |
 
-Server settings live in [`.streamlit/config.toml`](.streamlit/config.toml). `base` is deliberately unset so Streamlit follows the browser's colour scheme and stays in sync with the stylesheet.
+Server settings live in [`.streamlit/config.toml`](.streamlit/config.toml). The theme is stated **twice**, under `[theme.light]` and `[theme.dark]`, so Streamlit keeps following the browser's colour scheme: setting any `[theme]` value at all makes the theme a custom one, whose `base` defaults to light, and `static/app.css` would then go dark on a dark-mode device while Streamlit painted a white page underneath it. `server.maxUploadSize` is deliberately larger than `SAGE_MAX_UPLOAD_BYTES` for a related reason — Streamlit renders its own "file is too large" inside the uploader widget, which this app hides, so the app has to be the one that refuses.
 
 ## Sharing a deployment
 

@@ -842,7 +842,30 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
  * Small bottom margin on purpose: the gap to the next question is set by that
  * question's top margin, and this one is also the gap under the *last* answer,
  * where every pixel is space between the answer and the input box. */
-[class*="st-key-answer-"] { margin: 0 0 clamp(0.5rem, 1.2vw, 0.85rem) 0; }
+/* A gutter down the right of the whole answer, for the copy button app.js parks in
+ * its top corner.
+ *
+ * That button is `position: absolute; right: 0`, and an absolute offset is measured
+ * from the padding box — so this padding does not move the button, it moves the
+ * answer out from under it. Without it the corner belonged to both, and every answer
+ * whose first line reached the right edge had its last word or two painted over by
+ * the icon, at every width, in the running app.
+ *
+ * On this container rather than on `.stChatMessage`, which was tried: the Sources
+ * strip and the rating row are siblings of the message inside here, so padding the
+ * message alone shortened the prose and the code blocks while the citations under
+ * them kept the full width — three right edges where there had been one. Everything
+ * in an answer moves together or nothing does. app.js anchors the button here for
+ * the same reason.
+ *
+ * `!important` because the resets at the top of this file zero the padding of an
+ * `.element-container`, and the keyed container is one — the harness caught that
+ * immediately, with the button back over the text and the rule apparently doing
+ * nothing at all. */
+[class*="st-key-answer-"] {
+    margin: 0 0 clamp(0.5rem, 1.2vw, 0.85rem) 0;
+    padding-right: 2.25rem !important;
+}
 
 .stChatMessage {
     background: transparent !important;
@@ -876,7 +899,23 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
     font-size: 0.88em !important;
 }
 
-.stChatMessage table { font-size: 0.86rem; }
+/* A table sizes to its content, and the RCC guide's own partition and quota tables
+ * have a dozen columns. Left alone one of those does not wrap and does not scroll —
+ * `html`/`body` above hide the document's horizontal overflow — so the columns past
+ * the window edge are simply unreachable: measured in the app at a 500px viewport, a
+ * 946px table with 490px of it gone and no gesture that could bring it back.
+ *
+ * `display: block` is what makes the table its own scroll container (a `table` box
+ * ignores `overflow`), `width: max-content` keeps a narrow table its natural width
+ * rather than stretching it, and `max-width: 100%` is the line the scrollbar appears
+ * at. The scroll stays inside the answer column, where the reader can reach it. */
+.stChatMessage table {
+    font-size: 0.86rem;
+    display: block;
+    width: max-content;
+    max-width: 100%;
+    overflow-x: auto;
+}
 
 /* Code blocks get the full content width — capping them at 700px put a scrollbar
  * inside a narrow box for ordinary sbatch lines. */

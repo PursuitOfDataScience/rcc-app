@@ -126,6 +126,14 @@ def gather_context(index: Index, query: str, limit: int | None = None):
     return "\n\n".join(blocks), [result.chunk for result in results]
 
 
+def _text(value) -> str:
+    """A tool argument as a string, whatever the model made it.
+
+    `None` becomes empty rather than "None", which would go on to be searched for.
+    """
+    return "" if value is None else str(value)
+
+
 class ToolRunner:
     """Executes tool calls and records which sections were actually read."""
 
@@ -140,8 +148,13 @@ class ToolRunner:
             self.sources.append(chunk)
 
     def run(self, name: str, arguments: dict) -> str:
+        # `str(...)` because a tool argument is whatever the model typed. `_parse`
+        # guarantees a dict and nothing about what is in it, and a model that types
+        # its query as a number — `{"query": 123}` — used to end the turn with an
+        # AttributeError dressed up as "something went wrong reaching the assistant".
+        # `_read` has always coerced; these did not.
         if name == SEARCH_DOCS:
-            query = (arguments.get("query") or "").strip()
+            query = _text(arguments.get("query")).strip()
             self.queries.append(query)
             logger.info("search_docs(%r)", query)
             results = self.index.search(query)
@@ -151,7 +164,7 @@ class ToolRunner:
                             query, assessment.top_score, assessment.unknown_terms)
             return format_search_results(results, assessment.caveat())
         if name == READ_DOC:
-            return self._read(str(arguments.get("path") or "").strip())
+            return self._read(_text(arguments.get("path")).strip())
         return f"Unknown tool: {name}"
 
     def _read(self, path: str) -> str:
