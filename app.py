@@ -257,6 +257,22 @@ def model_options() -> list[providers.Model]:
 
 MODELS = model_options()
 
+# What the picker's trigger has to be wide enough for. The stylesheet cannot work this
+# out: the lineup is discovered from the provider at runtime, so the longest name it
+# can show is known here and nowhere else. Sized to the longest rather than to the
+# selected one on purpose — a width that tracked the selection would resize the button
+# every time a model was picked, which reflows the row it sits in the corner of.
+#
+# A second <style> because the stylesheet above is injected before any provider has
+# been asked what it serves, and moving that injection later would leave the no-key
+# error screen unstyled.
+if MODELS:
+    st.markdown(
+        f"<style>:root {{ --picker-chars: {max(len(m.label) for m in MODELS)}; }}"
+        "</style>",
+        unsafe_allow_html=True,
+    )
+
 
 def current_model() -> providers.Model:
     """The selected model, falling back to the configured default then anything."""

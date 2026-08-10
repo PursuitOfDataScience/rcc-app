@@ -182,6 +182,13 @@ def theme_css(scheme: str) -> str:
 BACKGROUNDS = {"dark": "#0e1117", "light": "#ffffff"}
 FOREGROUNDS = {"dark": "#e5e7eb", "light": "#31333f"}
 
+# What the model picker's trigger shows, and the name its width is set from. The
+# longest in the configured lists, because the width is sized for the longest name a
+# deployment can offer rather than for the one selected — that is what stops picking a
+# model from resizing the button. Measuring against a shorter label would report slack
+# the stylesheet never chose.
+PICKER_LABEL = "mistral-medium-latest"
+
 
 def base_css(scheme: str) -> str:
     return f"""
@@ -294,11 +301,28 @@ body {{ margin: 0; background: {BACKGROUNDS[scheme]}; color: {FOREGROUNDS[scheme
    st.button. Modelled explicitly because the markup is not `.stButton`, so the
    rule above does not reach it — and an unstyled button would measure smaller
    than the real one and hide an overflow. */
+/* `inline-flex`, as Streamlit has it, and not a detail: it makes the label-plus-
+   chevron row a flex item that sizes to its content. As a plain button the row was a
+   block filling whatever width the button had, so empty space inside the control
+   measured as zero however wide it got. */
 [data-testid="stPopover"] button {{ padding: .4rem .75rem; border-radius: 8px;
    background: {'#262730' if scheme == 'dark' else '#fff'};
    color: inherit; border: 1px solid {'#3a3b46' if scheme == 'dark' else '#d5d6d8'};
-   font: inherit; cursor: pointer; }}
+   font: inherit; cursor: pointer; display: inline-flex; align-items: center; }}
 [data-testid="stPopover"] button p {{ margin: 0; }}
+/* The label and the chevron are a flex row inside the button, 2px apart, and the
+   chevron is a 20px Material glyph. Both are Streamlit's, and both are part of what
+   the button's width has to cover. */
+[data-testid="stPopover"] button .popover-trigger {{ display: flex;
+   align-items: center; gap: 2px; }}
+[data-testid="stPopover"] button [data-testid="stIconMaterial"] {{ display: flex;
+   flex: 0 0 auto; width: 20px; height: 20px; }}
+/* What app.py publishes once it knows what the provider served — see the picker's
+   width rule in app.css. Set here to the label this replica renders, which is the
+   longest a default deployment offers: the width is sized for the longest name, so
+   measuring it against a shorter one would report slack the stylesheet did not
+   choose. */
+:root {{ --picker-chars: {len(PICKER_LABEL)}; }}
 /* Streamlit's header: full width, transparent, and above everything. */
 [data-testid="stHeader"] {{ position: fixed; top: 0; left: 0; right: 0;
    height: {HOST_BAR}px; background: transparent; z-index: {HOST_Z}; }}
@@ -339,20 +363,18 @@ def panel(legacy: bool = False) -> str:
         f"<button><p>{label}</p></button></div></div>"
         for label in (
             # The model's own id, with no provider prefix — a third of the picker's
-            # width used to restate "Zen ·" on every line. All free: the paid lineup
-            # Zen serves from the same endpoint is filtered out before the picker.
+            # width used to restate "Zen ·" on every line — and none of the tier
+            # marker `Model.label` strips off, so these are the strings a reader sees.
             "● mistral-small-latest",
             "○ mistral-medium-latest",
-            "○ deepseek-v4-flash-free",
-            "○ nemotron-3-ultra-free",
+            "○ deepseek-v4-flash",
+            "○ nemotron-3-ultra",
         )
     )
-    body = (
-        '<div data-testid="stPopoverBody">'
-        '<div data-testid="stCaptionContainer">'
-        "Answering model · Zen models are free</div>"
-        f"{rows}</div>"
-    )
+    # No caption above the rows. There was one; `render_model_picker` dropped it, and a
+    # replica that keeps rendering a control the app does not is a harness measuring
+    # its own scaffolding.
+    body = f'<div data-testid="stPopoverBody">{rows}</div>'
     if legacy:
         body = f'<div data-baseweb="popover"><div><div>{body}</div></div></div>'
     return (
@@ -404,10 +426,18 @@ def strip(clear: bool = True, wrapped: bool = True) -> str:
     # the corner next to the button that sends. There was a caveat line on the left of
     # this row too; it is gone, and with it the last thing under the input that was
     # not a control.
+    # The trigger holds the model's name AND the chevron Streamlit puts after it, in a
+    # flex row with a gap. Modelled because the name is only part of what the button
+    # has to be wide enough for: with the chevron missing, the replica read a 20px
+    # narrower control than the app draws, and the width is now set from the name.
+    # `PICKER_LABEL` is the longest name a default deployment offers, which is the one
+    # the width is sized for — anything shorter would leave slack that is the
+    # selection's fault rather than the stylesheet's, and prove nothing.
     controls = f"""
     {trash}
     <div class="element-container"><div data-testid="stPopover"><div class="stPopover">
-      <button><p>deepseek-v4-flash-free</p></button>
+      <button><div class="popover-trigger"><p>{PICKER_LABEL}</p><span
+      data-testid="stIconMaterial"></span></div></button>
     </div></div></div>"""
     if wrapped:
         return f"""<div class="st-key-composer-strip" data-testid="stVerticalBlockBorderWrapper">
@@ -873,6 +903,19 @@ function snapshot() {
   }
   var clipDrop = riseOf(clipEl);
   var sendDrop = riseOf(sendEl);
+  // Empty room inside the model picker's trigger, past the name and the chevron. The
+  // button is a fixed width so that picking a model cannot resize it, and the whole
+  // question about that width is whether it is the name's width or an arbitrary one.
+  var pickEl = document.querySelector(PICKER_SELECTOR);
+  var pickInner = pickEl && pickEl.firstElementChild;
+  var pickerSlack = null;
+  if (pickInner) {
+    var pcs = getComputedStyle(pickEl);
+    var sides = ['paddingLeft', 'paddingRight', 'borderLeftWidth', 'borderRightWidth']
+        .reduce(function (sum, side) { return sum + parseFloat(pcs[side]); }, 0);
+    pickerSlack = Math.round(pickEl.getBoundingClientRect().width - sides
+                             - pickInner.getBoundingClientRect().width);
+  }
   var panelEl = document.querySelector('[data-testid="stPopoverBody"]');
   var panelBg = panelEl ? getComputedStyle(panelEl).backgroundColor : '';
   // EVERY row of a list, not just the first. `box()` below resolves one element per
@@ -892,7 +935,7 @@ function snapshot() {
            lists: {'.source-item': rows('.source-item'),
                    '.related-item': rows('.related-item')},
            panelBg: panelBg, cursorGap: cursorGap,
-           clipDrop: clipDrop, sendDrop: sendDrop,
+           clipDrop: clipDrop, sendDrop: sendDrop, pickerSlack: pickerSlack,
            scrolled: port ? Math.round(port.scrollTop) : 0,
            // Whether there is anywhere to scroll to. A conversation shorter than
            // the window sits at the bottom of the space reserved for it, so if
@@ -947,7 +990,6 @@ CHIPS = ".st-key-attachments"
 # does not state them, Streamlit's default does, and on a dark page that was white.
 PANEL = '[data-testid="stPopoverBody"]'
 PANEL_BUTTON = '[data-testid="stPopoverBody"] button p'
-PANEL_CAPTION = '[data-testid="stPopoverBody"] [data-testid="stCaptionContainer"]'
 # What app.js parks in a finished answer's top-right corner, and the prose it is
 # parked on top of. Absolutely positioned inside the message, so the corner it sits
 # in is a corner the text also uses unless the message reserves it — measured in the
@@ -968,7 +1010,7 @@ SELECTORS = [
     ".stChatMessage code", '[data-testid="stBottomBlockContainer"]',
     ANSWER_COPY, ANSWER_TEXT, ANSWER_TABLE,
     STRIP, INPUT, INPUT_BOX, SEND, CHIPS, ".st-key-attachments button",
-    PANEL, PANEL_BUTTON, PANEL_CAPTION,
+    PANEL, PANEL_BUTTON,
     ".st-key-composer-strip button",
     # The rightmost control in the strip, so the row is measured end to end: with
     # a model name in it, it is the widest thing under the input.
@@ -1036,6 +1078,18 @@ MAX_CURSOR_GAP = 16
 # 15px higher up, so the offset was measuring from the wrong edge. Half a line is the
 # most that can pass for level.
 MAX_BUTTON_DROP = 6
+# Empty room allowed inside the model picker's trigger, past the name and the chevron.
+# The button is a fixed width, so this is the difference between a width chosen for the
+# name and one chosen at random: at a flat 15rem it was 104px of nothing beside a name
+# that needed 136 in the app, and 59px of it here.
+#
+# Not zero, because the width comes out of `ch` units and a "0" is wider than the
+# lowercase letters model ids are mostly made of — about 10% in the app's Source Sans,
+# and nearer 20% in whatever this machine falls back to, which is why the allowance is
+# this loose. Slack is the safe direction; the other side of the check is not, so it
+# has no allowance at all: a negative reading means the name is being ellipsed, which
+# is the failure that matters and the thing keeping the 0.78 in `app.css` honest.
+MAX_PICKER_SLACK = 30
 
 
 # Every check above measures one frame. This one measures a *sequence*, because the
@@ -1271,7 +1325,7 @@ def page(body: str, scheme: str, scroll: bool, generating: bool = False,
 {portal}
 <script>window.__scrollBottom = {str(scroll).lower()}; window.__pinLast = {str(pin).lower()};</script>
 {'<script>' + JS + '</script>' if script else ''}
-{driver or MEASURE.replace("HOSTBAR", str(HOST_BAR)).replace("TOPGAP", str(TOP_GAP)).replace("SELECTORS", json.dumps(SELECTORS)).replace("SEND_SELECTOR", json.dumps(SEND))}
+{driver or MEASURE.replace("HOSTBAR", str(HOST_BAR)).replace("TOPGAP", str(TOP_GAP)).replace("SELECTORS", json.dumps(SELECTORS)).replace("SEND_SELECTOR", json.dumps(SEND)).replace("PICKER_SELECTOR", json.dumps(PICKER))}
 </body></html>"""
 
 
@@ -1576,6 +1630,26 @@ def audit(data, scenario, scheme, width, state: str) -> list[str]:
         problems.append(
             f"{where}: the model picker is only "
             f"{picker['right'] - picker['left']}px wide (collapsed)"
+        )
+
+    # …and the other end of the same control. Too narrow hides it; too wide is a slab
+    # of empty box in the corner under the input, which is what a width picked as a
+    # round number rather than from the name gives you.
+    slack = data.get("pickerSlack")
+    if slack is not None and slack > MAX_PICKER_SLACK:
+        problems.append(
+            f"{where}: the model picker is {slack}px wider than the name in it "
+            f"(want at most {MAX_PICKER_SLACK} — the width is meant to be the "
+            f"longest name it can show, not a round number)"
+        )
+    # Above the mobile breakpoint only. Under it the stylesheet caps this button at
+    # 9.5rem on purpose, to keep three controls on one line at 360px, and ellipsing the
+    # name is the price it chose to pay — see the `max-width` in the mobile block.
+    if slack is not None and slack < 0 and width > 640:
+        problems.append(
+            f"{where}: the model picker is {-slack}px too narrow for the name in it, "
+            f"which is being ellipsed — the width is set from the longest name, so "
+            f"the longest name has to fit"
         )
 
     # The controls belong under the input, not on it. The strip is pinned inside a
