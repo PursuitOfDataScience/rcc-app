@@ -467,6 +467,39 @@ class TestComposerStrip:
             "character counter in the box"
         )
 
+    @staticmethod
+    def _placeholder(stub):
+        return next(text for name, text in stub.events if name == "chat_input")
+
+    def test_the_landing_box_names_the_subject(self, monkeypatch):
+        """It is the only thing on that page that says what this app is for."""
+        stub, _m = self.two_providers(monkeypatch, {"messages": [], "processing": False})
+        assert self._placeholder(stub) == "Ask any question about the RCC…"
+
+    def test_the_box_asks_for_a_follow_up_once_something_is_answered(self, monkeypatch):
+        """The subject is established by then, and what is worth saying instead is
+        that the conversation carries — this is not a fresh search."""
+        session = {
+            "messages": [
+                {"role": "user", "text": "hi", "attachments": []},
+                {"role": "assistant", "text": "hello", "sources": []},
+            ],
+            "processing": False,
+        }
+        stub, _m = self.two_providers(monkeypatch, session)
+        assert self._placeholder(stub) == "Ask a follow-up question…"
+
+    def test_a_question_with_no_answer_yet_is_not_a_follow_up(self, monkeypatch):
+        """A turn that is still generating, or one that failed and left its retry
+        button, has nothing to follow up on: "ask a follow-up" over an empty answer
+        reads as if one had arrived."""
+        session = {
+            "messages": [{"role": "user", "text": "hi", "attachments": []}],
+            "processing": False,
+        }
+        stub, _m = self.two_providers(monkeypatch, session)
+        assert self._placeholder(stub) == "Ask any question about the RCC…"
+
 
 class TestToollessModels:
     """Free models that cannot call tools still answer, from a single retrieval."""

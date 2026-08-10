@@ -189,6 +189,11 @@ FOREGROUNDS = {"dark": "#e5e7eb", "light": "#31333f"}
 # the stylesheet never chose.
 PICKER_LABEL = "mistral-medium-latest"
 
+# What the composer asks for, keyed on whether this is the landing screen. app.py
+# switches on an answer existing; every screen here that is not `landing` has one.
+PLACEHOLDERS = {True: "Ask any question about the RCC…",
+                False: "Ask a follow-up question…"}
+
 
 def base_css(scheme: str) -> str:
     return f"""
@@ -906,6 +911,20 @@ function snapshot() {
   // Empty room inside the model picker's trigger, past the name and the chevron. The
   // button is a fixed width so that picking a model cannot resize it, and the whole
   // question about that width is whether it is the name's width or an arbitrary one.
+  // The status line's shimmer, at both ends of its sweep. `box()` below reports the
+  // contrast of `cs.color`, and for this one element that is a lie: the fill is
+  // transparent and what a reader sees is the gradient clipped to the glyphs, so the
+  // colour the check would read is the fallback nobody is looking at. Every stop is
+  // pulled out of the gradient instead and measured against what is behind the text —
+  // the worst of them is the moment the highlight is over the word.
+  var statusEl = document.querySelector('.status-text');
+  var statusStops = null;
+  if (statusEl) {
+    var image = getComputedStyle(statusEl).backgroundImage || '';
+    var behind = solidBg(statusEl.parentElement || document.body);
+    var found = image.match(/rgba?\\([^)]*\\)/g) || [];
+    statusStops = found.map(function (stop) { return ratio(stop, behind); });
+  }
   var pickEl = document.querySelector(PICKER_SELECTOR);
   var pickInner = pickEl && pickEl.firstElementChild;
   var pickerSlack = null;
@@ -936,6 +955,7 @@ function snapshot() {
                    '.related-item': rows('.related-item')},
            panelBg: panelBg, cursorGap: cursorGap,
            clipDrop: clipDrop, sendDrop: sendDrop, pickerSlack: pickerSlack,
+           statusStops: statusStops,
            scrolled: port ? Math.round(port.scrollTop) : 0,
            // Whether there is anywhere to scroll to. A conversation shorter than
            // the window sits at the bottom of the space reserved for it, so if
@@ -1090,6 +1110,11 @@ MAX_BUTTON_DROP = 6
 # has no allowance at all: a negative reading means the name is being ellipsed, which
 # is the failure that matters and the thing keeping the 0.78 in `app.css` honest.
 MAX_PICKER_SLACK = 30
+# How much lighter the lit end of the status line's sweep has to be than the dim end,
+# as a ratio of their contrasts against the page. An animation nobody can see is not an
+# animation: the sweep it replaced ran 11:1 to 7.7:1, two dark maroons 1.42x apart, and
+# read as a static line for as long as it shipped.
+MIN_SHIMMER_SWING = 1.8
 
 
 # Every check above measures one frame. This one measures a *sequence*, because the
@@ -1252,7 +1277,7 @@ function marker() {
 
 def page(body: str, scheme: str, scroll: bool, generating: bool = False,
          pin: bool = False, script: bool = True, sticky: bool = False,
-         doc_scroll: bool = False, typed: bool = False,
+         doc_scroll: bool = False, typed: bool = False, landing: bool = False,
          column_input: bool = False, portal: str = "",
          driver: str = "") -> str:
     """The replica, with or without app.js, and with the bar pinned either way.
@@ -1306,8 +1331,11 @@ def page(body: str, scheme: str, scroll: bool, generating: bool = False,
            # never fired here, so neither the button nor the `:not(#paperclip-btn)`
            # exclusion that keeps it out of the send button's corner was ever rendered.
            '<button id="paperclip-btn" type="button">📎</button>'
+           # Two placeholders, as app.py has them: the landing screen names the
+           # subject because nothing else on that page does, and every screen with an
+           # answer on it asks for a follow-up instead.
            + ('<textarea rows="6">' + TYPED + "</textarea>" if typed else
-              '<textarea rows="1" placeholder="Ask any question about the RCC…">'
+              f'<textarea rows="1" placeholder="{PLACEHOLDERS[landing]}">'
               '</textarea>')
            + (f'<div class="chat-actions">{send}</div>' if column_input else send)
            + "</div></div></div></div>")
@@ -1621,6 +1649,33 @@ def audit(data, scenario, scheme, width, state: str) -> list[str]:
                 problems.append(
                     f"{where}: {sel} contrast {b['contrast']}:1 (needs {need}:1)"
                 )
+
+    # Every stop of the status line's sweep, not the colour it claims. The highlight
+    # end is the lowest-contrast text the app ever paints, and it is on screen for
+    # exactly as long as the reader is waiting with nothing else to look at. Small text
+    # at 14-15px, so the ordinary 4.5:1 applies to all of it — a shimmer that dips
+    # under it for the third of a second the band is over a word is still a shimmer
+    # that dips under it.
+    stops = data.get("statusStops")
+    if stops:
+        worst = min(stops)
+        if worst < 4.5:
+            problems.append(
+                f"{where}: the status line's shimmer reaches {worst}:1 at the lit end "
+                f"of its sweep (needs 4.5:1 — every stop of it is text a reader is "
+                f"watching)"
+            )
+        # …and the other failure, which is not a contrast one: two stops a reader
+        # cannot tell apart. That was the old sweep — 11:1 to 7.7:1, a 1.42x swing
+        # between two dark maroons, which on screen is a line that does not move.
+        # 1.8 is where that sits on the wrong side and the pair replacing it (2.4x on
+        # white, 2.6x on the dark page) sits comfortably on the right one.
+        if max(stops) / worst < MIN_SHIMMER_SWING:
+            problems.append(
+                f"{where}: the status line's sweep runs {worst}:1 to {max(stops)}:1, "
+                f"which is not a visible change in lightness — it reads as a line "
+                f"that is not animating at all"
+            )
 
     # A zero-width picker is the exact bug that shipped twice: present in the DOM,
     # invisible on screen. 80px is narrower than any real label, so anything below
@@ -2072,6 +2127,7 @@ def main() -> int:
                                 sticky=scenario in STICKY_BAR,
                                 doc_scroll=scenario in DOC_SCROLL,
                                 typed=scenario in TYPED_INPUT,
+                                landing=scenario.startswith("landing"),
                                 column_input=scenario in COLUMN_INPUT,
                                 portal=(panel(OPEN_PICKER[scenario])
                                         if scenario in OPEN_PICKER else ""))

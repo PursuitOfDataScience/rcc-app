@@ -22,6 +22,20 @@
      * 1.73:1, which is not a visible focus indicator. */
     --brand-line: #800000;
 
+    /* The two ends of the status line's sweep. Its own pair rather than the heading
+     * gradient above, because that one only has to look like the brand while this one
+     * has to stay readable at every point of a moving highlight — the lit stop is the
+     * lowest-contrast thing on screen while a turn is in flight, and it is text.
+     *
+     * They were `--gradient-text-start/end`, 11 points of lightness apart, which at a
+     * glance is a maroon line that does not move at all. This is 11:1 sweeping to
+     * 5.5:1 on white: a swing you can see from across the room, both ends of it above
+     * AA for body text. `tools/render_check.py` reads the stops out of the gradient
+     * and checks them, because the colour this text paints is not the one
+     * `getComputedStyle` reports for it. */
+    --status-dim: #6b0000;
+    --status-lit: #c0392b;
+
     --text-primary: #1f2937;
     --text-secondary: #4b5563;
     --text-muted: #6b7280;          /* 4.83:1 on white — do not add opacity */
@@ -148,6 +162,11 @@
         --gradient-text-end: #e08a94;
         --brand-text: #f0a8ac;
         --brand-line: #e08a94;
+
+        /* Inverted: on a near-black page the highlight is the bright end, and the
+         * dim end is the one that has to clear AA. */
+        --status-dim: #c9737d;
+        --status-lit: #ffd9dd;
 
         --text-primary: #e5e7eb;
         --text-secondary: #b6bcc7;
@@ -1173,22 +1192,45 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
 
 .status-text {
     color: var(--brand-text);
-    background: linear-gradient(90deg,
-        var(--gradient-text-start) 0%,
-        var(--gradient-text-end) 50%,
-        var(--gradient-text-start) 100%);
-    background-size: 200% 100%;
-    -webkit-background-clip: text;
-    background-clip: text;
-    -webkit-text-fill-color: transparent;
-    animation: shimmer 1.6s ease-in-out infinite;
     font-weight: 600;
     font-size: clamp(0.85rem, 2vw, 0.94rem);
 }
 
+/* The sweep. A band of the lit colour crossing a dim line, which is the one thing on
+ * this row that says the wait is going somewhere rather than being stuck — the dot and
+ * the ellipsis both animate in place.
+ *
+ * Behind `@supports` because painting it costs the text its own colour: clipping a
+ * background to the glyphs only shows through if the fill is transparent, and a
+ * transparent fill with no background behind it is an invisible status line. The plain
+ * `color` above is what a browser without it keeps.
+ *
+ * The band is broad — 24% of a background twice the element's width, so about half the
+ * line — because a narrow glint across 14px text reads as a rendering fault rather than
+ * as motion. `linear`, not `ease-in-out`: an eased sweep slows to a stop at both edges,
+ * and a progress cue that keeps pausing looks like the thing it is reporting on has. */
+@supports (background-clip: text) or (-webkit-background-clip: text) {
+    .status-text {
+        background: linear-gradient(90deg,
+            var(--status-dim) 0%,
+            var(--status-dim) 38%,
+            var(--status-lit) 50%,
+            var(--status-dim) 62%,
+            var(--status-dim) 100%);
+        background-size: 200% 100%;
+        -webkit-background-clip: text;
+        background-clip: text;
+        -webkit-text-fill-color: transparent;
+        animation: shimmer 1.9s linear infinite;
+    }
+}
+
+/* The background is twice as wide as the line, so this walks it from one edge clear of
+ * the text to the other: the lit band enters at the left and leaves at the right, once
+ * per cycle, rather than bouncing. */
 @keyframes shimmer {
-    0% { background-position: 100% 0; }
-    100% { background-position: -100% 0; }
+    from { background-position: 100% 0; }
+    to { background-position: -100% 0; }
 }
 
 .status-dot {
