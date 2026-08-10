@@ -17,16 +17,30 @@ class TestModel:
         assert providers.parse_key(model.key) == model
 
     def test_labels_are_the_model_name_and_stay_short(self):
-        """No provider prefix. "Zen · deepseek-v4-flash-free" spent a third of the
-        picker's width restating what the rest of the row already said, on every line,
-        and `mistral-` on the front of the Mistral ids does that job for free."""
+        """No provider prefix. "Zen · deepseek-v4-flash" spent a third of the picker's
+        width restating what the rest of the row already said, on every line, and
+        `mistral-` on the front of the Mistral ids already does that job."""
         mistral = providers.Model("mistral", "mistral-small-latest").label
         zen = providers.Model("opencode", "deepseek-v4-flash-free").label
         assert mistral == "mistral-small-latest"
-        assert zen == "deepseek-v4-flash-free"
+        assert zen == "deepseek-v4-flash"
         assert "·" not in mistral + zen
         # Long labels get ellipsed in a 240px picker, so keep them under ~30 chars.
         assert max(len(mistral), len(zen)) <= 30
+
+    def test_the_tier_marker_is_not_part_of_the_displayed_name(self):
+        """It is billing plumbing, not something a reader chooses between models on.
+
+        Only the id that goes upstream carries it, and only as a whole segment: a
+        substring rule would eat the middle of any model whose name happens to
+        contain those four letters.
+        """
+        assert providers.Model("opencode", "hy3-free").label == "hy3"
+        assert providers.Model("opencode", "mimo-v2.5-free").label == "mimo-v2.5"
+        assert providers.Model("opencode", "big-pickle").label == "big-pickle"
+        assert providers.Model("opencode", "freeform-7b").label == "freeform-7b"
+        # The id itself is untouched, so the request still names what Zen serves.
+        assert providers.Model("opencode", "hy3-free").key == "opencode:hy3-free"
 
     @pytest.mark.parametrize("bad", ["", "nope", "mistral:", ":model", "other:m"])
     def test_malformed_keys_are_rejected(self, bad):
@@ -391,7 +405,7 @@ def test_a_model_label_is_just_the_model_name():
     """The provider prefix spent a third of the picker's width restating what the row
     already said, on every line."""
     assert providers.Model(providers.OPENCODE, "deepseek-v4-flash-free").label == (
-        "deepseek-v4-flash-free"
+        "deepseek-v4-flash"
     )
     assert providers.Model(providers.MISTRAL, "mistral-small-latest").label == (
         "mistral-small-latest"

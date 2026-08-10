@@ -248,7 +248,16 @@ body {{ margin: 0; background: {BACKGROUNDS[scheme]}; color: {FOREGROUNDS[scheme
    for the bar pure dead space above it. */
 .bar-sticky [data-testid="stMain"] {{ display: flex; flex-direction: column; }}
 .bar-sticky .block-container {{ flex: 1 0 auto; }}
-.stChatInput > div {{ background: {'#262730' if scheme == 'dark' else '#f0f2f6'}; }}
+/* Streamlit's own padding on the composer box, which `app.css` styles the border and
+   the left inset of but never resets the top and bottom of. 12px each, and both of
+   them matter: the buttons are pinned to the floor of this box while the field's one
+   line of text is centred in it, so the 24px it adds is 12px of daylight between the
+   two. Without it the replica put clip, caret and send on one line while the running
+   app hung both buttons 15px under the sentence — the harness could not have failed
+   on the bug, which reads as a pass. Horizontal padding stays in `app.css`: that side
+   IS ours (50px to clear the clip, 56px to clear the send button). */
+.stChatInput > div {{ background: {'#262730' if scheme == 'dark' else '#f0f2f6'};
+   padding-top: 12px; padding-bottom: 12px; }}
 .stChatInput textarea {{ width: 100%; background: transparent; border: 0;
                         color: inherit; font: inherit; resize: none; }}
 /* Streamlit's send button: its own size, in the flow, and a flex item of the box
@@ -848,6 +857,22 @@ function snapshot() {
       areaEl.getBoundingClientRect().left
       + parseFloat(getComputedStyle(areaEl).paddingLeft)
       - clipEl.getBoundingClientRect().right) : null;
+  // The other half of "same row": how far the clip sits below the line of text it is
+  // beside. Measured against the first line's middle rather than the textarea's,
+  // because the textarea grows downwards and its own middle walks away from the text
+  // the clip is level with. Positive means the clip hangs low.
+  var sendEl = document.querySelector(SEND_SELECTOR);
+  function riseOf(el) {
+    if (!el || !areaEl) return null;
+    var area = areaEl.getBoundingClientRect();
+    var style = getComputedStyle(areaEl);
+    var firstLine = area.top + parseFloat(style.paddingTop)
+                    + parseFloat(style.lineHeight) / 2;
+    var box = el.getBoundingClientRect();
+    return Math.round(box.top + box.height / 2 - firstLine);
+  }
+  var clipDrop = riseOf(clipEl);
+  var sendDrop = riseOf(sendEl);
   var panelEl = document.querySelector('[data-testid="stPopoverBody"]');
   var panelBg = panelEl ? getComputedStyle(panelEl).backgroundColor : '';
   // EVERY row of a list, not just the first. `box()` below resolves one element per
@@ -867,6 +892,7 @@ function snapshot() {
            lists: {'.source-item': rows('.source-item'),
                    '.related-item': rows('.related-item')},
            panelBg: panelBg, cursorGap: cursorGap,
+           clipDrop: clipDrop, sendDrop: sendDrop,
            scrolled: port ? Math.round(port.scrollTop) : 0,
            // Whether there is anywhere to scroll to. A conversation shorter than
            // the window sits at the bottom of the space reserved for it, so if
@@ -987,10 +1013,15 @@ GAP_QUESTION_TO_ANSWER = (30, 60)
 # that is the reader's to scroll, not dead space.
 MAX_TAIL_GAP = 64
 # Room allowed between the last line of text in the input and the bottom of the box.
-# The textarea carries 16px of its own bottom padding, so this is that plus a little
-# rounding — anything more is a row of furniture, which is what the send button was
-# taking once the text grew past one line.
-MAX_INPUT_DEAD_SPACE = 20
+# Measured from the textarea's edge, so its own 16px of bottom padding is already
+# inside that edge and does not count; what does is the box's 12px of padding and 2px
+# of border under it, plus rounding — anything more is a row of furniture, which is
+# what the send button was taking once the text grew past one line.
+#
+# Was 20, from a replica that gave the box no vertical padding at all. Every shape
+# measured 12px under the truth, so this is the same margin over a healthy box (22px
+# in the worst shape) and the same catch on the 46px the send button took.
+MAX_INPUT_DEAD_SPACE = 32
 # Room allowed between the attachment chips and the top of the input box. They are
 # pinned 0.35rem above it; this is that plus the bar's own top padding and rounding.
 # Rendered in the flow instead, they were most of a page away.
@@ -998,6 +1029,13 @@ MAX_CHIP_GAP = 40
 # How far the text cursor may sit from the paperclip beside it. The clip is inset 12px
 # from the edge of the box; the cursor matching that reads as one row.
 MAX_CURSOR_GAP = 16
+# And how far off that row either composer button may sit vertically. Reported from
+# the running app: the clip was 15px below the line of text it is beside, which is
+# most of a line — it read as hanging under the sentence rather than starting it.
+# Both buttons were pinned 10px off the floor of a box that centres one line of text
+# 15px higher up, so the offset was measuring from the wrong edge. Half a line is the
+# most that can pass for level.
+MAX_BUTTON_DROP = 6
 
 
 # Every check above measures one frame. This one measures a *sequence*, because the
@@ -1215,7 +1253,8 @@ def page(body: str, scheme: str, scroll: bool, generating: bool = False,
            # exclusion that keeps it out of the send button's corner was ever rendered.
            '<button id="paperclip-btn" type="button">📎</button>'
            + ('<textarea rows="6">' + TYPED + "</textarea>" if typed else
-              '<textarea rows="1" placeholder="Ask anything about RCC…"></textarea>')
+              '<textarea rows="1" placeholder="Ask any question about the RCC…">'
+              '</textarea>')
            + (f'<div class="chat-actions">{send}</div>' if column_input else send)
            + "</div></div></div></div>")
     return f"""<!doctype html><html><head><meta charset="utf-8">
@@ -1232,7 +1271,7 @@ def page(body: str, scheme: str, scroll: bool, generating: bool = False,
 {portal}
 <script>window.__scrollBottom = {str(scroll).lower()}; window.__pinLast = {str(pin).lower()};</script>
 {'<script>' + JS + '</script>' if script else ''}
-{driver or MEASURE.replace("HOSTBAR", str(HOST_BAR)).replace("TOPGAP", str(TOP_GAP)).replace("SELECTORS", json.dumps(SELECTORS))}
+{driver or MEASURE.replace("HOSTBAR", str(HOST_BAR)).replace("TOPGAP", str(TOP_GAP)).replace("SELECTORS", json.dumps(SELECTORS)).replace("SEND_SELECTOR", json.dumps(SEND))}
 </body></html>"""
 
 
@@ -1578,6 +1617,20 @@ def audit(data, scenario, scheme, width, state: str) -> list[str]:
             f"{where}: the text cursor sits {gap}px from the paperclip "
             f"(want 0-{MAX_CURSOR_GAP} — they are the same row of the same box)"
         )
+
+    # Same row, the other axis. Only meaningful on the screens where the box holds one
+    # line: with a paragraph in it the text runs on past the buttons and there is no
+    # single line for them to be level with.
+    if scenario not in TYPED_INPUT:
+        for what, drop in (("paperclip", data.get("clipDrop")),
+                           ("send button", data.get("sendDrop"))):
+            if drop is not None and abs(drop) > MAX_BUTTON_DROP:
+                below = "below" if drop > 0 else "above"
+                problems.append(
+                    f"{where}: the {what} sits {abs(drop)}px {below} the line of text "
+                    f"beside it (want within {MAX_BUTTON_DROP} — they are the same "
+                    f"row of the same box)"
+                )
 
     # The popover panel must belong to the page it is drawn over. It is portalled to
     # the end of <body>, so it inherits nothing from the app — and when the stylesheet

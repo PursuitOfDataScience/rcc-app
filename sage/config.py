@@ -52,7 +52,7 @@ def _env_list(name: str, default: tuple[str, ...]) -> tuple[str, ...]:
 
 # --- providers -------------------------------------------------------------
 # Which provider/model a fresh session starts on, as "provider:model-id".
-DEFAULT_MODEL = os.getenv("SAGE_DEFAULT_MODEL", "mistral:mistral-small-latest")
+DEFAULT_MODEL = os.getenv("SAGE_DEFAULT_MODEL", "opencode:deepseek-v4-flash-free")
 
 MISTRAL_MODELS = _env_list(
     "SAGE_MISTRAL_MODELS",
