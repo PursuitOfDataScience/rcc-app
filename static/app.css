@@ -748,6 +748,28 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
 
 #paperclip-btn:hover { background: var(--code-inline-bg); color: var(--icon-hover); }
 
+/* The composer while a file is being dragged over the window.
+ *
+ * app.js puts `data-sage-dropping` on <body> for as long as a drag carrying files is
+ * over the page and takes it off again on the drop, so nothing here paints at any
+ * other time. Dropping was reported as having "no reaction at all", and half of that
+ * was this: a box that answers a file held over it with nothing reads as a box that
+ * does not take files, whatever happens after the drop.
+ *
+ * The composer is what lights up even though the drop is accepted anywhere on the
+ * page, because the composer is where the file is going — it is the box the reader
+ * dragged towards, and the chip for what lands appears directly above it.
+ *
+ * Dashed, in the maroon this box already uses for focus and the tint the paperclip
+ * beside it already uses for hover. A drop target should read as this box getting
+ * ready for the file rather than as a new colour arriving on the page. The border
+ * width is unchanged, so nothing moves and no measurement shifts. */
+body[data-sage-dropping] .stChatInput > div {
+    border-style: dashed !important;
+    border-color: var(--brand-line) !important;
+    background: var(--code-inline-bg) !important;
+}
+
 /* ===== BOTTOM BAR + DISCLAIMER ===== */
 
 /* The bar paints the app background across this whole band, and the strip of

@@ -192,6 +192,8 @@
     "[data-baseweb=\"popover\"] [data-testid=\"stPopoverBody\"], [data-baseweb=\"popover\"] > div > div, [data-testid=\"stPopoverBody\"] :: color": "var(--text-primary) !important",
     "[data-testid=\"stFileUploader\"] :: border": "0 !important",
     "[data-testid=\"stPopoverBody\"] :: border": "1px solid var(--popover-border) !important",
-    "[data-testid=\"stPopoverBody\"] :: box-shadow": "var(--shadow-lg) !important"
+    "[data-testid=\"stPopoverBody\"] :: box-shadow": "var(--shadow-lg) !important",
+    "body[data-sage-dropping] .stChatInput > div :: background": "var(--code-inline-bg) !important",
+    "body[data-sage-dropping] .stChatInput > div :: border-color": "var(--brand-line) !important"
   }
 }
