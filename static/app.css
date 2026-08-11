@@ -748,6 +748,70 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
 
 #paperclip-btn:hover { background: var(--code-inline-bg); color: var(--icon-hover); }
 
+/* The stop square, injected by app.js while an answer is generating.
+ *
+ * It is in the send button's corner because it IS the send button for the length of
+ * a generation — the reader asked for the arrow to become a square, and the arrow's
+ * corner is the only place a square means "stop this". Both rules above already
+ * apply to it: `.stChatInput button:not(#paperclip-btn)` parks it in that corner and
+ * the `:not(:disabled)` rule under it puts the white-on-maroon fill there, which is
+ * the whole point — nothing here restates a colour, so the square cannot drift away
+ * from the arrow it replaces.
+ *
+ * What is left is the size, which Streamlit supplies for its own button and nobody
+ * supplies for this one. 36px is the number the padding on the box next to it is
+ * already cut for (`padding-right: 56px` = 36 + 10 + air), and
+ * `tools/render_check.py` measures the square against the arrow's own rectangle so
+ * the two cannot come apart. */
+#stop-btn {
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: none;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: filter var(--transition);
+}
+
+#stop-btn:hover { filter: brightness(1.15); }
+
+/* And the arrow goes while the square is there. `visibility` rather than `display`,
+ * so the button keeps its box: the composer's height and the room reserved beside
+ * the text are measured from it, and a send button that vanished from the layout
+ * would move the text under the reader at the moment a turn starts.
+ *
+ * Keyed off an attribute app.js sets from `#processing-signal`. It used to be a
+ * <style> element app.js built and injected, which meant the one rule that decides
+ * what the composer looks like mid-turn was invisible to `tools/palette_check.py`
+ * and to anyone reading this file for how the composer is painted. */
+body[data-sage-generating] .stChatInput button:not(#paperclip-btn):not(#stop-btn) {
+    visibility: hidden !important;
+}
+
+/* The two widgets whose clicks app.js's injected controls carry back to Python: the
+ * stop square, and the pencil beside each question. Clipped to a pixel exactly as
+ * the file uploader below is, and for the same reason — the control the reader sees
+ * is drawn somewhere Streamlit cannot put a widget, and this is only the wire.
+ *
+ * Keyed on the buttons themselves rather than on a container around them. A wrapper
+ * was tried and is what made the pencils stop working after one use: Streamlit reuses
+ * a container's DOM node between reruns and only swaps its class, so the node wearing
+ * this key had previously been an answer and still held the copy button app.js
+ * appended to it — which is the button app.js then found and clicked. */
+.st-key-stop-generation,
+[class*="st-key-edit-open-"] {
+    position: absolute !important;
+    width: 1px !important; height: 1px !important;
+    padding: 0 !important; margin: -1px !important;
+    overflow: hidden !important;
+    clip: rect(0, 0, 0, 0) !important;
+    white-space: nowrap !important;
+    border: 0 !important;
+}
+
 /* The composer while a file is being dragged over the window.
  *
  * app.js puts `data-sage-dropping` on <body> for as long as a drag carrying files is
@@ -940,6 +1004,87 @@ body[data-sage-dropping] .stChatInput > div {
     padding: 4px 10px;
     border-radius: 12px;
     font-size: 0.78rem;
+}
+
+/* The pencil that reopens a question, injected by app.js into the row the bubble
+ * already sits in.
+ *
+ * In the gutter, not under the bubble. `.user-message` is a flex row that pushes its
+ * bubble to the right and the bubble stops at 78% of the width, so the space to the
+ * left of it is empty on every question at every width — which means this control
+ * costs the transcript no height and moves nothing. A row of its own under each
+ * question would have been another band of furniture on a page whose bottom third is
+ * already spoken for.
+ *
+ * Hidden until the row is hovered, and that is deliberate: at rest this app looks
+ * exactly as it did before the pencil existed. `pointer-events` moves with the
+ * opacity so an invisible button cannot take a click in the empty gutter, and
+ * `:focus-visible` brings it back for a reader arriving by keyboard, who never
+ * hovers anything. */
+.user-edit-btn {
+    align-self: flex-end;
+    flex: 0 0 auto;
+    margin: 0 8px 4px 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 6px;
+    border: none;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--icon);
+    cursor: pointer;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--transition), background var(--transition),
+                color var(--transition);
+}
+
+.user-message:hover .user-edit-btn,
+.user-edit-btn:focus-visible {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.user-edit-btn:hover { background: var(--code-inline-bg); color: var(--icon-hover); }
+
+/* Gone, not greyed, while an answer generates. app.py disables the widget behind it
+ * for the length of a turn and app.js mirrors that onto this button; a pencil that
+ * appears on hover and then does nothing is worse than no pencil, because the reader
+ * has no way to tell it apart from one that is broken. */
+.user-edit-btn:disabled { display: none; }
+
+/* A touch screen has no hover, so a control that only appears on one is a control
+ * that does not exist. Dimmed rather than hidden there. */
+@media (hover: none) {
+    .user-edit-btn { opacity: 0.55; pointer-events: auto; }
+}
+
+/* The question, reopened for editing, standing where its bubble stood.
+ *
+ * The margins are `.user-message`'s, to the pixel, because this replaces one: a box
+ * with different spacing would jump the page under the reader at the moment they
+ * click the pencil, and jump it back when they cancel. */
+[class*="st-key-edit-box-"] {
+    margin: clamp(2.5rem, 5vw, 3.5rem) 0 clamp(3.5rem, 4.6vw, 4rem) 0 !important;
+}
+
+[class*="st-key-edit-box-"] textarea {
+    font-size: clamp(0.88rem, 2vw, 0.95rem) !important;
+    line-height: 1.5 !important;
+    border-radius: var(--radius-md) !important;
+}
+
+/* Where an answer the reader cut short says so.
+ *
+ * Inside the bubble, under the text, in the muted grey the rest of this app uses for
+ * an aside. An answer that ends mid-sentence has to be told apart from a model that
+ * broke off by itself — one is worth a retry and the other is not — and on a stop
+ * that landed before the first token this line is the whole message. */
+.stopped-note {
+    margin-top: 6px;
+    font-size: 0.78rem;
+    color: var(--text-muted);
 }
 
 /* Assistant turns live in a keyed container; the old wrapper <div> never actually

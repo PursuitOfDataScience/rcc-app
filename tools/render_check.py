@@ -1068,7 +1068,14 @@ INPUT = ".stChatInput textarea"
 # the button takes a row of its own once the text passes one line, and that row is a
 # band of nothing under what was typed.
 INPUT_BOX = ".stChatInput > div"
-SEND = '.stChatInput button:not(#paperclip-btn)'
+SEND = '.stChatInput button:not(#paperclip-btn):not(#stop-btn)'
+# The square app.js puts in the send button's corner while an answer generates, and
+# the pencil it puts in the gutter beside each question. Both are injected rather
+# than rendered by Streamlit, both are the only way to reach a thing the app can now
+# do, and neither is visible to anything else in this file — so both are measured:
+# a control that lands in the wrong place is a feature that shipped broken.
+STOP = "#stop-btn"
+EDIT = ".user-edit-btn"
 # The attachment chips. `fixed` above the input, so they are part of the composer's
 # footprint: whatever the page reserves at its end has to cover them too.
 CHIPS = ".st-key-attachments"
@@ -1096,7 +1103,8 @@ SELECTORS = [
     ".st-key-answer-5", ".st-key-answer-0", ".stChatMessage pre",
     ".stChatMessage code", '[data-testid="stBottomBlockContainer"]',
     ANSWER_COPY, ANSWER_TEXT, ANSWER_TABLE,
-    STRIP, INPUT, INPUT_BOX, SEND, CHIPS, ".st-key-attachments button",
+    STRIP, INPUT, INPUT_BOX, SEND, STOP, EDIT, "last:" + EDIT,
+    CHIPS, ".st-key-attachments button",
     PANEL, PANEL_BUTTON, ".status-text",
     ".st-key-composer-strip button",
     # The rightmost control in the strip, so the row is measured end to end: with
@@ -1115,7 +1123,7 @@ SELECTORS = [
 # textarea, and "the box will not take a click" is the worst bug in the app.
 INTERACTIVE = {
     PICKER, ".st-key-composer-strip button", "last:.st-key-composer-strip button", INPUT,
-    SEND, PANEL_BUTTON,
+    SEND, STOP, PANEL_BUTTON,
     ".st-key-retry button p", ".st-key-switch-model button p",
     *(f".st-key-example-card-{i} button p" for i in range(6)),
 }
@@ -1188,6 +1196,19 @@ MAX_PICKER_SLACK = 30
 # animation: the sweep it replaced ran 11:1 to 7.7:1, two dark maroons 1.42x apart, and
 # read as a static line for as long as it shipped.
 MIN_SHIMMER_SWING = 1.8
+# The smallest side either injected control may have. Both are icon-only buttons with
+# no label to widen them, and both are the ONLY way to reach something the app can do
+# — calling off a generation, reopening a question — so a few pixels of drift in a
+# padding is the difference between a feature and a control nobody can hit. Under the
+# 44px WCAG target on purpose: the pencil sits in the gutter beside a bubble and
+# taking 44px there would push the bubble in on a phone, which is a visible change to
+# every question for the sake of a control that also has a full-size route (the
+# composer) to the same outcome.
+MIN_CONTROL_SIDE = 24
+# How far the stop square may sit from the corner the send button occupies. They are
+# the same control at two moments of a turn — the reader asked for the arrow to become
+# a square — so anything a reader could see as a jump is a bug. 2px is rounding.
+MAX_SWAP_DRIFT = 2
 # The two gaps under an answer, both bounded at both ends. Reported as "barely any":
 # at 8.8px the Sources strip was closer to the last line of the answer than two of its
 # own paragraphs are to each other, so the references read as a last line of the prose.
@@ -1675,6 +1696,34 @@ def page(body: str, scheme: str, scroll: bool, generating: bool = False,
                 '<section data-testid="stFileUploaderDropzone" role="presentation">'
                 '<input type="file" multiple>'
                 "</section></div></div>")
+    # The clipped widgets whose clicks app.js's injected controls carry back to Python.
+    # Without them the injectors find nothing to wire to and quietly do not run — the
+    # square and the pencils would be absent from every render here and present in the
+    # app, which is the shape of a harness that cannot see the thing it is checking.
+    #
+    # One edit hook per question, because that is app.py's contract and app.js checks
+    # it: it pairs the Nth `.user-message` with the Nth hook and injects nothing at all
+    # if the two counts disagree. Counted off the body rather than written into each
+    # scenario so a new scenario with a question in it cannot forget one.
+    #
+    # One FEWER than the questions while generating, and disabled, because that is
+    # what the app does: the question being answered is drawn from the turn block
+    # without a hook, and the settled ones above it have theirs disabled for the
+    # length of the turn. Both halves are load-bearing — app.js refuses to pair the
+    # two lists if they disagree by more than that one, and it hides a pencil whose
+    # hook is disabled — so a replica that modelled neither would render pencils this
+    # app does not draw.
+    questions = body.count('class="user-message"')
+    hooks = "".join(
+        f'<div data-testid="stElementContainer" '
+        f'class="stElementContainer element-container st-key-edit-open-{index}">'
+        f'<button{" disabled" if generating else ""}>Edit this question</button></div>'
+        for index in range(max(0, questions - 1) if generating else questions)
+    )
+    if generating:
+        hooks += ('<div data-testid="stElementContainer" '
+                  'class="stElementContainer element-container st-key-stop-generation">'
+                  "<button>Stop generating</button></div>")
     return f"""<!doctype html><html><head><meta charset="utf-8">
 <style>{base_css(scheme)}</style><style>{theme_css(scheme)}</style></head>
 <body class="{'bar-sticky' if sticky else 'bar-fixed'}{' doc-scroll' if doc_scroll else ''}{' input-column' if column_input else ''}">
@@ -1682,7 +1731,7 @@ def page(body: str, scheme: str, scroll: bool, generating: bool = False,
 <div data-testid="stAppViewContainer">
   <div data-testid="stMain" class="main">
     <div data-testid="stMainBlockContainer" class="block-container">
-      <div data-testid="stVerticalBlock">{body}{uploader}</div></div>
+      <div data-testid="stVerticalBlock">{body}{hooks}{uploader}</div></div>
     {bar if sticky else ''}</div>
   {'' if sticky else bar}</div>
 {'<div id="processing-signal" hidden></div>' if generating else ''}
@@ -2182,6 +2231,99 @@ def audit(data, scenario, scheme, width, state: str) -> list[str]:
             f"{area['right'] - send['left']}px"
         )
 
+    # The stop square, checked from both sides.
+    #
+    # While an answer streams it has to BE there. app.js injects it, and an injector
+    # that silently matches nothing is a button the reader reaches for and does not
+    # find — the same failure mode the copy-button check below exists for. And it has
+    # to be in the corner the arrow was in a moment ago, because that swap is the
+    # whole design: a square that lands anywhere else is a second control rather than
+    # the send button changing state.
+    #
+    # When nothing is generating it has to be GONE. Left on the page it sits directly
+    # on top of the arrow at the same absolute corner, and the composer cannot send.
+    stop = els.get(STOP)
+    # A square that is present and invisible is a square the reader cannot press, so
+    # it counts as missing rather than as a badly-placed one. Without this the "no
+    # stop button" branch below was unreachable — anything that hid the square left a
+    # zero rectangle behind, which reported as 1010px of corner drift instead of as
+    # the control being gone.
+    if stop and stop["right"] - stop["left"] <= 0:
+        stop = None
+    if generating:
+        if not stop:
+            problems.append(
+                f"{where}: no stop button while an answer generates — app.js found "
+                "nothing to inject into or nothing to wire to, so the reader has no "
+                "way to call the turn off"
+            )
+        else:
+            if send:
+                drift = max(abs(stop["right"] - send["right"]),
+                            abs(stop["bottom"] - send["bottom"]))
+                if drift > MAX_SWAP_DRIFT:
+                    problems.append(
+                        f"{where}: the stop square is {drift}px off the send button's "
+                        f"corner (square right/bottom {stop['right']},{stop['bottom']};"
+                        f" arrow {send['right']},{send['bottom']}) — the arrow is "
+                        "supposed to become the square, not be joined by it"
+                    )
+            side = min(stop["right"] - stop["left"], stop["bottom"] - stop["top"])
+            if side < MIN_CONTROL_SIDE:
+                problems.append(
+                    f"{where}: the stop square's smallest side is {side}px "
+                    f"(want at least {MIN_CONTROL_SIDE})"
+                )
+            if area and stop["left"] < area["right"] - 1 and area["lines"] > 0:
+                problems.append(
+                    f"{where}: the stop square overlaps the text by "
+                    f"{area['right'] - stop['left']}px"
+                )
+    elif stop and stop["right"] - stop["left"] > 0:
+        problems.append(
+            f"{where}: the stop square is still on the page with nothing generating — "
+            "it is in the send button's corner, so the composer cannot send"
+        )
+
+    # The pencil that reopens a question. Its whole claim is that it costs the
+    # transcript nothing: it goes in the gutter to the left of a bubble that stops at
+    # 78% of the width, so it must be clear of the bubble and on the page at every
+    # width. Overlapping the bubble would put it on top of the question text at the
+    # one width where the question is long enough to reach its own maximum.
+    pencil, bubble = els.get(EDIT), els.get(".user-bubble")
+    if generating:
+        # Disabled for the length of a turn, and app.css hides a disabled one, so a
+        # rectangle here means the reader is being offered a control that cannot work.
+        if pencil and pencil["right"] - pencil["left"] > 0:
+            problems.append(
+                f"{where}: a question still offers an edit pencil while an answer "
+                "generates — clicking it would abandon the answer on screen"
+            )
+    elif bubble and state != "unmeasured":
+        if not pencil or pencil["right"] - pencil["left"] <= 0:
+            problems.append(
+                f"{where}: no edit control on a question — app.js paired nothing, so "
+                "a sent question cannot be corrected"
+            )
+        else:
+            if pencil["right"] > bubble["left"] + 1:
+                problems.append(
+                    f"{where}: the edit pencil overlaps the question bubble by "
+                    f"{pencil['right'] - bubble['left']}px"
+                )
+            if pencil["left"] < 0:
+                problems.append(
+                    f"{where}: the edit pencil is {-pencil['left']}px off the left "
+                    "edge of the page"
+                )
+            side = min(pencil["right"] - pencil["left"],
+                       pencil["bottom"] - pencil["top"])
+            if side < MIN_CONTROL_SIDE:
+                problems.append(
+                    f"{where}: the edit pencil's smallest side is {side}px "
+                    f"(want at least {MIN_CONTROL_SIDE})"
+                )
+
     if generating:
         # The question may leave the top of the window — but only because the answer
         # needed the room.
@@ -2259,6 +2401,14 @@ def audit(data, scenario, scheme, width, state: str) -> list[str]:
         if scenario.startswith("picker-open")
         else set()
     )
+    # And the send button is deliberately unreachable while an answer generates: the
+    # stop square is in its corner, which is the swap the reader asked for. The check
+    # above reads that as "something is on top of the send button", which it is — so
+    # this is the one state where that is the feature. The square itself is in
+    # INTERACTIVE and is hit-tested in its place, so the corner is still checked; what
+    # is exempt is only the button underneath it.
+    if generating:
+        covered_by_overlay = covered_by_overlay | {SEND}
     for sel in INTERACTIVE - covered_by_overlay:
         b = els.get(sel)
         # 'offscreen' is covered by the geometry checks above and is expected for

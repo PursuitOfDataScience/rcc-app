@@ -235,6 +235,17 @@ for key, default in (
     # Bumped by the Clear button. Rendered into the page for app.js, which is the only
     # side that can reach the text inside Streamlit's chat input.
     ("clear_token", 0),
+    # Set by the stop button's callback, which runs before this script does. Read
+    # once, at the top, because by the time the transcript is drawn it is too late:
+    # the block that draws it hides the last question while `processing` is set.
+    ("stop_requested", False),
+    # The answer as it arrives, one delta per entry. It lives here rather than in a
+    # local because a stop is an interrupted script run — the run holding the local
+    # is the one being thrown away — and session state is the only thing that
+    # survives it. This is what a stopped turn keeps instead of discarding.
+    ("partial", []),
+    # Index of the user message being edited in place, or None.
+    ("editing", None),
     ("error", None),
     ("error_detail", ""),
     ("model", ""),
@@ -324,7 +335,18 @@ def escape(text: str) -> str:
     return html.escape(text, quote=False).replace("\n", "<br>")
 
 
-def render_user(message: dict) -> None:
+def render_user(message: dict, position: int | None = None) -> None:
+    """One question in the transcript, and the way back into it.
+
+    `position` is its index in `messages`, and passing None means "not editable" —
+    the one caller that does is the turn block, which draws the question it is
+    currently answering. A pencil on that one would offer to rewrite a question while
+    the answer to it is arriving.
+    """
+    if position is not None and st.session_state.editing == position:
+        render_user_editor(position, message)
+        return
+
     badges = "".join(
         f'<div class="attachment-badge">{item.icon} '
         f"{html.escape(item.filename)}</div>"
@@ -339,6 +361,98 @@ def render_user(message: dict) -> None:
         f'{escape(message.get("text", ""))}</div></div>',
         unsafe_allow_html=True,
     )
+    if position is not None:
+        render_edit_hook(position)
+
+
+def render_edit_hook(position: int) -> None:
+    """The clipped button app.js's pencil clicks, one per question.
+
+    The same arrangement as the paperclip and the stop square: the control the reader
+    presses is drawn by app.js, in the gutter beside the bubble where there is already
+    empty space, and this is the widget that carries the click back to Python. Only a
+    `st.button` can do that, and a `st.button` here — in the flow, under every
+    question — would be a row of furniture the transcript does not have today.
+
+    So it is taken out of the flow instead, clipped to a pixel exactly as the file
+    uploader is. app.js pairs the Nth `.user-message` with the Nth of these, which
+    holds because this is rendered immediately after the bubble it belongs to and
+    both lists are read in document order.
+
+    Bare, with no `st.container` around it. There was one, and the wrapper was the bug:
+    Streamlit reuses a container's DOM node across reruns and relabels its class rather
+    than rebuilding it, so after one open-and-cancel the node carrying
+    `st-key-edit-hook-0` was the node that had been an answer — still holding the copy
+    button app.js had appended to it, because that button is not React's to remove.
+    app.js looked inside for `button` and got the copy button. Every pencil on the page
+    then copied an answer to the clipboard instead of opening the editor, silently, for
+    the rest of the session. Keyed on the widget itself, there is no wrapper to reuse.
+
+    Disabled while an answer generates, for the reason the rating buttons are: the
+    click is the rerun, so it would abandon the answer on screen. The stop button is
+    the control for that, and it is the one that says so.
+    """
+    if st.button(
+        "Edit this question",
+        key=f"edit-open-{position}",
+        disabled=st.session_state.processing,
+    ):
+        st.session_state.editing = position
+        st.rerun()
+
+
+def render_user_editor(position: int, message: dict) -> None:
+    """The question, in a box, with the answer under it still on screen.
+
+    Sending replaces this question and drops everything after it, because everything
+    after it is a reply to wording that is being withdrawn. That is destructive, and
+    it is the reason this is a two-step control rather than an editable bubble that
+    resends on blur: the reader has to press Send for the tail of the conversation to
+    go.
+
+    The attachments come with it. They belong to the question, not to the text of it,
+    and re-uploading three files to fix a typo is not an edit.
+    """
+    attachments = message.get("attachments") or []
+    with st.container(key=f"edit-box-{position}"):
+        if attachments:
+            st.caption(
+                "Still attached: " + ", ".join(item.filename for item in attachments)
+            )
+        edited = st.text_area(
+            "Edit your question",
+            value=message.get("text", ""),
+            key=f"edit-text-{position}",
+            label_visibility="collapsed",
+        )
+        columns = st.columns([1, 1, 5], gap="small")
+        with columns[0]:
+            send = st.button(
+                "Send", key=f"edit-send-{position}", use_container_width=True
+            )
+        with columns[1]:
+            cancel = st.button(
+                "Cancel", key=f"edit-cancel-{position}", use_container_width=True
+            )
+        asked = (edited or "").strip()
+        if send and len(asked) > config.MAX_PROMPT_CHARS:
+            # The same cap the composer enforces, said here because this box does not
+            # go through it. Nothing is dropped: the text stays in the box.
+            over = len(asked) - config.MAX_PROMPT_CHARS
+            st.warning(
+                f"⚠️ That question is {over:,} characters over the "
+                f"{config.MAX_PROMPT_CHARS:,}-character limit."
+            )
+            send = False
+        elif send and not asked:
+            st.warning("⚠️ A question cannot be empty.")
+            send = False
+
+    if cancel:
+        st.session_state.editing = None
+        st.rerun()
+    if send:
+        start_new_turn(asked, attachments, replacing=position)
 
 
 def citations(chunks: list) -> list[dict]:
@@ -519,10 +633,25 @@ def render_rating(position: int, message: dict) -> None:
 def render_assistant(position: int, message: dict) -> None:
     with st.container(key=f"answer-{position}"):
         with st.chat_message("assistant"):
-            st.markdown(links.fix_links(message.get("text", ""), CORPUS))
+            text = message.get("text", "")
+            if text:
+                st.markdown(links.fix_links(text, CORPUS))
+            if message.get("stopped"):
+                # Said inside the bubble, under the text it belongs to. A stopped
+                # answer that ends mid-sentence otherwise reads as a model that broke
+                # off on its own, and the difference matters: one is worth retrying
+                # and the other is the reader's own doing. It is also the only thing
+                # in the bubble when the stop landed before any text, which is what
+                # keeps that turn from rendering as nothing at all.
+                st.markdown(
+                    '<div class="stopped-note">Stopped</div>', unsafe_allow_html=True
+                )
         sources = message.get("sources", [])
         render_sources(sources, related_sections(sources))
-        render_rating(position, message)
+        # Not on a stopped answer. Rating half a sentence the reader cut off says
+        # nothing about whether the app answered the question.
+        if not message.get("stopped"):
+            render_rating(position, message)
 
 
 def _detail(exc: BaseException | None) -> str:
@@ -564,6 +693,22 @@ def clearing(stream, slot):
         yield delta
     if not cleared:
         slot.empty()
+
+
+def recording(stream):
+    """Yield deltas, and keep a copy somewhere a stopped turn can still reach.
+
+    `st.write_stream` accumulates the answer in a local, and a stop throws the run
+    holding that local away — so without this the text on screen at the moment of the
+    click is gone by the time anything can save it. Session state is what survives an
+    interrupted run, which is why the copy goes there and not into a variable.
+
+    One `append` per delta rather than a growing string: an answer arrives in a few
+    thousand fragments, and `+=` on a string re-copies the whole answer for each one.
+    """
+    for delta in stream:
+        st.session_state.partial.append(delta)
+        yield delta
 
 
 def argument(call: dict, name: str) -> str:
@@ -640,21 +785,36 @@ def may_start_turn() -> bool:
     return False
 
 
-def start_new_turn(question: str, attachments=None) -> None:
-    # The one place every turn begins — the composer and the starter cards both come
-    # through here — so it is the one place a turn can be refused. Checked before any
-    # state is touched: a refused question must leave the transcript exactly as it
-    # was, or the reader is left looking at their own question with no answer under
-    # it and nothing to click, which is the shape of a broken app rather than a busy
-    # one.
+def start_new_turn(question: str, attachments=None, replacing: int | None = None) -> None:
+    # The one place every turn begins — the composer, the starter cards and an edited
+    # question all come through here — so it is the one place a turn can be refused.
+    # Checked before any state is touched: a refused question must leave the transcript
+    # exactly as it was, or the reader is left looking at their own question with no
+    # answer under it and nothing to click, which is the shape of a broken app rather
+    # than a busy one.
+    #
+    # `replacing` is an index into `messages`: everything from there on is dropped and
+    # this question takes its place. That is what re-sending an edited question means —
+    # the answer below it, and every turn after it, was a reply to wording that no
+    # longer exists. Truncating happens AFTER the gate for the same reason the append
+    # does: a refused edit must leave the conversation intact, not delete the tail of
+    # it and then decline to replace it.
     if not may_start_turn():
         st.rerun()
         return
+
+    if replacing is not None:
+        st.session_state.messages = st.session_state.messages[:replacing]
 
     st.session_state.messages.append(
         {"role": "user", "text": question, "attachments": list(attachments or [])}
     )
     st.session_state.processing = True
+    st.session_state.editing = None
+    # Belongs to a turn that is over. An abandoned half-answer left here would be
+    # committed by the next stop as if it were this turn's.
+    st.session_state.partial = []
+    st.session_state.stop_requested = False
     st.session_state.error = None
     # Both of these belong to the turn that just ended, and a new question is where
     # they stop being true.
@@ -679,6 +839,107 @@ def start_new_turn(question: str, attachments=None) -> None:
     st.session_state.upload_refusals = {}
     st.session_state.uploader_key += 1
     st.rerun()
+
+
+# --- stopping a turn -------------------------------------------------------
+#
+# A generation could not be called off. The reader who spotted a typo in the question
+# a second after sending it had three options, and all of them were worse than
+# waiting: touch the page and the rerun restarts the whole turn from the first
+# provider call, clear the conversation and lose it, or sit through an answer to a
+# question they no longer wanted asked.
+#
+# The mechanism is Streamlit's own, used deliberately instead of fought. Any widget
+# interaction during a run aborts that run — `st.write_stream` raises at its next
+# write — and until now the abort was something this file only defended against
+# (`interrupted`, and the `disabled=` on the rating buttons). A stop is that same
+# abort, asked for on purpose, with one flag set to say so.
+#
+# The order the pieces run in is what makes it work:
+#
+#   1. `request_stop` is an `on_click` callback, so it runs BEFORE this script does
+#      on the run that follows the click. A button whose value were merely read where
+#      it is rendered would be read at the bottom of the page, long after the
+#      transcript above it had been drawn for a turn that is no longer running.
+#   2. `finish_stopped_turn` runs at the top, before anything is drawn.
+#   3. The turn block at the end sees `processing` cleared and does not start again.
+
+
+def request_stop() -> None:
+    st.session_state.stop_requested = True
+
+
+def finish_stopped_turn() -> None:
+    """Keep what arrived before the reader pressed stop, and end the turn there.
+
+    The half-written answer is kept rather than thrown away. It is what was on the
+    screen at the moment of the click — often it is the answer, and the reader
+    stopped it because they had already read enough — and deleting it would make the
+    button destructive in a way nothing about a square suggests.
+
+    A stop with nothing to keep still appends a message, empty. The transcript skips
+    an assistant message with no text, so without one the reader is left looking at
+    their own question with no reply, no error and nothing to click: the exact dead
+    end this file has fixed twice before. `stopped` is what `render_assistant` reads
+    to say so, and `history.build` drops an empty assistant turn on its own, so
+    nothing empty is ever sent upstream.
+
+    Sources are not kept. They live on the ToolRunner in the run that was abandoned,
+    and reconstructing them would mean mirroring every read into session state for a
+    Sources strip under an answer that stops mid-sentence. The citations inside the
+    text itself survive, because `links.fix_links` resolves those at render time.
+    """
+    st.session_state.stop_requested = False
+    # Not `if processing`: the click races the turn. A stop that lands after the
+    # answer has already been committed must not append a second, empty message
+    # under it.
+    if not st.session_state.processing:
+        st.session_state.partial = []
+        return
+
+    text = "".join(st.session_state.partial).strip()
+    st.session_state.partial = []
+    st.session_state.processing = False
+    # A failover in flight is off too. Without this the pending switch fires on the
+    # next run, `processing` is set again by the `finally` below, and the turn the
+    # reader just stopped starts over on a different model.
+    st.session_state.pop("failover_to", None)
+    st.session_state.switched_from = None
+    st.session_state.notice = ""
+    st.session_state.error = None
+    st.session_state.error_detail = ""
+    st.session_state.messages.append(
+        {
+            "role": "assistant",
+            "text": text,
+            "sources": [],
+            "rating": None,
+            "model": MODEL.key,
+            "stopped": True,
+        }
+    )
+    logger.info("Turn stopped by the reader after %d characters", len(text))
+
+
+if st.session_state.stop_requested:
+    finish_stopped_turn()
+
+
+def render_stop_hook() -> None:
+    """The Streamlit button app.js clicks, and the only thing that can end a turn.
+
+    Clipped to a pixel, exactly like the file uploader above it, for the same reason:
+    the control the reader actually presses is drawn in the composer by app.js, where
+    the send button was a moment ago, and this is the widget that carries the click
+    back to Python. A `st.button` is the only thing that can — nothing app.js injects
+    has a channel to this script.
+
+    Rendered before the turn block and nowhere else. That block ends in `st.rerun()`,
+    so a widget declared after it does not exist on the one run where it is needed.
+    """
+    if not st.session_state.processing:
+        return
+    st.button("Stop generating", key="stop-generation", on_click=request_stop)
 
 
 # --- composer strip --------------------------------------------------------
@@ -760,6 +1021,9 @@ def render_controls() -> None:
         ):
             st.session_state.messages = []
             st.session_state.processing = False
+            st.session_state.partial = []
+            st.session_state.stop_requested = False
+            st.session_state.editing = None
             st.session_state.attachments = []
             st.session_state.dropped_uploads = {}
             st.session_state.upload_refusals = {}
@@ -826,8 +1090,11 @@ else:
 
     for position, message in enumerate(rendered):
         if message["role"] == "user":
-            render_user(message)
-        elif message.get("text"):
+            render_user(message, position)
+        elif message.get("text") or message.get("stopped"):
+            # `or stopped`: an assistant turn with no text is normally nothing to
+            # draw, but a turn stopped before its first token is a thing that
+            # happened and the reader has to see that it did.
             render_assistant(position, message)
 
     render_notice()
@@ -1079,6 +1346,7 @@ st.markdown(
 # where the script first hears about the upload is what put them mid-page.
 render_attachments()
 render_controls()
+render_stop_hook()
 
 if prompt and prompt.strip():
     asked = prompt.strip()
@@ -1197,8 +1465,13 @@ if st.session_state.processing:
             turn = start(messages, None)
 
         for round_number in range(config.MAX_TOOL_ROUNDS + 1):
+            # Per round, not per turn. `answer.empty()` below wipes the display
+            # between rounds, so a stop must keep what is on the screen now — not
+            # this round's text appended to a previous round's, which the reader has
+            # not been able to see since the tool call that replaced it.
+            st.session_state.partial = []
             with answer.container(), st.chat_message("assistant"):
-                streamed = st.write_stream(clearing(turn.deltas(), status))
+                streamed = st.write_stream(recording(clearing(turn.deltas(), status)))
             # write_stream returns a list when chunks are not all strings.
             if isinstance(streamed, list):
                 streamed = "".join(str(part) for part in streamed)
@@ -1370,6 +1643,9 @@ if st.session_state.processing:
             st.session_state.error_detail = ""
         elif not interrupted:
             st.session_state.processing = False
+            # The answer is committed (or the failure is), so the running copy is
+            # spent. Left here it would be the text a later stop keeps.
+            st.session_state.partial = []
         # Not while interrupted: the abort in flight IS a rerun, and calling another
         # one here replaced it — which left the question on screen with no answer, no
         # error card and nothing to click, because `processing` had been cleared by a
