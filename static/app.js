@@ -1158,11 +1158,30 @@
         });
     }
 
+    // What "copy this answer" would put on the clipboard. The `Stopped` marker is not
+    // part of the answer — it is this app saying what happened to it — so it does not
+    // travel with the text, and a turn whose only content is that marker has nothing
+    // to copy at all.
+    function answerText(message) {
+        var body = message.querySelector('[data-testid="stChatMessageContent"]')
+            || message;
+        var copy = body.cloneNode(true);
+        copy.querySelectorAll('.stopped-note').forEach(function (note) {
+            note.remove();
+        });
+        return (copy.innerText || copy.textContent || '').trim();
+    }
+
     function addAnswerCopyButtons() {
         // Keyed answer containers only, so the streaming status row never gets one.
         var answers = doc.querySelectorAll('[class*="st-key-answer-"] .stChatMessage');
         answers.forEach(function (message) {
             if (message.dataset.sageCopy === 'true') return;
+            // A turn stopped before its first token is a real message — it has to be
+            // on the page, or the reader is left with their question and nothing under
+            // it — but it holds no answer. A copy button on it offers to put the empty
+            // string on the clipboard, which is a control that can only disappoint.
+            if (!answerText(message)) return;
             message.dataset.sageCopy = 'true';
             // Anchored to the keyed container, not to the message, because app.css
             // reserves the gutter there — on the message alone the prose and the code
@@ -1172,8 +1191,7 @@
             var host = message.closest('[class*="st-key-answer-"]') || message;
             host.style.setProperty('position', 'relative');
             var btn = makeCopyButton(function () {
-                var body = message.querySelector('[data-testid="stChatMessageContent"]') || message;
-                return body.innerText || body.textContent || '';
+                return answerText(message);
             }, 'Copy this answer');
             btn.style.top = '0';
             btn.style.right = '0';
