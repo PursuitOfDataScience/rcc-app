@@ -1,0 +1,17 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/ui-guard.sh\"",
+            "timeout": 30,
+            "statusMessage": "Checking the palette"
+          }
+        ]
+      }
+    ]
+  }
+}

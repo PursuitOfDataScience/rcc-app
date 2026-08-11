@@ -40,6 +40,8 @@ httpx. Outbound HTTPS works. Chromium is at
   python tools/render_check.py` — ~7 minutes for 576 renders.
 - **Anchors**: `python tools/anchor_check.py` — network-bound, so not in the suite.
   Run it after touching `slugify`, `plain_heading` or `docs_url`.
+- **Palette**: `python tools/palette_check.py` — every declared colour and token
+  against `tools/palette_baseline.json`. Milliseconds, and `pytest` runs it too.
 
 Run the first three before pushing. Each has failed CI at least once for want of
 being run.
@@ -78,6 +80,43 @@ copy button painted over the first line of every answer.
 > structurally unable to see, both survived because the only thing that could catch
 > them was believed to be unavailable. **Check before recording that a tool is
 > missing.**
+
+## Never change how the app looks unless that is what was asked for
+
+The owner reads this app every day and likes how it looks. A change to its appearance
+that nobody requested is a regression even when it is defensible in isolation, and it
+is worse than a broken layout, because a broken layout announces itself.
+
+**This is a standing rule, not a preference.** If a change you are making would alter
+a colour, a spacing token, a font, a radius, or where something sits on the page, and
+the request did not ask for that, then either do not make it or say plainly what it
+will change and why it is unavoidable. "It follows from the fix" is not consent —
+`#36` set `[theme.dark] primaryColor` to fix a genuine dark-mode contrast bug and
+repainted the composer's send button from maroon to pale pink on the way past. Nobody
+decided that. Nobody noticed for a day. The reader noticed.
+
+Three things now stand between an edit and a silent repaint, in the order they fire:
+
+1. **`.claude/hooks/ui-guard.sh`** runs the moment `static/app.css`, `static/app.js`
+   or `.streamlit/config.toml` is edited, and hands the drift straight back. This is
+   the one that arrives in time to change your mind.
+2. **`tools/palette_check.py`** holds every colour-bearing declaration, every custom
+   property, and every `[theme]` value against `tools/palette_baseline.json`. Run
+   against the two commits either side of `#36` it reports three drifts, all three of
+   them the theme change and nothing else in that large commit.
+3. **`tests/test_palette.py`** runs the same comparison under `pytest`, so CI fails on
+   an undeclared repaint without a new workflow step to forget.
+
+`python tools/palette_check.py --update` accepts a repaint, and updating the baseline
+is a deliberate act: it puts the before and after in the diff where the owner can
+disagree with it. **Do not run `--update` to make the check quiet.** If you cannot say
+in the commit message who asked for the new colour, it does not go in.
+
+What none of the three can see: layout, wording, and anything `app.js` computes at
+runtime. `render_check.py` covers geometry against its bounds and the palette check
+covers declared values, but neither knows what the owner wanted. For those, the rule
+is the whole mechanism — so when a fix seems to require moving something visible, say
+so in the reply rather than in the diff.
 
 ## The UI
 
