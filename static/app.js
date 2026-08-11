@@ -1182,6 +1182,223 @@
         });
     }
 
+    /* --- asking about a passage of an answer -------------------------------
+     *
+     * Select a sentence in an answer and a button appears under it; pressing it puts
+     * a draft in the composer quoting what was selected, with the cursor after it.
+     *
+     * A DRAFT, never a question. The reader chose a passage, not a thing to ask about
+     * it, and sending "About this part of your answer: …" on its own gets a reply
+     * asking what they wanted to know. So this fills the box and focuses it, which is
+     * the one thing a reader cannot do for themselves without retyping the passage.
+     *
+     * Ported from the same control on the owner's site (`assets/js/chat.js` in
+     * personal-website), including the two things that are not obvious there: the
+     * selection has to be kept alive through the click, which means cancelling
+     * `mousedown` rather than `click`; and the draft that was just used has to be
+     * suppressed until the selection changes, because focusing the composer moves the
+     * selection and fires `selectionchange`, which brought the bubble straight back
+     * over the passage it had just handed over.
+     */
+
+    // Below this it is a stray click, above it a select-all rather than a passage.
+    var ASK_MIN = 12, ASK_MAX = 1200;
+    // What goes in the composer. Long enough for a paragraph, short enough that the
+    // reader can still see their own question after it.
+    var ASK_QUOTE = 600;
+
+    function askBubble() {
+        var bubble = doc.getElementById('ask-selection');
+        if (bubble) return bubble;
+        bubble = injected('button');
+        bubble.id = 'ask-selection';
+        bubble.type = 'button';
+        bubble.hidden = true;
+        bubble.textContent = 'Ask about this';
+        // The selection dies on mousedown anywhere else, and reading it is the whole
+        // job — so this one is cancelled and the work happens on click.
+        bubble.addEventListener('mousedown', function (event) {
+            event.preventDefault();
+        });
+        bubble.addEventListener('click', function () {
+            var draft = bubble.dataset.draft || '';
+            bubble.hidden = true;
+            if (!draft) return;
+            var box = doc.querySelector('.stChatInput textarea');
+            if (!box) return;
+            // Appended, not assigned: a reader who had already typed half a follow-up
+            // before selecting the line it is about should not lose it.
+            var existing = box.value ? box.value.replace(/\s*$/, '') + '\n\n' : '';
+            setFieldValue(box, existing + draft);
+            box.focus();
+            try {
+                box.selectionStart = box.selectionEnd = box.value.length;
+            } catch (err) { /* not all browsers allow it on a focused textarea */ }
+            // After the focus, which moves the selection and fires selectionchange.
+            consumedAsk = draft;
+        });
+        doc.body.appendChild(bubble);
+        return bubble;
+    }
+
+    var consumedAsk = '';
+
+    // Grow a part-selected sentence out to its edges, so a drag that stopped mid-word
+    // still quotes something readable.
+    function sentenceBounds(raw, from, to) {
+        var start = 0, end = raw.length;
+        var before = raw.slice(0, from).lastIndexOf('. ');
+        if (before !== -1) start = before + 2;
+        var after = raw.slice(to).search(/[.!?](\s|$)/);
+        if (after !== -1) end = to + after + 1;
+        return [start, end];
+    }
+
+    function clipQuote(text) {
+        if (text.length <= ASK_QUOTE) return text;
+        var cut = text.slice(0, ASK_QUOTE);
+        var space = cut.lastIndexOf(' ');
+        if (space > ASK_QUOTE * 0.6) cut = cut.slice(0, space);
+        return cut.replace(/[\s,;:.]+$/, '') + '…';
+    }
+
+    // The selection, if it is inside an answer and is a passage rather than a stray.
+    //
+    // Answers only. A question is the reader's own words — they do not need a quoting
+    // control to ask about something they typed — and the status row is not text at
+    // all. `[class*="st-key-answer-"]` is the same hook the copy button uses, which
+    // means a streaming answer has no container yet and is left alone: quoting half a
+    // sentence that is still being written is not a passage.
+    function selectionInAnswer() {
+        var selection = view.getSelection && view.getSelection();
+        if (!selection || selection.isCollapsed || !selection.rangeCount) return null;
+        var text = selection.toString().replace(/\s+/g, ' ').trim();
+        if (text.length < ASK_MIN || text.length > ASK_MAX) return null;
+        var range = selection.getRangeAt(0);
+        var node = range.commonAncestorContainer;
+        var element = node.nodeType === 1 ? node : node.parentNode;
+        if (!element || !element.closest) return null;
+        if (!element.closest('[class*="st-key-answer-"] .stChatMessage')) return null;
+
+        // Widened against the block the selection STARTS in. A drag across two
+        // paragraphs has the answer itself as its common ancestor, and the answer's
+        // textContent is every paragraph run together.
+        var from = range.startContainer;
+        var edge = from.nodeType === 1 ? from : from.parentNode;
+        var block = edge && edge.closest
+            ? edge.closest('p, li, blockquote, td, th, h1, h2, h3, h4, h5, h6')
+            : null;
+        var quote = text;
+        if (block) {
+            var raw = (block.textContent || '').replace(/\s+/g, ' ').trim();
+            var at = raw.indexOf(text);
+            if (at !== -1) {
+                var bounds = sentenceBounds(raw, at, at + text.length);
+                var grown = raw.slice(bounds[0], bounds[1]).trim();
+                if (grown.length > quote.length && grown.length <= ASK_MAX) {
+                    quote = grown;
+                }
+            }
+        }
+        return {text: clipQuote(quote), rect: range.getBoundingClientRect()};
+    }
+
+    function draftFor(found) {
+        return found ? 'About this part of your answer: "' + found.text + '" — ' : '';
+    }
+
+    function placeAskBubble() {
+        var bubble = askBubble();
+        var found = selectionInAnswer();
+        // Never over a turn in flight: the composer is blocked while one runs, so a
+        // draft would land in a box that cannot be sent.
+        if (!found || isProcessing()) {
+            bubble.hidden = true;
+            return;
+        }
+        var draft = draftFor(found);
+        if (draft === consumedAsk) {
+            bubble.hidden = true;
+            return;
+        }
+        bubble.dataset.draft = draft;
+        bubble.hidden = false;
+        // Fixed, in viewport coordinates, so it does not need to know which of this
+        // page's four candidate scroll containers is the one that moves — a question
+        // the rest of this file spends sixty lines on. It hides on any scroll instead.
+        var width = bubble.offsetWidth || 120;
+        var left = found.rect.left + found.rect.width / 2 - width / 2;
+        bubble.style.top = Math.min(
+            found.rect.bottom + 8, view.innerHeight - 48
+        ) + 'px';
+        bubble.style.left = Math.max(
+            8, Math.min(left, view.innerWidth - width - 8)
+        ) + 'px';
+    }
+
+    // Registered once per COPY of this script, and the distinction is the whole
+    // comment.
+    //
+    // Streamlit rebuilds the component iframe on every rerun, so these listeners die
+    // with their realm — while anything parked on the parent window survives. Guard on
+    // a parent-side flag and the next copy sees "already wired" when no listener
+    // exists anywhere, which is how this shipped broken the first time and is the
+    // failure `addPasteHandler` above documents. Tear down and re-register on every
+    // pass instead and the opposite happens: `sync()` runs on every DOM mutation, and
+    // positioning the bubble IS a mutation, so the pass triggered by showing the
+    // bubble removed it again —
+    // `placeAskBubble` ran, no bubble ever survived to be clicked.
+    //
+    // So both halves are needed and they are different halves. `askWired` is a plain
+    // closure variable: it dies with this realm, so a fresh copy registers exactly
+    // once and this copy never re-registers. `view.__sageAskOff` is the handle that
+    // outlives the realm, so the fresh copy can unhook the dead copy's listeners.
+    // The bubble is cleared at the same moment, because its click handler is a
+    // closure in the dead realm and a bubble that cannot answer a click is worse than
+    // no bubble.
+    var askWired = false;
+
+    function addSelectionAsk() {
+        if (askWired) return;
+        askWired = true;
+        if (view.__sageAskOff) {
+            try { view.__sageAskOff(); } catch (err) { /* realm already gone */ }
+        }
+        var stale = doc.getElementById('ask-selection');
+        if (stale) stale.remove();
+
+        // On mouseup rather than on selectionchange: showing it mid-drag makes the
+        // button chase the cursor across the answer.
+        var onUp = function () { view.setTimeout(placeAskBubble, 10); };
+        var onKey = function (event) {
+            if (event.shiftKey || event.key === 'Shift') {
+                view.setTimeout(placeAskBubble, 10);
+            }
+        };
+        var onChange = function () {
+            var found = selectionInAnswer();
+            if (!found || draftFor(found) !== consumedAsk) consumedAsk = '';
+            var bubble = doc.getElementById('ask-selection');
+            // Only ever hides here, for the reason above.
+            if (bubble && !bubble.hidden && !found) bubble.hidden = true;
+        };
+        var onScroll = function () {
+            var bubble = doc.getElementById('ask-selection');
+            if (bubble && !bubble.hidden) bubble.hidden = true;
+        };
+        doc.addEventListener('mouseup', onUp);
+        doc.addEventListener('keyup', onKey);
+        doc.addEventListener('selectionchange', onChange);
+        doc.addEventListener('scroll', onScroll, true);
+
+        view.__sageAskOff = function () {
+            doc.removeEventListener('mouseup', onUp);
+            doc.removeEventListener('keyup', onKey);
+            doc.removeEventListener('selectionchange', onChange);
+            doc.removeEventListener('scroll', onScroll, true);
+        };
+    }
+
     /* --- the send button, while an answer is generating -------------------- */
 
     // Both halves of the swap live here: the arrow goes and the square arrives, in one
@@ -1357,6 +1574,7 @@
         addCodeCopyButtons();
         addAnswerCopyButtons();
         addEditButtons();
+        addSelectionAsk();
         markGenerating();
         // `scroller()` first, because it is the one that asks which element actually
         // scrolls instead of assuming. This line named stMain outright while

@@ -63,6 +63,20 @@ def _with_images(content: str, attachments: list[Attachment]) -> str | list[dict
     ]
 
 
+# Said out loud, for the same reason `_CUT_NOTE` below is.
+#
+# A reader who stops an answer leaves a turn that ends mid-word — "Request a GPU with
+# --gres=gpu:1 and sub" — and the next turn ships that upstream as a complete
+# assistant message. The model cannot tell a sentence it abandoned from one the
+# transport lost, and what comes back is an apology, or the same answer started again,
+# or a reply to a question the fragment implies. Naming it costs eleven words and
+# turns an unexplained truncation into a fact about the conversation.
+#
+# Only on a stop. A normally-finished answer says nothing extra, because there is
+# nothing to explain.
+_STOPPED_NOTE = "\n\n[The reader stopped this answer here, so it is unfinished.]"
+
+
 def build(messages: list[dict], system: str, *, vision: bool = False) -> list[dict]:
     """Turn session messages into chat messages within the char budget."""
     attachment_positions = [
@@ -84,7 +98,9 @@ def build(messages: list[dict], system: str, *, vision: bool = False) -> list[di
                     content = _with_images(content, attachments)
                 built.append({"role": "user", "content": content})
         elif role == "assistant" and text:
-            built.append({"role": "assistant", "content": text})
+            built.append({"role": "assistant", "content": text + (
+                _STOPPED_NOTE if message.get("stopped") else ""
+            )})
 
     return [{"role": "system", "content": system}, *_trim(built)]
 

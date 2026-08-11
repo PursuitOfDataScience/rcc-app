@@ -72,31 +72,33 @@ OPENCODE_MODELS = _env_list(
         "mimo-v2.5-free",
         "nemotron-3-ultra-free",
         "north-mini-code-free",
+        "hy3-free",
         "laguna-s-2.1-free",
         "ling-3.0-tiny-free",
         "longcat-2.0-free",
         # Both are served and both answer; they were missing from this list, so they
         # were only ever reachable through discovery and sorted to the end of the
-        # picker. Added in the order they already appeared in, so today's picker is
-        # unchanged and the fallback list is no longer a shorter lineup than the real
-        # one.
+        # picker.
         "ling-3.0-flash-free",
         "nemotron-3.5-lightning-free",
     ),
 )
-# `hy3-free` was on the list above and is gone: Zen answers a request for it with
-# `401 {"message": "Model hy3-free is not supported"}`. It has not been in the served
-# catalogue for as long as anyone has looked, so it only ever reached the picker on a
-# run where discovery itself failed — and then it was a row that could not answer.
+# `hy3-free` was taken off this list and is back on it, which is the whole argument
+# for the rule below rather than a list. It answered `401 {"message": "Model hy3-free
+# is not supported"}` and was not in the served catalogue at all; two days later Zen
+# serves it again and it answers. Nothing about this deployment changed.
 #
-# Nothing else has been removed, and deliberately. Two models in the live lineup are
-# broken today (`north-mini-code-free` returns 401 from Zen's own upstream, and
-# `ling-3.0-tiny-free` returns 503 "Endpoint is unavailable"), and a hardcoded
-# blocklist for those is exactly what the comment below argues against: a free tier's
-# lineup moves, an endpoint that is down this week is back the next, and a list that
-# quietly outlives the outage it was written for is worse than no list. What the app
-# does with them is already right — a 401 fails over, a 503 offers Try again and a
-# different model.
+# So nothing is removed for being broken today. `north-mini-code-free` returns 401
+# from Zen's own upstream and `ling-3.0-tiny-free` returns 503 "Endpoint is
+# unavailable", and both stay: a free tier's lineup moves, an endpoint that is down
+# this week is back the next, and a blocklist that quietly outlives the outage it was
+# written for is worse than no blocklist. What the app does with them is already
+# right — a 401 fails over, a 503 offers Try again and a different model.
+#
+# Ordering is a separate job from membership. `providers.OpenAICompatProvider._order`
+# keeps a family's models adjacent in the picker whatever order they appear in here,
+# so this list only has to say which model a fresh session starts on and which one a
+# failover reaches for.
 
 # Zen serves paid models from the same endpoint as the free ones — the discovery call
 # came back with the whole Claude and GPT lineup, none of which this deployment has a

@@ -1064,16 +1064,71 @@ body[data-sage-dropping] .stChatInput > div {
  *
  * The margins are `.user-message`'s, to the pixel, because this replaces one: a box
  * with different spacing would jump the page under the reader at the moment they
- * click the pencil, and jump it back when they cancel. */
+ * click the pencil, and jump it back when they cancel.
+ *
+ * And so is the side. This was a full-bleed box at the left margin under a column of
+ * right-aligned questions — reported as the layout being "somewhat problematic", and
+ * it is: every question in this app lives on the right, so editing one threw it
+ * across the page and back again. `margin-left: auto` with the bubble's own maximum
+ * width puts the box over the bubble it replaces, which is what "in place" means. */
 [class*="st-key-edit-box-"] {
-    margin: clamp(2.5rem, 5vw, 3.5rem) 0 clamp(3.5rem, 4.6vw, 4rem) 0 !important;
+    margin: clamp(2.5rem, 5vw, 3.5rem) 0 clamp(3.5rem, 4.6vw, 4rem) auto !important;
+    max-width: var(--user-bubble-max) !important;
+    padding-right: clamp(0.25rem, 2vw, 1rem) !important;
 }
 
+/* Rounded like the bubble, and outlined in the brand rather than filled with it: a
+ * box the reader is typing into has to keep the text-on-page contrast the composer
+ * has, and white-on-maroon is not that. The radius is the bubble's, minus the tail —
+ * a text box that keeps the speech-bubble corner reads as decoration rather than as
+ * a field. */
 [class*="st-key-edit-box-"] textarea {
     font-size: clamp(0.88rem, 2vw, 0.95rem) !important;
     line-height: 1.5 !important;
     border-radius: var(--radius-md) !important;
+    border: 2px solid var(--input-border) !important;
 }
+
+[class*="st-key-edit-box-"] textarea:focus {
+    border-color: var(--brand-line) !important;
+    box-shadow: none !important;
+}
+
+/* The button that appears under a passage of an answer the reader has selected.
+ *
+ * `fixed`, and positioned by app.js in viewport coordinates: this page has four
+ * plausible scroll containers and the rest of app.js spends sixty lines working out
+ * which one is real, which is a question a floating control should not have to ask.
+ * It hides on any scroll instead.
+ *
+ * The z-index clears the composer, which is `fixed` at 101–102 and is exactly what a
+ * selection near the bottom of the page would otherwise slide under. Filled in the
+ * brand for the same reason the send button is: it is the affirmative action on the
+ * page at the moment it appears, and white on #800000 reads at 12.6:1 in both
+ * themes. */
+#ask-selection {
+    position: fixed;
+    z-index: 300;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 14px;
+    border: none;
+    border-radius: 999px;
+    background: var(--brand);
+    color: #ffffff;
+    font-size: 0.8rem;
+    font-weight: 600;
+    line-height: 1;
+    white-space: nowrap;
+    cursor: pointer;
+    box-shadow: var(--shadow-md);
+    transition: filter var(--transition);
+}
+
+#ask-selection:hover { filter: brightness(1.15); }
+
+#ask-selection[hidden] { display: none; }
 
 /* Where an answer the reader cut short says so.
  *

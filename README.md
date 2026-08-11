@@ -6,11 +6,12 @@ Built with [Streamlit](https://streamlit.io/), answered by [Mistral](https://mis
 
 ## Features
 
-- 🔀 **Model picker** — the button in the corner of the composer switches model mid-conversation. A spent quota fails over on its own.
+- 🔀 **Model picker** — the button in the corner of the composer switches model mid-conversation, with a maker's models kept together in the list. A spent quota fails over on its own.
 - 🔎 **Grounded answers** — no invented commands, partitions or quotas.
 - 🔗 **Real citations** — a Sources strip deep-links to the exact section, plus Related sections from the same page.
 - 💬 **Streaming replies** with memory for follow-ups.
-- ⏹ **Stop and edit** — the send arrow becomes a square while an answer streams; pressing it ends the turn and keeps what had arrived. Hovering a question you already sent reveals a pencil: fix the wording and send it again, and the answer to the old wording — and every turn after it — is replaced.
+- ⏹ **Stop and edit** — the send arrow becomes a square while an answer streams; pressing it ends the turn and keeps what had arrived. Hovering a question you already sent reveals a pencil: fix the wording and send it again (⌘/Ctrl+Enter works), and the answer to the old wording — and every turn after it — is replaced.
+- 💡 **Ask about a passage** — select any part of an answer and a button offers to ask about it, quoting the passage into the composer for you to finish.
 - 📎 **Attachments** — several at once, from the paperclip, dragged onto the page from anywhere, or pasted straight from the clipboard. A PDF, a screenshot, or anything that reads as text: a job script, the `.out` it wrote, a config, source. Judged on the bytes, not the extension.
 - 🗂️ **Self-updating docs** — one command refreshes the bundled guide.
 - ♿ **Light and dark themes**, keyboard focus, reduced motion, print stylesheet.
