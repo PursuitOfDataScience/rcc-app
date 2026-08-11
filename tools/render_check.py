@@ -1359,6 +1359,245 @@ function marker() {
 """
 
 
+# Dragging a file onto the composer, which is behaviour over a sequence rather than a
+# layout — so, like the follow-up scroll above, it is driven rather than measured.
+#
+# It is here because it was reported as "no reaction at all, and the feature isn't
+# available", and every check in this file agreed with the app: Streamlit's uploader has
+# a dropzone of its own, app.css clips that widget to one pixel, and this replica did
+# not render the widget at all. Nothing anywhere could see that the only place on the
+# page that would accept a file was invisible and a pixel wide.
+#
+# Two things are asserted that are easy to get wrong in opposite directions. The drop
+# must be CANCELLED — the browser's default action for a file dropped on a document is
+# to navigate to it, so a miss below the composer replaced the conversation with a
+# picture of the file — and a drag carrying *text* must NOT be, or dragging a selected
+# sentence into the box stops inserting it.
+DROP_DRIVER = r"""
+<script>
+var out = {steps: [], changes: 0};
+
+function tick(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+
+function uploader() {
+  return document.querySelector('[data-testid="stFileUploader"] input[type=file]');
+}
+
+// Streamlit learns about a programmatic file list from the `change` event app.js
+// dispatches, so counting them is how this tells "the file arrived" from "the file
+// arrived twice" — which is what a drop handler registered twice per rebuild does.
+var input = uploader();
+if (input) input.addEventListener('change', function () { out.changes += 1; });
+
+function transfer(files, text) {
+  var dt = new DataTransfer();
+  files.forEach(function (name) {
+    dt.items.add(new File(['sbatch job.sh\n'], name, {type: 'text/plain'}));
+  });
+  if (text) dt.items.add(text, 'text/plain');
+  return dt;
+}
+
+// Dispatched rather than performed: headless Chrome cannot start an OS drag, so the
+// events are made by hand. `types` is what app.js reads to decide a drag carries files,
+// and a real DataTransfer populates it from what was added — so this models the one
+// property the code under test depends on rather than asserting it.
+function fire(kind, selector, dt) {
+  var at = document.querySelector(selector);
+  var event = new DragEvent(kind, {bubbles: true, cancelable: true, dataTransfer: dt});
+  at.dispatchEvent(event);
+  return event.defaultPrevented;
+}
+
+function look(label, prevented) {
+  var box = document.querySelector('.stChatInput > div');
+  var style = box ? getComputedStyle(box) : null;
+  var files = uploader();
+  out.steps.push({
+    at: label,
+    lit: document.body.dataset.sageDropping === 'true',
+    borderStyle: style ? style.borderStyle : null,
+    borderColor: style ? style.borderColor : null,
+    files: files ? [].slice.call(files.files).map(function (f) { return f.name; }) : null,
+    changes: out.changes,
+    prevented: prevented === undefined ? null : prevented
+  });
+}
+
+(async function () {
+  await tick(400);                       // app.js boots
+  look('idle');
+
+  // Streamlit re-runs the component on every rerun, so the page ends up with a second
+  // copy of app.js and the first copy's listeners still attached to a document that
+  // outlived it. A drop then lands on both, and the second handler seeds its transfer
+  // from a list the first has already added to — one file, attached twice.
+  if (REBUILD) {
+    var again = document.createElement('script');
+    again.textContent = document.querySelector('#sage-js').textContent;
+    document.body.appendChild(again);
+    await tick(300);
+  }
+
+  var carried = transfer(['notes.txt', 'run.sh']);
+  fire('dragenter', '.stChatInput textarea', carried);
+  var overPrevented = fire('dragover', '.stChatInput textarea', carried);
+  await tick(60);
+  look('file held over the composer', overPrevented);
+
+  // Out of the window without letting go. `dragleave` with nothing on the other side of
+  // it is the only one of the many a moving drag fires that means the drag has left.
+  fire('dragleave', '.stChatInput textarea', carried);
+  await tick(60);
+  look('dragged back out');
+
+  fire('dragenter', '.stChatInput textarea', carried);
+  fire('dragover', '.stChatInput textarea', carried);
+  var dropPrevented = fire('drop', '.stChatInput textarea', carried);
+  await tick(200);
+  look('dropped on the composer', dropPrevented);
+
+  // Anywhere else on the page, which is where a drop aimed at a 56px-tall box at the
+  // bottom of a window actually lands. It has to attach, and above all it must not be
+  // left to the browser to navigate to.
+  var missed = transfer(['missed.log']);
+  fire('dragenter', '[data-testid="stMainBlockContainer"]', missed);
+  fire('dragover', '[data-testid="stMainBlockContainer"]', missed);
+  var awayPrevented = fire('drop', '[data-testid="stMainBlockContainer"]', missed);
+  await tick(200);
+  look('dropped past the composer', awayPrevented);
+
+  // A drag carrying a selected sentence. Cancelling this one would break dragging text
+  // into the box, which is a thing the browser does for nothing and nobody asked to lose.
+  var words = transfer([], 'some selected words');
+  var textPrevented = fire('dragover', '.stChatInput textarea', words);
+  await tick(60);
+  look('text dragged over the composer', textPrevented);
+
+  // A drag that ends without a `dragleave` — cancelled with Escape, or let go over
+  // another window. Nothing reports it, so the composer has to time out of the lit
+  // state on its own or stay lit for the rest of the session.
+  fire('dragenter', '.stChatInput textarea', transfer(['abandoned.txt']));
+  fire('dragover', '.stChatInput textarea', transfer(['abandoned.txt']));
+  await tick(60);
+  look('drag abandoned');
+  await tick(1200);
+  look('after the stale timer');
+
+  document.title = JSON.stringify(out);
+})();
+</script>
+"""
+
+
+def check_drop(width, height) -> tuple[list[str], int]:
+    """Drag files onto the composer and watch what the page does about it.
+
+    Rendered twice: once on a page whose app.js ran the way this replica loads it, and
+    once with a second copy of the script appended, which is what Streamlit does to
+    `components.html` on every rerun. The second is the one that catches a handler
+    registered twice — one dropped file, attached twice, or two change events for it.
+    """
+    problems: list[str] = []
+    body = CHAT_MARKER + "".join(answer_block(i) for i in range(2))
+    checked = 0
+    for label, rebuild in (("fresh", "false"), ("rebuilt", "true")):
+        name = f"drop-{label}-{width}"
+        html = page(body, "dark", scroll=False,
+                    driver=DROP_DRIVER.replace("REBUILD", rebuild))
+        data = render(name, html, width, height, budget=20000)
+        if data is None or not data.get("steps"):
+            problems.append(f"{name}: the drag sequence reported nothing")
+            continue
+        checked += 1
+        steps = {step["at"]: step for step in data["steps"]}
+
+        idle = steps.get("idle", {})
+        if idle.get("files") is None:
+            problems.append(
+                f"{name}: no file input on the page at all, so nothing here can say "
+                "whether a dropped file reaches Streamlit"
+            )
+            continue
+
+        over = steps.get("file held over the composer", {})
+        if not over.get("lit"):
+            problems.append(
+                f"{name}: a file held over the composer changed nothing about it — a box "
+                "that answers a drag with nothing reads as one that does not take files"
+            )
+        if over.get("borderStyle") == idle.get("borderStyle") and (
+                over.get("borderColor") == idle.get("borderColor")):
+            problems.append(
+                f"{name}: the composer is drawn identically "
+                f"({idle.get('borderStyle')} {idle.get('borderColor')}) whether or not a "
+                "file is being held over it"
+            )
+        if not over.get("prevented"):
+            problems.append(
+                f"{name}: the dragover was not cancelled, so the browser will never "
+                "deliver a drop to this page however accurately it is aimed"
+            )
+
+        out = steps.get("dragged back out", {})
+        if out.get("lit"):
+            problems.append(
+                f"{name}: the composer stayed lit after the drag left the window"
+            )
+
+        dropped = steps.get("dropped on the composer", {})
+        if dropped.get("files") != ["notes.txt", "run.sh"]:
+            problems.append(
+                f"{name}: two files dropped on the composer reached Streamlit's uploader "
+                f"as {dropped.get('files')!r}"
+            )
+        if dropped.get("changes") != 1:
+            problems.append(
+                f"{name}: one drop dispatched {dropped.get('changes')} change events — "
+                "Streamlit reads the file list on that event, so anything but one means "
+                "the file was offered twice or not at all"
+            )
+        if not dropped.get("prevented"):
+            problems.append(
+                f"{name}: the drop was left to the browser, which navigates to the "
+                "dropped file — the conversation is gone and the file never arrives"
+            )
+        if dropped.get("lit"):
+            problems.append(f"{name}: the composer stayed lit after the drop")
+
+        away = steps.get("dropped past the composer", {})
+        if away.get("files") != ["notes.txt", "run.sh", "missed.log"]:
+            problems.append(
+                f"{name}: a file dropped away from the composer reached the uploader as "
+                f"{away.get('files')!r} — a drop that misses a 56px box must still land"
+            )
+        if not away.get("prevented"):
+            problems.append(
+                f"{name}: a drop past the composer was left to the browser, which "
+                "replaces the conversation with the file that was dropped"
+            )
+
+        text = steps.get("text dragged over the composer", {})
+        if text.get("prevented"):
+            problems.append(
+                f"{name}: a drag carrying text was cancelled, which stops a selected "
+                "sentence being dragged into the box"
+            )
+        if text.get("lit"):
+            problems.append(
+                f"{name}: the composer offered to attach a drag that carried no file"
+            )
+
+        abandoned = steps.get("drag abandoned", {})
+        stale = steps.get("after the stale timer", {})
+        if abandoned.get("lit") and stale.get("lit"):
+            problems.append(
+                f"{name}: a drag abandoned without a dragleave left the composer lit "
+                "with nothing able to clear it"
+            )
+    return problems, checked
+
+
 def page(body: str, scheme: str, scroll: bool, generating: bool = False,
          pin: bool = False, script: bool = True, sticky: bool = False,
          doc_scroll: bool = False, typed: bool = False, landing: bool = False,
@@ -1423,6 +1662,19 @@ def page(body: str, scheme: str, scroll: bool, generating: bool = False,
               '</textarea>')
            + (f'<div class="chat-actions">{send}</div>' if column_input else send)
            + "</div></div></div></div>")
+    # Streamlit's file uploader, where app.py renders it: in the main block rather than
+    # in the bar, and clipped to a single pixel by app.css because uploads are driven
+    # from the paperclip. Absent from this replica for as long as it existed, and its
+    # absence is why nothing here could see that a file dragged onto the composer had
+    # nowhere on the page to land. `st-key-uploader-0` is the container key app.py gives
+    # it, and the dropzone inside is Streamlit's own — the one whose 1px is the reason
+    # app.js has to take the drop itself.
+    uploader = ('<div data-testid="stElementContainer" '
+                'class="element-container st-key-uploader-0">'
+                '<div data-testid="stFileUploader" class="stFileUploader">'
+                '<section data-testid="stFileUploaderDropzone" role="presentation">'
+                '<input type="file" multiple>'
+                "</section></div></div>")
     return f"""<!doctype html><html><head><meta charset="utf-8">
 <style>{base_css(scheme)}</style><style>{theme_css(scheme)}</style></head>
 <body class="{'bar-sticky' if sticky else 'bar-fixed'}{' doc-scroll' if doc_scroll else ''}{' input-column' if column_input else ''}">
@@ -1430,13 +1682,13 @@ def page(body: str, scheme: str, scroll: bool, generating: bool = False,
 <div data-testid="stAppViewContainer">
   <div data-testid="stMain" class="main">
     <div data-testid="stMainBlockContainer" class="block-container">
-      <div data-testid="stVerticalBlock">{body}</div></div>
+      <div data-testid="stVerticalBlock">{body}{uploader}</div></div>
     {bar if sticky else ''}</div>
   {'' if sticky else bar}</div>
 {'<div id="processing-signal" hidden></div>' if generating else ''}
 {portal}
 <script>window.__scrollBottom = {str(scroll).lower()}; window.__pinLast = {str(pin).lower()};</script>
-{'<script>' + JS + '</script>' if script else ''}
+{'<script id="sage-js">' + JS + '</script>' if script else ''}
 {driver or MEASURE.replace("HOSTBAR", str(HOST_BAR)).replace("TOPGAP", str(TOP_GAP)).replace("SELECTORS", json.dumps(SELECTORS)).replace("SEND_SELECTOR", json.dumps(SEND)).replace("PICKER_SELECTOR", json.dumps(PICKER))}
 </body></html>"""
 
@@ -2294,9 +2546,14 @@ def main() -> int:
     )
     failures.extend(follow_problems)
 
+    # One width, because what this drives is behaviour rather than a breakpoint: the
+    # composer takes a dropped file the same way at every size.
+    drop_problems, drop_checked = check_drop(1263, 900)
+    failures.extend(drop_problems)
+
     print(f"\nChecked {checked} renders across {len(SCENARIOS)} screens, "
           f"2 themes, {len(widths)} widths, plus {follow_checked} follow-up scroll "
-          f"sequences.")
+          f"sequences and {drop_checked} file-drag sequences.")
     if failures:
         print(f"\n{len(failures)} problem(s):")
         for problem in dict.fromkeys(failures):

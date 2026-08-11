@@ -612,17 +612,49 @@
         input.insertBefore(btn, input.firstChild);
     }
 
+    /* --- files from outside the page -------------------------------------- */
+
+    // Streamlit's file uploader is the only door into app.py's attachment pipeline,
+    // and app.css clips that widget to 1×1px because uploads are driven from the
+    // paperclip in the composer instead. So every other way of offering a file — the
+    // paperclip's own `click()`, a pasted screenshot, a drag from the desktop — has to
+    // end at this one `<input>`.
+    function uploaderInput() {
+        return doc.querySelector('[data-testid="stFileUploader"] input[type="file"]');
+    }
+
+    // Put files on that input as if the widget's own dropzone had taken them.
+    //
+    // The transfer has to go through `DataTransfer`, because `input.files` is not
+    // otherwise assignable, and the `change` has to be dispatched by hand: React
+    // listens for the native event at the document root, so a bubbling one reaches
+    // its handler, but nothing dispatches it when the list is set programmatically.
+    //
+    // `view.DataTransfer` rather than this iframe's, because the files come from the
+    // parent realm and the widget reading them lives there too.
+    function handToUploader(files) {
+        var target = uploaderInput();
+        if (!target) return false;
+        var transfer = new view.DataTransfer();
+        // Seeded with what the widget already holds, because assigning `input.files`
+        // REPLACES the list. Without this, offering one file silently dropped every
+        // file picked before it from the widget's own record — the chips stayed, so
+        // nothing looked wrong.
+        for (var f = 0; f < (target.files || []).length; f++) {
+            transfer.items.add(target.files[f]);
+        }
+        for (var i = 0; i < files.length; i++) transfer.items.add(files[i]);
+        target.files = transfer.files;
+        target.dispatchEvent(new view.Event('change', {bubbles: true}));
+        return true;
+    }
+
     // Paste a screenshot into the box and have it attach.
     //
     // Before this, nothing happened at all: the clipboard's image never reached
     // Streamlit's uploader, because the only thing wired to that uploader was the
     // paperclip's `click()`. A paste is the same file arriving by a different door,
     // so it is handed to the same input.
-    //
-    // The transfer has to go through `DataTransfer`, because `input.files` is not
-    // otherwise assignable, and the `change` has to be dispatched by hand: React
-    // listens for the native event at the document root, so a bubbling one reaches
-    // its handler, but nothing dispatches it when the list is set programmatically.
     // Distinguishes one paste from the next. Two screenshots of the same size would
     // otherwise be the same (name, size) pair and count as one attachment.
     var pasteCount = 1;
@@ -665,19 +697,9 @@
             // The uploader is looked up BEFORE the paste is cancelled. The other order
             // meant that when the input was missing — mid-rebuild, or the widget key
             // being swapped — the paste was swallowed and nothing happened at all.
-            var target = doc.querySelector(
-                '[data-testid="stFileUploader"] input[type="file"]');
-            if (!target) return;
+            if (!uploaderInput()) return;
             event.preventDefault();
-            var transfer = new view.DataTransfer();
-            // Seeded with what the widget already holds, because assigning
-            // `input.files` REPLACES the list. Without this, pasting a screenshot
-            // silently dropped every file picked before it from the widget's own
-            // record — the chips stayed, so nothing looked wrong.
-            for (var f = 0; f < (target.files || []).length; f++) {
-                transfer.items.add(target.files[f]);
-            }
-            files.forEach(function (file, index) {
+            var stamped = files.map(function (file, index) {
                 // A clipboard image arrives as "image.png" or with no name at all, so
                 // several pastes would collide on the (name, size) pair app.py
                 // identifies a file by — two screenshots of the same size would be one
@@ -687,15 +709,147 @@
                 var name = file.name
                     ? file.name.replace(/(\.[^.]*)?$/, '-' + stamp + '$1')
                     : 'pasted-image-' + stamp + '.png';
-                transfer.items.add(new view.File([file], name, {type: file.type}));
+                return new view.File([file], name, {type: file.type});
             });
             pasteCount += 1;
-            target.files = transfer.files;
-            target.dispatchEvent(new view.Event('change', {bubbles: true}));
+            handToUploader(stamped);
         };
         input.addEventListener('paste', onPaste);
         view.__sagePasteOff = function () {
             input.removeEventListener('paste', onPaste);
+        };
+    }
+
+    // Drag a file onto the page and have it attach.
+    //
+    // Reported as "no reaction at all", and it was both halves of that: nothing while
+    // the file was over the box, and nothing attached when it was let go. Streamlit's
+    // uploader does have a dropzone of its own — `stFileUploaderDropzone`, inside the
+    // widget — and app.css clips that widget to a single pixel, because uploads here
+    // are driven from the paperclip. So the only place on the page that would take a
+    // dropped file was one pixel wide and invisible.
+    //
+    // These listeners are on the document rather than on the composer, which is the
+    // part worth stating: the browser's default action for a file dropped on a page is
+    // to NAVIGATE to that file, so a drop that missed the 56px-tall box at the bottom
+    // of the window did not merely fail — it replaced the conversation with a picture
+    // of the file. Cancelling that everywhere is the same line that lets the drop
+    // land, so the page takes a file dropped anywhere and aims all of them at the
+    // composer. The composer is what lights up, because that is where the file is
+    // going and where its chip will appear.
+
+    // Does this drag carry files? `types`, not `items` or `files`: for a drag from
+    // outside the page, browsers withhold the file list until the drop, so a
+    // `dragover` that asked how many files there were would answer none every time and
+    // never light the composer up. 'Files' is in `types` for the whole drag.
+    function dragHasFiles(transfer) {
+        if (!transfer) return false;
+        var types = transfer.types ? [].slice.call(transfer.types) : [];
+        return types.indexOf('Files') !== -1;
+    }
+
+    // Cleared on the drop and when the drag leaves the window — plus a timer, because
+    // neither of those is guaranteed to arrive. A drag cancelled with Escape, or
+    // released over another window, fires no `dragleave` here, and the composer would
+    // stay lit for the rest of the session. `dragover` repeats several times a second
+    // while a drag is over the page, so one that has gone quiet means the drag is over.
+    // The handle lives on the parent window, not in this closure, for the same reason
+    // the removers do: a rerun lands a second copy of this script on the page, and a
+    // timer only the previous copy can see is one that fires against a drag the current
+    // copy is in the middle of — the box goes dark mid-drag and stays that way until the
+    // next `dragover` puts it back.
+    function dropTarget(on) {
+        if (view.__sageDragTimer) view.clearTimeout(view.__sageDragTimer);
+        view.__sageDragTimer = 0;
+        if (!on) {
+            delete doc.body.dataset.sageDropping;
+            return;
+        }
+        doc.body.dataset.sageDropping = 'true';
+        view.__sageDragTimer = view.setTimeout(function () { dropTarget(false); }, 900);
+    }
+
+    // A drop that lands while Streamlit is rebuilding finds no uploader for a frame or
+    // two — and mid-answer the DOM mutates once per token, which is exactly when
+    // someone drops a file to ask about it next. `File` objects stay valid after the
+    // handler returns, so the drop waits for the widget instead of being lost to the
+    // same silence this whole section is here to fix. Parked on the parent's timer,
+    // which outlives the rebuild that took the widget away.
+    function handWhenReady(files, tries) {
+        if (handToUploader(files) || tries <= 0) return;
+        view.setTimeout(function () { handWhenReady(files, tries - 1); }, 100);
+    }
+
+    // Re-registered every pass with the previous registration torn down first, and the
+    // remover parked on the parent window — for the reason spelled out above
+    // `addPasteHandler`. A `data-` marker on the parent's DOM would survive the
+    // rebuild that kills the listener, so dropping a file would work once per page
+    // load and then silently never again.
+    function addDropHandler() {
+        if (view.__sageDropOff) {
+            try { view.__sageDropOff(); } catch (err) { /* realm already gone */ }
+        }
+        // Streamlit's own dropzone is still in there, one pixel of it. A drop that
+        // manages to hit it is React's to handle, and taking it here as well would
+        // attach the file twice.
+        var streamlits = function (event) {
+            var node = event.target;
+            return !!(node && node.closest
+                && node.closest('[data-testid="stFileUploader"]'));
+        };
+        var onOver = function (event) {
+            if (!dragHasFiles(event.dataTransfer) || streamlits(event)) return;
+            // Required on every `dragover`, or no `drop` is ever delivered.
+            // `dropEffect` is what makes the cursor a copy arrow rather than the
+            // "not allowed" circle while the file is over the page.
+            event.preventDefault();
+            try { event.dataTransfer.dropEffect = 'copy'; } catch (err) { /* frozen */ }
+            dropTarget(true);
+        };
+        var onLeave = function (event) {
+            // `dragleave` fires at every element boundary the pointer crosses, so a
+            // drag moving *across* the page reports leaving it several times a second.
+            // The one with nothing on the other side is the pointer leaving the window.
+            if (event.relatedTarget) return;
+            dropTarget(false);
+        };
+        var onDrop = function (event) {
+            if (!dragHasFiles(event.dataTransfer) || streamlits(event)) return;
+            // First and unconditionally: every line below can decline the file, and the
+            // default action for one that gets away is to navigate away from the app.
+            event.preventDefault();
+            dropTarget(false);
+            var files = [].slice.call(event.dataTransfer.files || []);
+            // A dropped folder arrives as a `File` the browser cannot read, and handing
+            // one to the uploader fails inside a widget nobody can see. `items` is
+            // neutered the moment this handler returns, so the question is asked now
+            // and matched by name — `items` also holds non-file entries, so its indices
+            // are not `files`' indices.
+            var items = event.dataTransfer.items || [];
+            var folders = {};
+            for (var i = 0; i < items.length; i++) {
+                var entry = items[i].webkitGetAsEntry && items[i].webkitGetAsEntry();
+                if (entry && entry.isDirectory) folders[entry.name] = true;
+            }
+            files = files.filter(function (file) { return !folders[file.name]; });
+            if (!files.length) return;
+            handWhenReady(files, 20);
+            // What anyone does next is type the question about the file they dropped.
+            var area = doc.querySelector('textarea[data-testid="stChatInputTextArea"]');
+            if (area) area.focus();
+        };
+        var onEnd = function () { dropTarget(false); };
+        doc.addEventListener('dragenter', onOver);
+        doc.addEventListener('dragover', onOver);
+        doc.addEventListener('dragleave', onLeave);
+        doc.addEventListener('dragend', onEnd);
+        doc.addEventListener('drop', onDrop);
+        view.__sageDropOff = function () {
+            doc.removeEventListener('dragenter', onOver);
+            doc.removeEventListener('dragover', onOver);
+            doc.removeEventListener('dragleave', onLeave);
+            doc.removeEventListener('dragend', onEnd);
+            doc.removeEventListener('drop', onDrop);
         };
     }
 
@@ -1069,6 +1223,7 @@
         measureChrome();
         addPaperclip();
         addPasteHandler();
+        addDropHandler();
         addPromptHistory();
         resetComposerOnClear();
         closePickerOnPick();
