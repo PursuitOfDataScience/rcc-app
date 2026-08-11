@@ -23,9 +23,39 @@
     var COPY_SVG = '<svg aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>';
     var CHECK_SVG = '<svg aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>';
     var CLIP_SVG = '<svg aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>';
+    // Filled, and rounded rather than a hard square: it is the same glyph every other
+    // chat app stops a generation with, and a reader should not have to learn it here.
+    var STOP_SVG = '<svg aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="3"></rect></svg>';
+    var PENCIL_SVG = '<svg aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg>';
 
     function isProcessing() {
         return !!doc.getElementById('processing-signal');
+    }
+
+    // Every button this script creates carries this, and every lookup for a Streamlit
+    // widget excludes it.
+    //
+    // Not defensive tidiness — this is the fix for a bug that shipped nothing but
+    // silence. Streamlit reuses a container's DOM node across reruns and swaps its
+    // class rather than rebuilding it, and the buttons injected here are not React's
+    // to remove, so a node that had been an answer could arrive wearing a widget's key
+    // with a copy button still inside it. `container.querySelector('button')` then
+    // returned that copy button, and clicking a pencil copied an answer to the
+    // clipboard instead of opening the editor — no error, nothing in a log, and no way
+    // for a reader to tell the control from a broken one.
+    var INJECTED = 'data-sage-injected';
+    var NOT_INJECTED = 'button:not([' + INJECTED + '])';
+
+    // Streamlit's own button inside a keyed element container, or null.
+    function widgetButton(selector) {
+        var host = doc.querySelector(selector);
+        return host ? host.querySelector(NOT_INJECTED) : null;
+    }
+
+    function injected(tag) {
+        var el = doc.createElement(tag);
+        el.setAttribute(INJECTED, 'true');
+        return el;
     }
 
     /* --- scrolling ------------------------------------------------------- */
@@ -591,7 +621,7 @@
         var input = doc.querySelector('[data-testid="stChatInput"]');
         if (!input || doc.getElementById('paperclip-btn')) return;
 
-        var btn = doc.createElement('button');
+        var btn = injected('button');
         btn.id = 'paperclip-btn';
         btn.type = 'button';
         btn.innerHTML = CLIP_SVG;
@@ -1090,7 +1120,7 @@
     }
 
     function makeCopyButton(getText, label) {
-        var btn = doc.createElement('button');
+        var btn = injected('button');
         btn.type = 'button';
         btn.className = 'rcc-copy-btn';
         btn.innerHTML = COPY_SVG;
@@ -1152,29 +1182,55 @@
         });
     }
 
-    /* --- send blocking during generation -------------------------------- */
+    /* --- the send button, while an answer is generating -------------------- */
 
-    var BLOCK_STYLE_ID = 'sage-send-block';
-
-    function blockSendWhileProcessing() {
+    // Both halves of the swap live here: the arrow goes and the square arrives, in one
+    // pass, so there is no frame with two buttons in one corner or none in it.
+    //
+    // This used to build a <style> element and inject it into the parent's <head> to
+    // grey the arrow out. The rule is in app.css now, keyed off the attribute set
+    // below — a stylesheet is where the reader of this app looks to find out what the
+    // composer is painted with, and `tools/palette_check.py` reads that file and not
+    // this one, so a rule hidden here was a rule outside the guard.
+    //
+    // The square is a button this script owns rather than the arrow re-dressed.
+    // Streamlit's button belongs to React, which rebuilds it whenever it likes and
+    // would take any innerHTML written into it back out again — and a click handler
+    // added to it would still be the *send* handler underneath.
+    function markGenerating() {
         var container = doc.querySelector('[data-testid="stChatInput"]');
-        if (!container) return;
-        var existing = doc.getElementById(BLOCK_STYLE_ID);
-        var send = container.querySelector('button');
+        var busy = isProcessing();
 
-        if (isProcessing()) {
-            if (!existing) {
-                var style = doc.createElement('style');
-                style.id = BLOCK_STYLE_ID;
-                style.textContent = '[data-testid="stChatInput"] button {' +
-                    'background: var(--control-bg) !important; opacity: 0.5 !important;' +
-                    'pointer-events: none !important; cursor: not-allowed !important; }';
-                doc.head.appendChild(style);
+        if (busy) doc.body.dataset.sageGenerating = 'true';
+        else delete doc.body.dataset.sageGenerating;
+
+        if (container) {
+            var send = container.querySelector('button:not(#paperclip-btn):not(#stop-btn)');
+            if (send) {
+                if (busy) send.setAttribute('aria-disabled', 'true');
+                else send.removeAttribute('aria-disabled');
             }
-            if (send) send.setAttribute('aria-disabled', 'true');
-        } else {
-            if (existing) existing.remove();
-            if (send) send.removeAttribute('aria-disabled');
+            var stop = doc.getElementById('stop-btn');
+            if (busy && !stop) {
+                stop = injected('button');
+                stop.id = 'stop-btn';
+                stop.type = 'button';
+                stop.innerHTML = STOP_SVG;
+                stop.title = 'Stop generating';
+                stop.setAttribute('aria-label', 'Stop generating');
+                stop.addEventListener('click', function (event) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    // The widget app.py clips to a pixel. Clicking it is what tells
+                    // Python a stop was asked for; the click is also what aborts the
+                    // run that is streaming, which is the same event doing both jobs.
+                    var hook = widgetButton('.st-key-stop-generation');
+                    if (hook) hook.click();
+                });
+                container.appendChild(stop);
+            } else if (!busy && stop) {
+                stop.remove();
+            }
         }
 
         var area = doc.querySelector('textarea[data-testid="stChatInputTextArea"]');
@@ -1187,6 +1243,77 @@
                 }
             }, true);
         }
+    }
+
+    /* --- reopening a question -------------------------------------------- */
+
+    // A pencil in the gutter beside each question, wired to the clipped Streamlit
+    // button app.py renders directly after that question.
+    //
+    // Paired by ordinal rather than by walking the DOM from the bubble outwards. The
+    // walk would have to name `[data-testid="stElementContainer"]` to find the
+    // sibling, and that is an unversioned Streamlit test id — the one kind of rule
+    // this repo has written down not to write, because it fails silently the day it
+    // changes. Two lists read in document order cannot: app.py renders exactly one
+    // hook per question, immediately after it, so the Nth of each belong together.
+    // If the two lists ever disagree, nothing is injected at all rather than every
+    // pencil editing the wrong question.
+    function editHooks() {
+        return doc.querySelectorAll('[class*="st-key-edit-open-"]');
+    }
+
+    function addEditButtons() {
+        var bubbles = doc.querySelectorAll('.user-message');
+        var hooks = editHooks();
+        // One question may legitimately have no hook, and only one: the one being
+        // answered right now, which app.py draws from the turn block without one
+        // because a question cannot be rewritten while its answer is arriving. Any
+        // other disagreement means these two lists are not what this function thinks
+        // they are, and pairing them anyway would put a pencil that edits question 2
+        // beside question 3. Nothing is injected in that case.
+        if (!hooks.length) return;
+        if (bubbles.length < hooks.length || bubbles.length - hooks.length > 1) return;
+
+        for (var index = 0; index < hooks.length; index++) {
+            var row = bubbles[index];
+            var hook = hooks[index].querySelector(NOT_INJECTED);
+            if (!row || !hook) continue;
+            var btn = row.querySelector('.user-edit-btn');
+            if (!btn) {
+                btn = injected('button');
+                btn.type = 'button';
+                btn.className = 'user-edit-btn';
+                btn.innerHTML = PENCIL_SVG;
+                btn.title = 'Edit this question and ask it again';
+                btn.setAttribute('aria-label', btn.title);
+                btn.addEventListener('click', onEditClick);
+                // Before the bubble, so the flex row puts it in the empty space to
+                // the left of it rather than past the right-hand edge of the page.
+                row.insertBefore(btn, row.firstChild);
+            }
+            // The POSITION, not the node. Streamlit rebuilds a rerun's widgets while
+            // leaving the markdown block this pencil lives in alone, so a handler
+            // holding the hook it was created with ends up holding a detached button
+            // and `click()` on that does nothing at all: the pencil opened the editor
+            // once per page load and was silently inert for the rest of the session.
+            // Re-read at click time instead, which cannot go stale.
+            btn.dataset.sageEditIndex = index;
+            // Refreshed every pass, not set once: app.py disables these hooks while
+            // an answer generates — a click would be a rerun, which abandons the
+            // answer on screen — and app.css hides a disabled pencil. Without this
+            // the reader is offered a control that silently does nothing for as long
+            // as the turn runs.
+            btn.disabled = hook.disabled;
+        }
+    }
+
+    function onEditClick(event) {
+        event.preventDefault();
+        event.stopPropagation();
+        var index = parseInt(this.dataset.sageEditIndex, 10);
+        var hooks = editHooks();
+        var hook = hooks[index] && hooks[index].querySelector(NOT_INJECTED);
+        if (hook) hook.click();
     }
 
     /* --- type to focus --------------------------------------------------- */
@@ -1229,7 +1356,8 @@
         closePickerOnPick();
         addCodeCopyButtons();
         addAnswerCopyButtons();
-        blockSendWhileProcessing();
+        addEditButtons();
+        markGenerating();
         // `scroller()` first, because it is the one that asks which element actually
         // scrolls instead of assuming. This line named stMain outright while
         // `autoScroll()` two lines down asked `scroller()` — two functions in one file

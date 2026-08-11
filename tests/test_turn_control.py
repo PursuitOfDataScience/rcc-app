@@ -1,0 +1,346 @@
+"""Stopping a generation, and asking a sent question again with the wording fixed.
+
+Both are about a turn the reader takes back, which is the one thing this app could
+not do: until now the only way out of a generation was to wait for it, and the only
+way to fix a typo in a question was to type the whole thing again underneath the
+answer to the wrong one.
+
+What a stub can and cannot show. The mechanism itself is Streamlit's — a click during
+a run aborts that run — and nothing here can abort anything, so these tests cover the
+state machine either side of the abort: the flag the click sets, what a stopped turn
+keeps, that the turn does not start again, and what an edited question does to the
+conversation under it. That the click reaches Python at all, that the square lands in
+the send button's corner and that the half-written answer survives the abort are
+checked in the running app instead — the abort is a thing that happens *in time*, and
+`tools/render_check.py` renders settled states.
+"""
+
+import pytest
+from test_app_smoke import ScriptedProvider, event, run_app, tool_call  # noqa: F401
+
+import stub_streamlit
+
+
+@pytest.fixture(autouse=True)
+def _clean_modules():
+    yield
+    import sys
+
+    for name in ("app", "streamlit", "streamlit.components", "streamlit.components.v1"):
+        sys.modules.pop(name, None)
+
+
+def conversation(*turns):
+    """`(question, answer)` pairs as the transcript app.py holds them."""
+    messages = []
+    for question, answer in turns:
+        messages.append({"role": "user", "text": question, "attachments": []})
+        if answer is not None:
+            messages.append(
+                {"role": "assistant", "text": answer, "sources": [], "rating": None}
+            )
+    return messages
+
+
+class TestStopping:
+    def session(self, partial=("Your /home quota is ",)):
+        return {
+            "messages": conversation(("what is my quota", None)),
+            "processing": True,
+            "stop_requested": True,
+            "partial": list(partial),
+        }
+
+    def test_a_stop_ends_the_turn_without_calling_the_provider(self, monkeypatch):
+        client = ScriptedProvider([])
+        stub, _module = run_app(monkeypatch, client=client, session=self.session())
+
+        # The heart of it. `processing` stays True across the abort, so a run that
+        # did not clear it here would re-enter the turn block and pay for the whole
+        # question again — which is what touching the page mid-answer used to do.
+        assert client.calls == 0
+        assert stub.session_state["processing"] is False
+        assert stub.session_state["stop_requested"] is False
+
+    def test_the_half_written_answer_is_kept(self, monkeypatch):
+        stub, _module = run_app(
+            monkeypatch,
+            client=ScriptedProvider([]),
+            session=self.session(partial=["Your /home quota is ", "30 G"]),
+        )
+        answer = stub.session_state["messages"][-1]
+        assert answer["role"] == "assistant"
+        assert answer["text"] == "Your /home quota is 30 G"
+        assert answer["stopped"] is True
+
+    def test_a_stop_before_the_first_token_still_leaves_something_on_screen(
+        self, monkeypatch
+    ):
+        """The transcript skips an assistant message with no text, so without a
+        message here the reader is left with their own question, no reply, no error
+        and nothing to click."""
+        stub, _module = run_app(
+            monkeypatch, client=ScriptedProvider([]), session=self.session(partial=[])
+        )
+        answer = stub.session_state["messages"][-1]
+        assert answer["text"] == ""
+        assert answer["stopped"] is True
+        assert any("Stopped" in html for html in stub.markdown_html)
+
+    def test_a_stopped_turn_is_not_an_error(self, monkeypatch):
+        stub, _module = run_app(
+            monkeypatch, client=ScriptedProvider([]), session=self.session()
+        )
+        assert stub.session_state["error"] is None
+        assert stub.session_state["notice"] == ""
+
+    def test_a_pending_failover_is_called_off_too(self, monkeypatch):
+        """Left set, the switch fires on the next run and the turn the reader just
+        stopped starts over on a different model."""
+        session = self.session()
+        session["failover_to"] = "opencode:other"
+        session["switched_from"] = ("mistral-small-latest", "quota")
+        stub, _module = run_app(
+            monkeypatch, client=ScriptedProvider([]), session=session, opencode=True
+        )
+        assert "failover_to" not in stub.session_state
+        assert stub.session_state["processing"] is False
+
+    def test_a_stop_that_lands_after_the_answer_adds_nothing(self, monkeypatch):
+        """The click races the turn. A second, empty message under a finished answer
+        is worse than a click that did nothing."""
+        session = {
+            "messages": conversation(("what is my quota", "30 GB.")),
+            "processing": False,
+            "stop_requested": True,
+            "partial": ["stale"],
+        }
+        stub, _module = run_app(
+            monkeypatch, client=ScriptedProvider([]), session=session
+        )
+        assert len(stub.session_state["messages"]) == 2
+        assert stub.session_state["messages"][-1]["text"] == "30 GB."
+        assert stub.session_state["partial"] == []
+
+    def test_the_stop_widget_exists_only_while_a_turn_runs(self, monkeypatch):
+        client = ScriptedProvider([[event("done")]])
+        stub, _module = run_app(
+            monkeypatch,
+            client=client,
+            session={
+                "messages": conversation(("what is my quota", None)),
+                "processing": True,
+            },
+        )
+        assert "stop-generation" in stub.callbacks
+
+        stub2, _module2 = run_app(
+            monkeypatch,
+            client=ScriptedProvider([]),
+            session={"messages": conversation(("what is my quota", "30 GB."))},
+        )
+        assert "stop-generation" not in stub2.callbacks
+
+    def test_the_stop_button_is_a_callback_not_a_return_value(self, monkeypatch):
+        """`on_click` runs before the script; a return value is read at the bottom of
+        the page, long after the transcript above it has been drawn for a turn that is
+        no longer running."""
+        stub, _module = run_app(
+            monkeypatch,
+            client=ScriptedProvider([[event("done")]]),
+            session={
+                "messages": conversation(("what is my quota", None)),
+                "processing": True,
+            },
+        )
+        stub.session_state["stop_requested"] = False
+        stub.callbacks["stop-generation"]()
+        assert stub.session_state["stop_requested"] is True
+
+    def test_a_finished_turn_leaves_no_running_copy_behind(self, monkeypatch):
+        stub, _module = run_app(
+            monkeypatch,
+            client=ScriptedProvider([[event("30 GB.")]]),
+            session={
+                "messages": conversation(("what is my quota", None)),
+                "processing": True,
+            },
+        )
+        assert stub.session_state["partial"] == []
+
+
+class TestEditingAQuestion:
+    TWO_TURNS = [
+        ("what is my quota", "30 GB."),
+        ("how do I raise it", "Ask the Help Desk."),
+    ]
+
+    def test_every_settled_question_offers_a_way_back_in(self, monkeypatch):
+        stub, _module = run_app(
+            monkeypatch,
+            client=ScriptedProvider([]),
+            session={"messages": conversation(*self.TWO_TURNS)},
+        )
+        assert "edit-open-0" in stub.button_labels
+        assert "edit-open-2" in stub.button_labels
+
+    def test_no_way_back_into_the_question_being_answered(self, monkeypatch):
+        """A pencil on that one offers to rewrite a question while its answer
+        arrives, and the click would abandon the answer on the way."""
+        stub, _module = run_app(
+            monkeypatch,
+            client=ScriptedProvider([[event("30 GB.")]]),
+            session={
+                "messages": conversation(("what is my quota", None)),
+                "processing": True,
+            },
+        )
+        assert "edit-open-0" not in stub.button_labels
+
+    def test_the_others_are_inert_while_an_answer_generates(self, monkeypatch):
+        stub, _module = run_app(
+            monkeypatch,
+            client=ScriptedProvider([[event("Ask the Help Desk.")]]),
+            session={
+                "messages": conversation(
+                    ("what is my quota", "30 GB."), ("how do I raise it", None)
+                ),
+                "processing": True,
+            },
+        )
+        assert stub.disabled["edit-open-0"] is True
+
+    def test_clicking_it_opens_the_editor_on_that_question(self, monkeypatch):
+        stub, _module = run_app(
+            monkeypatch,
+            client=ScriptedProvider([]),
+            session={"messages": conversation(*self.TWO_TURNS)},
+            buttons={"edit-open-2": True},
+        )
+        assert stub.session_state["editing"] == 2
+
+    def test_the_editor_opens_holding_the_question(self, monkeypatch):
+        stub, _module = run_app(
+            monkeypatch,
+            client=ScriptedProvider([]),
+            session={"messages": conversation(*self.TWO_TURNS), "editing": 0},
+        )
+        assert stub.text_area_values["edit-text-0"] == "what is my quota"
+
+    def test_sending_replaces_the_question_and_drops_what_followed(self, monkeypatch):
+        """Everything after it was a reply to wording that no longer exists."""
+        client = ScriptedProvider([[event("Ask about your allocation.")]])
+        stub, _module = run_app(
+            monkeypatch,
+            client=client,
+            session={"messages": conversation(*self.TWO_TURNS), "editing": 0},
+            buttons={"edit-send-0": True},
+            text_areas={"edit-text-0": "what is my SU balance"},
+        )
+        messages = stub.session_state["messages"]
+        assert [item["text"] for item in messages if item["role"] == "user"] == [
+            "what is my SU balance"
+        ]
+        assert stub.session_state["processing"] is True
+        assert stub.session_state["editing"] is None
+
+    def test_cancelling_changes_nothing(self, monkeypatch):
+        stub, _module = run_app(
+            monkeypatch,
+            client=ScriptedProvider([]),
+            session={"messages": conversation(*self.TWO_TURNS), "editing": 0},
+            buttons={"edit-cancel-0": True},
+            text_areas={"edit-text-0": "something else entirely"},
+        )
+        assert stub.session_state["editing"] is None
+        assert [
+            item["text"] for item in stub.session_state["messages"]
+        ] == ["what is my quota", "30 GB.", "how do I raise it", "Ask the Help Desk."]
+
+    def test_an_empty_question_is_refused_rather_than_sent(self, monkeypatch):
+        stub, _module = run_app(
+            monkeypatch,
+            client=ScriptedProvider([]),
+            session={"messages": conversation(*self.TWO_TURNS), "editing": 0},
+            buttons={"edit-send-0": True},
+            text_areas={"edit-text-0": "   "},
+        )
+        assert stub.session_state["processing"] is False
+        assert any("cannot be empty" in warning for warning in stub.warnings)
+
+    def test_an_over_long_question_is_refused_with_the_text_intact(self, monkeypatch):
+        from sage import config  # noqa: PLC0415
+
+        stub, _module = run_app(
+            monkeypatch,
+            client=ScriptedProvider([]),
+            session={"messages": conversation(*self.TWO_TURNS), "editing": 0},
+            buttons={"edit-send-0": True},
+            text_areas={"edit-text-0": "x" * (config.MAX_PROMPT_CHARS + 5)},
+        )
+        assert stub.session_state["processing"] is False
+        assert any("over the" in warning for warning in stub.warnings)
+        assert len(stub.session_state["messages"]) == 4
+
+    def test_a_resend_goes_through_the_same_gate_as_a_new_question(self, monkeypatch):
+        """It costs the same one-to-five provider calls. The retry button skipped this
+        gate once and a spent budget went on being spent, one turn per click."""
+        from sage import limits  # noqa: PLC0415
+
+        monkeypatch.setattr(
+            limits.Limiter,
+            "check",
+            lambda *_a, **_k: limits.Verdict(
+                allowed=False, message="Too many questions. Wait a bit."
+            ),
+        )
+        stub, _module = run_app(
+            monkeypatch,
+            client=ScriptedProvider([]),
+            session={"messages": conversation(*self.TWO_TURNS), "editing": 0},
+            buttons={"edit-send-0": True},
+            text_areas={"edit-text-0": "what is my SU balance"},
+        )
+        # Refused, and the conversation is untouched: a refused edit that had already
+        # deleted the tail would be the worst of both.
+        assert stub.session_state["processing"] is False
+        assert len(stub.session_state["messages"]) == 4
+        assert "Too many questions" in stub.session_state["notice"]
+
+    def test_the_attachments_come_with_the_question(self, monkeypatch):
+        held = [_Attachment("run.log")]
+        messages = conversation(("look at this", "It failed."))
+        messages[0]["attachments"] = held
+        stub, _module = run_app(
+            monkeypatch,
+            client=ScriptedProvider([[event("It ran out of memory.")]]),
+            session={"messages": messages, "editing": 0},
+            buttons={"edit-send-0": True},
+            text_areas={"edit-text-0": "why did this fail"},
+        )
+        resent = stub.session_state["messages"][0]
+        assert resent["text"] == "why did this fail"
+        assert [item.filename for item in resent["attachments"]] == ["run.log"]
+
+
+class _Attachment:
+    """The parts of `files.Attachment` this file touches."""
+
+    def __init__(self, filename):
+        self.filename = filename
+        self.icon = "📄"
+        self.kind = "text"
+        self.size = 10
+        self.key = (filename, 10, "abc")
+        self.text = "boom"
+        self.data = b""
+        self.summary = ""
+        self.truncated = False
+
+
+def test_the_stub_models_a_callback_and_a_return_value_as_exclusive():
+    """Guard on the stub itself: a button with `on_click` never also returns True,
+    which is what stops a test from passing for the wrong reason."""
+    stub = stub_streamlit.StubStreamlit(buttons={"k": True})
+    assert stub.button("x", key="k", on_click=lambda: None) is False
+    assert stub.button("x", key="k") is True

@@ -61,7 +61,8 @@ class Slot:
 
 
 class StubStreamlit(ModuleType):
-    def __init__(self, chat_input=None, buttons=None, upload=None, selections=None):
+    def __init__(self, chat_input=None, buttons=None, upload=None, selections=None,
+                 text_areas=None):
         super().__init__("streamlit")
         self.session_state = SessionState()
         self.events: list[tuple[str, object]] = []
@@ -86,6 +87,14 @@ class StubStreamlit(ModuleType):
         self._buttons = buttons or {}
         self._upload = upload
         self._selections = selections or {}
+        # What a keyed `st.text_area` hands back, so a test can type into the
+        # in-place question editor. Unkeyed, or a key nobody scripted, returns the
+        # `value=` the app passed — which is the un-edited question.
+        self._text_areas = text_areas or {}
+        self.text_area_values: dict[str, object] = {}
+        # `on_click=` handlers, by key, so a test can prove one was wired up and
+        # then run it the way Streamlit does — before the next script run.
+        self.callbacks: dict[str, object] = {}
         self.secrets = SimpleNamespace(get=lambda _key, default="": default)
         # `st.user` exists on every Streamlit the requirements allow (>=1.42), and
         # on an app with no `[auth]` configured it is present with `is_logged_in`
@@ -156,7 +165,8 @@ class StubStreamlit(ModuleType):
         return "".join(parts)
 
     # --- widgets ----------------------------------------------------------
-    def button(self, label, key=None, help=None, disabled=False, **_kwargs):  # noqa: A002
+    def button(self, label, key=None, help=None, disabled=False,  # noqa: A002
+               on_click=None, **_kwargs):
         self.events.append(("button", key or label))
         self.button_labels[key or label] = label
         if help:
@@ -166,7 +176,23 @@ class StubStreamlit(ModuleType):
         self.disabled[key or label] = bool(disabled)
         if disabled:
             return False
-        return bool(self._buttons.get(key, False))
+        clicked = bool(self._buttons.get(key, False))
+        # `on_click` runs BEFORE the script on the run after the click, not here —
+        # a callback that fired at the point the widget is declared would be no
+        # different from reading the return value, and the stop button depends on the
+        # difference. So it is recorded, and a test that wants the callback's effect
+        # sets the state it would have set. What this DOES model is that a callback
+        # and a truthy return never both drive the same button.
+        if on_click is not None:
+            self.callbacks[key or label] = on_click
+            return False
+        return clicked
+
+    def text_area(self, label, value="", key=None, **_kwargs):
+        self.events.append(("text_area", key or label))
+        typed = self._text_areas.get(key, value)
+        self.text_area_values[key or label] = typed
+        return typed
 
     def file_uploader(self, label, key=None, **kwargs):
         self.events.append(("file_uploader", key))
