@@ -5,6 +5,10 @@
     "theme.light :: primaryColor": "#800000"
   },
   "static/app.css": {
+    "#ask-selection :: background": "var(--brand)",
+    "#ask-selection :: border": "none",
+    "#ask-selection :: box-shadow": "var(--shadow-md)",
+    "#ask-selection :: color": "#ffffff",
     "#paperclip-btn :: background": "transparent",
     "#paperclip-btn :: border": "none",
     "#paperclip-btn :: color": "var(--icon)",
@@ -182,6 +186,9 @@
     "@media print :: .user-bubble :: color": "#000 !important",
     "@supports (background-clip: text) or (-webkit-background-clip: text) :: .status-text :: -webkit-text-fill-color": "transparent",
     "@supports (background-clip: text) or (-webkit-background-clip: text) :: .status-text :: background": "linear-gradient(90deg, var(--status-dim) 0%, var(--status-dim) 38%, var(--status-lit) 50%, var(--status-dim) 62%, var(--status-dim) 100%)",
+    "[class*=\"st-key-edit-box-\"] textarea :: border": "2px solid var(--input-border) !important",
+    "[class*=\"st-key-edit-box-\"] textarea:focus :: border-color": "var(--brand-line) !important",
+    "[class*=\"st-key-edit-box-\"] textarea:focus :: box-shadow": "none !important",
     "[class*=\"st-key-example-card-\"] button :: background": "var(--card-bg) !important",
     "[class*=\"st-key-example-card-\"] button :: border": "1px solid var(--card-border) !important",
     "[class*=\"st-key-example-card-\"] button :: box-shadow": "var(--shadow-md) !important",

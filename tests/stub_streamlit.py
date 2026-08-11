@@ -95,6 +95,9 @@ class StubStreamlit(ModuleType):
         # `on_click=` handlers, by key, so a test can prove one was wired up and
         # then run it the way Streamlit does — before the next script run.
         self.callbacks: dict[str, object] = {}
+        # The form currently being built, so `form_submit_button` can name itself the
+        # way Streamlit does.
+        self._form: str | None = None
         self.secrets = SimpleNamespace(get=lambda _key, default="": default)
         # `st.user` exists on every Streamlit the requirements allow (>=1.42), and
         # on an app with no `[auth]` configured it is present with `is_logged_in`
@@ -128,6 +131,26 @@ class StubStreamlit(ModuleType):
     def popover(self, label, **_kwargs):
         self.events.append(("popover", label))
         return _noop_context()
+
+    @contextmanager
+    def form(self, key=None, **_kwargs):
+        """A form, and the key its submit buttons are named after.
+
+        Streamlit derives a submit button's widget key from the form's:
+        `FormSubmitter-{form key}-{label}`. Modelled rather than invented, because a
+        test that drove a key Streamlit does not use would pass against a button the
+        app never renders.
+        """
+        self.events.append(("form", key))
+        previous = self._form
+        self._form = key
+        try:
+            yield None
+        finally:
+            self._form = previous
+
+    def form_submit_button(self, label="Submit", **kwargs):
+        return self.button(label, key=f"FormSubmitter-{self._form}-{label}", **kwargs)
 
     def expander(self, label, **_kwargs):
         return _noop_context()

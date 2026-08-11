@@ -122,11 +122,18 @@ class TestStopping:
         assert stub.session_state["messages"][-1]["text"] == "30 GB."
         assert stub.session_state["partial"] == []
 
-    def test_the_stop_widget_exists_only_while_a_turn_runs(self, monkeypatch):
-        client = ScriptedProvider([[event("done")]])
+    def test_the_stop_widget_is_rendered_on_every_run(self, monkeypatch):
+        """Including runs with nothing to stop.
+
+        It was conditional, which tied a widget's lifetime to a turn's: Streamlit
+        forgets a widget the moment a run does not re-create it, and a forgotten
+        trigger is the shape that makes a later turn end as `Stopped` without anyone
+        pressing anything. Rendering it always removes the window; `app.js` is what
+        decides whether a square is drawn, and it reads `#processing-signal`.
+        """
         stub, _module = run_app(
             monkeypatch,
-            client=client,
+            client=ScriptedProvider([[event("done")]]),
             session={
                 "messages": conversation(("what is my quota", None)),
                 "processing": True,
@@ -139,7 +146,23 @@ class TestStopping:
             client=ScriptedProvider([]),
             session={"messages": conversation(("what is my quota", "30 GB."))},
         )
-        assert "stop-generation" not in stub2.callbacks
+        assert "stop-generation" in stub2.callbacks
+
+    def test_a_stop_with_no_turn_running_does_nothing(self, monkeypatch):
+        """Which is what makes an always-present button safe."""
+        stub, _module = run_app(
+            monkeypatch,
+            client=ScriptedProvider([]),
+            session={
+                "messages": conversation(("what is my quota", "30 GB.")),
+                "processing": False,
+                "stop_requested": True,
+            },
+        )
+        assert [item["text"] for item in stub.session_state["messages"]] == [
+            "what is my quota", "30 GB."
+        ]
+        assert stub.session_state["stop_requested"] is False
 
     def test_the_stop_button_is_a_callback_not_a_return_value(self, monkeypatch):
         """`on_click` runs before the script; a return value is read at the bottom of
@@ -169,11 +192,63 @@ class TestStopping:
         assert stub.session_state["partial"] == []
 
 
+class TestWhatAStoppedAnswerTellsTheNextTurn:
+    """A stopped answer ends mid-word, and the next turn ships it upstream."""
+
+    def build(self, **flags):
+        from sage import history  # noqa: PLC0415
+
+        return history.build(
+            [
+                {"role": "user", "text": "how do I request a GPU", "attachments": []},
+                {"role": "assistant", "text": "Use --gres=gpu:1 and sub", **flags},
+                {"role": "user", "text": "go on", "attachments": []},
+            ],
+            "SYSTEM",
+        )
+
+    def test_a_stopped_answer_says_it_was_cut_off(self):
+        answer = self.build(stopped=True)[2]["content"]
+        assert answer.startswith("Use --gres=gpu:1 and sub")
+        assert "stopped this answer here" in answer
+
+    def test_a_finished_answer_says_nothing_extra(self):
+        assert self.build()[2]["content"] == "Use --gres=gpu:1 and sub"
+
+    def test_a_stop_with_no_text_is_not_sent_at_all(self):
+        from sage import history  # noqa: PLC0415
+
+        built = history.build(
+            [
+                {"role": "user", "text": "how do I request a GPU", "attachments": []},
+                {"role": "assistant", "text": "", "stopped": True},
+            ],
+            "SYSTEM",
+        )
+        assert [item["role"] for item in built] == ["system", "user"]
+
+
 class TestEditingAQuestion:
     TWO_TURNS = [
         ("what is my quota", "30 GB."),
         ("how do I raise it", "Ask the Help Desk."),
     ]
+    # The editor's widgets are keyed on `edit_session`, a counter bumped every time
+    # the pencil is pressed, and Streamlit names a form's submit button
+    # `FormSubmitter-{form key}-{label}`. Both are modelled rather than guessed: a
+    # test driving a key the app does not render would pass against nothing.
+    SESSION = 7
+    TEXT = f"edit-text-{SESSION}"
+    SEND = f"FormSubmitter-edit-form-{SESSION}-Send"
+    CANCEL = f"FormSubmitter-edit-form-{SESSION}-Cancel"
+
+    def open_on(self, position, **extra):
+        return {
+            "messages": conversation(*self.TWO_TURNS),
+            "editing": position,
+            "edit_session": self.SESSION,
+            **extra,
+        }
 
     def test_every_settled_question_offers_a_way_back_in(self, monkeypatch):
         stub, _module = run_app(
@@ -223,9 +298,9 @@ class TestEditingAQuestion:
         stub, _module = run_app(
             monkeypatch,
             client=ScriptedProvider([]),
-            session={"messages": conversation(*self.TWO_TURNS), "editing": 0},
+            session=self.open_on(0),
         )
-        assert stub.text_area_values["edit-text-0"] == "what is my quota"
+        assert stub.text_area_values[self.TEXT] == "what is my quota"
 
     def test_sending_replaces_the_question_and_drops_what_followed(self, monkeypatch):
         """Everything after it was a reply to wording that no longer exists."""
@@ -233,9 +308,9 @@ class TestEditingAQuestion:
         stub, _module = run_app(
             monkeypatch,
             client=client,
-            session={"messages": conversation(*self.TWO_TURNS), "editing": 0},
-            buttons={"edit-send-0": True},
-            text_areas={"edit-text-0": "what is my SU balance"},
+            session=self.open_on(0),
+            buttons={self.SEND: True},
+            text_areas={self.TEXT: "what is my SU balance"},
         )
         messages = stub.session_state["messages"]
         assert [item["text"] for item in messages if item["role"] == "user"] == [
@@ -248,9 +323,9 @@ class TestEditingAQuestion:
         stub, _module = run_app(
             monkeypatch,
             client=ScriptedProvider([]),
-            session={"messages": conversation(*self.TWO_TURNS), "editing": 0},
-            buttons={"edit-cancel-0": True},
-            text_areas={"edit-text-0": "something else entirely"},
+            session=self.open_on(0),
+            buttons={self.CANCEL: True},
+            text_areas={self.TEXT: "something else entirely"},
         )
         assert stub.session_state["editing"] is None
         assert [
@@ -261,9 +336,9 @@ class TestEditingAQuestion:
         stub, _module = run_app(
             monkeypatch,
             client=ScriptedProvider([]),
-            session={"messages": conversation(*self.TWO_TURNS), "editing": 0},
-            buttons={"edit-send-0": True},
-            text_areas={"edit-text-0": "   "},
+            session=self.open_on(0),
+            buttons={self.SEND: True},
+            text_areas={self.TEXT: "   "},
         )
         assert stub.session_state["processing"] is False
         assert any("cannot be empty" in warning for warning in stub.warnings)
@@ -274,9 +349,9 @@ class TestEditingAQuestion:
         stub, _module = run_app(
             monkeypatch,
             client=ScriptedProvider([]),
-            session={"messages": conversation(*self.TWO_TURNS), "editing": 0},
-            buttons={"edit-send-0": True},
-            text_areas={"edit-text-0": "x" * (config.MAX_PROMPT_CHARS + 5)},
+            session=self.open_on(0),
+            buttons={self.SEND: True},
+            text_areas={self.TEXT: "x" * (config.MAX_PROMPT_CHARS + 5)},
         )
         assert stub.session_state["processing"] is False
         assert any("over the" in warning for warning in stub.warnings)
@@ -297,9 +372,9 @@ class TestEditingAQuestion:
         stub, _module = run_app(
             monkeypatch,
             client=ScriptedProvider([]),
-            session={"messages": conversation(*self.TWO_TURNS), "editing": 0},
-            buttons={"edit-send-0": True},
-            text_areas={"edit-text-0": "what is my SU balance"},
+            session=self.open_on(0),
+            buttons={self.SEND: True},
+            text_areas={self.TEXT: "what is my SU balance"},
         )
         # Refused, and the conversation is untouched: a refused edit that had already
         # deleted the tail would be the worst of both.
@@ -314,9 +389,10 @@ class TestEditingAQuestion:
         stub, _module = run_app(
             monkeypatch,
             client=ScriptedProvider([[event("It ran out of memory.")]]),
-            session={"messages": messages, "editing": 0},
-            buttons={"edit-send-0": True},
-            text_areas={"edit-text-0": "why did this fail"},
+            session={"messages": messages, "editing": 0,
+                     "edit_session": self.SESSION},
+            buttons={self.SEND: True},
+            text_areas={self.TEXT: "why did this fail"},
         )
         resent = stub.session_state["messages"][0]
         assert resent["text"] == "why did this fail"

@@ -521,12 +521,16 @@ def references(sources=None, related=None) -> str:
 REFERENCES = references()
 
 
-def answer_block(index: int) -> str:
-    return f"""
+def answer_block(index: int, question: bool = True) -> str:
+    """One turn. `question=False` drops the bubble, for the screen where the reader
+    has reopened it and an editor is standing in its place."""
+    asked = """
 <div class="element-container"><div class="stMarkdown"><div data-testid="stMarkdownContainer">
   <div class="user-message"><div class="user-bubble">How do I request a GPU for a
   batch job on Midway3, and what partition should I use?</div></div>
 </div></div></div>
+""" if question else ""
+    return asked + f"""
 <div class="st-key-answer-{index} element-container"><div class="stChatMessage">
  <div></div>
  <div class="stMarkdown"><div data-testid="stMarkdownContainer">
@@ -548,6 +552,42 @@ python train.py --epochs 100 --batch-size 64 --output /scratch/midway3/$USER/run
 CHAT_MARKER = ('<div class="element-container"><div class="stMarkdown">'
                '<div data-testid="stMarkdownContainer">'
                '<div class="chat-container"></div></div></div></div>')
+
+
+def editor_block() -> str:
+    """A question reopened for editing, standing where its bubble stood.
+
+    Modelled because the first version of it was not, and shipped as a full-bleed box
+    at the left margin under a column of right-aligned questions — reported as the
+    layout being "somewhat problematic". Nothing here could see it: the editor is a
+    state the replica had no markup for, so every render was of the screen where it
+    does not exist.
+
+    `st.form` inside `st.container(key=...)`, which is what app.py builds, because the
+    form is what carries Streamlit's own width behaviour and the container is what
+    app.css hangs the rule on.
+    """
+    return (
+        '<div data-testid="stVerticalBlock" '
+        'class="stVerticalBlock st-key-edit-box-0">'
+        '<div data-testid="stForm" class="stForm">'
+        '<div class="element-container st-key-edit-text-1">'
+        '<div class="stTextArea" data-testid="stTextArea">'
+        '<div data-baseweb="textarea"><textarea rows="3">'
+        "How do I request a GPU for a batch job on Midway3, and what partition "
+        "should I use?</textarea></div></div></div>"
+        '<div data-testid="stHorizontalBlock" class="stHorizontalBlock">'
+        '<div data-testid="stColumn" class="stColumn" style="flex: 6"></div>'
+        '<div data-testid="stColumn" class="stColumn" style="flex: 2">'
+        '<div class="element-container st-key-FormSubmitter-edit-form-1-Send">'
+        '<div class="stButton"><button kind="primaryFormSubmit"><p>Send</p>'
+        "</button></div></div></div>"
+        '<div data-testid="stColumn" class="stColumn" style="flex: 2">'
+        '<div class="element-container st-key-FormSubmitter-edit-form-1-Cancel">'
+        '<div class="stButton"><button kind="secondaryFormSubmit"><p>Cancel</p>'
+        "</button></div></div></div>"
+        "</div></div></div>"
+    )
 
 # An answer made of things that do not fit: a partition table with twelve columns,
 # a generated anchor nobody would shorten, and a scratch path four levels deep.
@@ -716,6 +756,11 @@ SCENARIOS = {
     "landing": landing(wrapped=True) + strip(clear=False, wrapped=True),
     "landing-flat": landing(wrapped=False) + strip(clear=False, wrapped=False),
     "answer": CHAT_MARKER + answer_block(0) + strip(wrapped=False),
+    # The same conversation with its question reopened for editing. The one screen
+    # where a question is not a bubble, and the one the replica could not draw when
+    # the editor first shipped at the wrong side of the page.
+    "editing": CHAT_MARKER + editor_block() + answer_block(0, question=False)
+    + strip(wrapped=False),
     "short-answer": CHAT_MARKER + SHORT_ANSWER + strip(),
     "long-chat": CHAT_MARKER
     + "".join(answer_block(i) for i in range(6))
@@ -1076,6 +1121,11 @@ SEND = '.stChatInput button:not(#paperclip-btn):not(#stop-btn)'
 # a control that lands in the wrong place is a feature that shipped broken.
 STOP = "#stop-btn"
 EDIT = ".user-edit-btn"
+# The box a reopened question is edited in, and the row of buttons under it. Measured
+# because the first version was a full-bleed box at the left margin under a column of
+# right-aligned questions, and nothing here could see it: the replica had no markup
+# for the one screen where a question is not a bubble.
+EDITOR = '[class*="st-key-edit-box-"]'
 # The attachment chips. `fixed` above the input, so they are part of the composer's
 # footprint: whatever the page reserves at its end has to cover them too.
 CHIPS = ".st-key-attachments"
@@ -1103,7 +1153,7 @@ SELECTORS = [
     ".st-key-answer-5", ".st-key-answer-0", ".stChatMessage pre",
     ".stChatMessage code", '[data-testid="stBottomBlockContainer"]',
     ANSWER_COPY, ANSWER_TEXT, ANSWER_TABLE,
-    STRIP, INPUT, INPUT_BOX, SEND, STOP, EDIT, "last:" + EDIT,
+    STRIP, INPUT, INPUT_BOX, SEND, STOP, EDIT, "last:" + EDIT, EDITOR,
     CHIPS, ".st-key-attachments button",
     PANEL, PANEL_BUTTON, ".status-text",
     ".st-key-composer-strip button",
@@ -1145,7 +1195,7 @@ CLIPPED_TEXT = {".welcome-title", ".status-text"}
 # wide for the answer column has to scroll *somewhere*; the alternative — the one the
 # `wide-answer` screen was added to catch — is content clipped at the window edge that
 # no gesture can reach, because app.css hides the document's horizontal overflow.
-SCROLLS_OK = {ANSWER_TABLE}
+SCROLLS_OK = {ANSWER_TABLE, EDITOR}
 
 # How far apart things should be, in px. Both ends matter: the first of these was
 # reported twice as "barely any spacing between the user and AI messages", at a
@@ -1509,6 +1559,216 @@ function look(label, prevented) {
 })();
 </script>
 """
+
+
+SELECT_DRIVER = """
+<script>
+(async function () {
+  var out = [];
+  function tick(ms) { return new Promise(r => setTimeout(r, ms)); }
+  var rehooked = null;
+  if (REBUILD) {
+    // `__sageAskOff` is the newest copy's own teardown function. Every copy of the
+    // script must install its own — that is what proves it re-registered rather than
+    // trusting a flag left on the window by a copy that no longer exists.
+    var before = window.__sageAskOff;
+    var again = document.createElement('script');
+    again.textContent = document.getElementById('sage-js').textContent;
+    document.body.appendChild(again);
+    await tick(120);
+    rehooked = {had: !!before, changed: window.__sageAskOff !== before};
+  }
+  function bubble() { return document.getElementById('ask-selection'); }
+  function report(at) {
+    var b = bubble();
+    var box = document.querySelector('[data-testid="stBottomBlockContainer"]');
+    var area = document.querySelector('.stChatInput textarea');
+    out.push({
+      at: at,
+      present: !!b,
+      shown: !!(b && !b.hidden),
+      rect: b && !b.hidden ? {
+        top: Math.round(b.getBoundingClientRect().top),
+        left: Math.round(b.getBoundingClientRect().left),
+        right: Math.round(b.getBoundingClientRect().right),
+        bottom: Math.round(b.getBoundingClientRect().bottom),
+        w: Math.round(b.getBoundingClientRect().width),
+        h: Math.round(b.getBoundingClientRect().height),
+      } : null,
+      composer: area ? area.value : null,
+      barTop: box ? Math.round(box.getBoundingClientRect().top) : null,
+      viewport: {w: innerWidth, h: innerHeight},
+    });
+  }
+  function pick(selector, chars) {
+    var el = document.querySelector(selector);
+    if (!el) return false;
+    var range = document.createRange();
+    if (chars) {
+      var node = el.firstChild;
+      while (node && node.nodeType !== 3) node = node.firstChild;
+      if (!node) return false;
+      range.setStart(node, 0);
+      range.setEnd(node, Math.min(chars, node.textContent.length));
+    } else {
+      range.selectNodeContents(el);
+    }
+    var sel = getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    document.dispatchEvent(new MouseEvent('mouseup', {bubbles: true}));
+    return true;
+  }
+
+  if (rehooked) out.push({at: 'rehooked', rehooked: rehooked});
+  report('idle');
+
+  // A passage of an answer: the case the control exists for.
+  pick('[class*="st-key-answer-"] .stChatMessage p');
+  await tick(120);
+  report('answer selected');
+
+  // Clicking it drafts into the composer and stands down.
+  var b = bubble();
+  if (b && !b.hidden) b.click();
+  await tick(120);
+  report('after clicking it');
+
+  // A question is the reader's own words; there is nothing to ask about them.
+  getSelection().removeAllRanges();
+  await tick(60);
+  pick('.user-bubble');
+  await tick(120);
+  report('question selected');
+
+  // A stray click's worth of text is not a passage.
+  getSelection().removeAllRanges();
+  await tick(60);
+  pick('[class*="st-key-answer-"] .stChatMessage p', 4);
+  await tick(120);
+  report('four characters selected');
+
+  // And it does not ride the page: it is fixed, so it hides rather than drift.
+  getSelection().removeAllRanges();
+  await tick(60);
+  pick('[class*="st-key-answer-"] .stChatMessage p');
+  await tick(120);
+  document.dispatchEvent(new Event('scroll', {bubbles: true}));
+  await tick(120);
+  report('after a scroll');
+
+  document.title = JSON.stringify(out);
+})();
+</script>
+"""
+
+
+def check_selection(width, height) -> tuple[list[str], int]:
+    """Select a passage of an answer and see whether it can be asked about.
+
+    Rendered twice, for the reason `check_drop` is: Streamlit re-runs
+    `components.html`'s script on every rerun of the app.
+
+    What the second render can and cannot show, stated because getting this wrong once
+    already produced a check that passed on the bug it was written for. This replica
+    runs app.js inline, so both copies share one realm and the first copy's listeners
+    are still alive when the second arrives — whereas Streamlit rebuilds the *iframe*,
+    which destroys them. So `rebuilt` cannot reproduce the symptom (a bubble that
+    never appears again after the first rerun), and asserting on the symptom here
+    passed with the bug reinstated.
+
+    It asserts on the cause instead, which does survive the difference: every copy of
+    the script must install its OWN `__sageAskOff`. A copy that skips registration
+    because a flag on the parent window says someone already did it leaves the
+    previous copy's teardown in place — and in the app, that previous copy is dead.
+    """
+    problems: list[str] = []
+    body = CHAT_MARKER + "".join(answer_block(i) for i in range(2))
+    checked = 0
+    for label, rebuild in (("fresh", "false"), ("rebuilt", "true")):
+        name = f"select-{label}-{width}"
+        html = page(body, "light", scroll=False,
+                    driver=SELECT_DRIVER.replace("REBUILD", rebuild))
+        data = render(name, html, width, height, budget=20000)
+        if data is None or not isinstance(data, list):
+            problems.append(f"{name}: the selection sequence reported nothing")
+            continue
+        checked += 1
+        steps = {step["at"]: step for step in data}
+
+        rehooked = steps.get("rehooked", {}).get("rehooked")
+        if rebuild == "true":
+            if not rehooked:
+                problems.append(f"{name}: the rebuild reported nothing")
+            elif not rehooked.get("had"):
+                problems.append(
+                    f"{name}: the first copy of app.js installed no teardown, so "
+                    "nothing here can tell a re-registration from a skipped one"
+                )
+            elif not rehooked.get("changed"):
+                problems.append(
+                    f"{name}: a second copy of app.js did not re-register the "
+                    "selection handlers — it left the previous copy's teardown in "
+                    "place, and in the app that copy is dead with its iframe, so the "
+                    "ask button would never appear again"
+                )
+
+        if steps.get("idle", {}).get("shown"):
+            problems.append(f"{name}: the ask button is up with nothing selected")
+
+        picked = steps.get("answer selected", {})
+        if not picked.get("shown"):
+            problems.append(
+                f"{name}: selecting a passage of an answer offered no way to ask "
+                "about it"
+            )
+        else:
+            rect, view = picked["rect"], picked["viewport"]
+            if rect["left"] < 0 or rect["right"] > view["w"]:
+                problems.append(
+                    f"{name}: the ask button runs off the side of the window "
+                    f"({rect['left']}..{rect['right']} of {view['w']})"
+                )
+            if rect["bottom"] > view["h"]:
+                problems.append(
+                    f"{name}: the ask button is {rect['bottom'] - view['h']}px below "
+                    "the bottom of the window"
+                )
+            if min(rect["w"], rect["h"]) < MIN_CONTROL_SIDE:
+                problems.append(
+                    f"{name}: the ask button is {rect['w']}x{rect['h']}, too small "
+                    f"to hit (want {MIN_CONTROL_SIDE} on the short side)"
+                )
+            # The composer is `fixed` over the page. A control that appears under it
+            # is a control that cannot be clicked at all.
+            if picked["barTop"] is not None and rect["top"] > picked["barTop"]:
+                problems.append(
+                    f"{name}: the ask button is behind the composer "
+                    f"(button at {rect['top']}, bar starts at {picked['barTop']})"
+                )
+
+        used = steps.get("after clicking it", {})
+        drafted = used.get("composer") or ""
+        if "About this part of your answer" not in drafted:
+            problems.append(
+                f"{name}: clicking it drafted nothing into the composer "
+                f"(composer holds {drafted[:60]!r})"
+            )
+        if used.get("shown"):
+            problems.append(f"{name}: the ask button stayed up after it was used")
+
+        if steps.get("question selected", {}).get("shown"):
+            problems.append(
+                f"{name}: selecting the reader's own question offers to ask about it"
+            )
+        if steps.get("four characters selected", {}).get("shown"):
+            problems.append(f"{name}: a four-character selection counts as a passage")
+        if steps.get("after a scroll", {}).get("shown"):
+            problems.append(
+                f"{name}: the ask button survived a scroll — it is positioned in "
+                "viewport coordinates, so it would be left pointing at nothing"
+            )
+    return problems, checked
 
 
 def check_drop(width, height) -> tuple[list[str], int]:
@@ -2285,6 +2545,31 @@ def audit(data, scenario, scheme, width, state: str) -> list[str]:
             "it is in the send button's corner, so the composer cannot send"
         )
 
+    # The box a reopened question is edited in.
+    #
+    # It replaces a bubble, so it has to stand where the bubble stood. A question in
+    # this app is always on the right — the bubble is a flex item pushed to the end of
+    # its row and capped at 78% of the width — and the editor's first version ignored
+    # all of that and filled the column from the left margin. Nothing was broken;
+    # it just read as a different page. So this checks the two things that make it
+    # read as the same one: it starts past the middle, and it ends where a bubble ends.
+    # ONE property, deliberately: which side of the page it is on.
+    #
+    # How WIDE it is cannot honestly be judged here. A Streamlit form sizes itself
+    # from rules this repo cannot see, and the replica gets it wrong by more than
+    # half — 223px against the 515px the same box measures in the running app — so a
+    # bound on its width or on where its right edge falls would be a bound on the
+    # replica. The side is not like that: `margin-left: auto` is app.css's own, it is
+    # the whole of the fix, and it lands the same way whatever the box's width. The
+    # rest of this screen is checked by driving the real app.
+    editor = els.get(EDITOR)
+    if editor and editor["left"] < data["viewport"]["w"] / 2:
+        problems.append(
+            f"{where}: the question editor starts at {editor['left']}px, left of the "
+            f"middle of a {data['viewport']['w']}px window — questions in this app are "
+            "right-aligned, so editing one throws it across the page and back"
+        )
+
     # The pencil that reopens a question. Its whole claim is that it costs the
     # transcript nothing: it goes in the gutter to the left of a bubble that stops at
     # 78% of the width, so it must be clear of the bubble and on the page at every
@@ -2701,9 +2986,19 @@ def main() -> int:
     drop_problems, drop_checked = check_drop(1263, 900)
     failures.extend(drop_problems)
 
+    # Two widths for this one, because where the button lands IS about the window:
+    # it is clamped to the viewport and pushed off the composer, and both of those
+    # only bite when there is not much room.
+    select_checked = 0
+    for size in ((1263, 900), (VIEWPORT["min_w"], PHONE_H)):
+        select_problems, ran = check_selection(*size)
+        failures.extend(select_problems)
+        select_checked += ran
+
     print(f"\nChecked {checked} renders across {len(SCENARIOS)} screens, "
           f"2 themes, {len(widths)} widths, plus {follow_checked} follow-up scroll "
-          f"sequences and {drop_checked} file-drag sequences.")
+          f"sequences, {drop_checked} file-drag sequences and {select_checked} "
+          f"text-selection sequences.")
     if failures:
         print(f"\n{len(failures)} problem(s):")
         for problem in dict.fromkeys(failures):

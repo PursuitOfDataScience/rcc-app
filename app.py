@@ -246,6 +246,9 @@ for key, default in (
     ("partial", []),
     # Index of the user message being edited in place, or None.
     ("editing", None),
+    # Bumped every time the editor opens, and spliced into its widget keys so no key
+    # is ever reused. See `render_user_editor`.
+    ("edit_session", 0),
     ("error", None),
     ("error_detail", ""),
     ("model", ""),
@@ -398,23 +401,44 @@ def render_edit_hook(position: int) -> None:
         disabled=st.session_state.processing,
     ):
         st.session_state.editing = position
+        st.session_state.edit_session += 1
         st.rerun()
 
 
 def render_user_editor(position: int, message: dict) -> None:
-    """The question, in a box, with the answer under it still on screen.
+    """The question, in a box, standing where its bubble stood.
 
     Sending replaces this question and drops everything after it, because everything
     after it is a reply to wording that is being withdrawn. That is destructive, and
     it is the reason this is a two-step control rather than an editable bubble that
-    resends on blur: the reader has to press Send for the tail of the conversation to
-    go.
+    resends on blur: the reader has to send for the tail of the conversation to go.
 
     The attachments come with it. They belong to the question, not to the text of it,
     and re-uploading three files to fix a typo is not an edit.
+
+    **A form, and that is the whole point of the shape.** Streamlit prints "Press
+    ⌘+Enter to apply" inside every multi-line text box it draws, and there is no
+    argument that turns it off. On a bare `st.text_area` that sentence is a lie of
+    omission: the key commits the value to the widget and nothing else, so the reader
+    who believed it — and the reader who wrote this app did believe it, in the box
+    itself — pressed it, watched nothing happen, and had to go and find the button.
+    Inside `st.form` the same key submits, so the instruction the box gives is the
+    instruction that works.
+
+    The keys carry `session`, a counter bumped every time the pencil is pressed, so
+    no widget key is ever reused. Streamlit drops a widget's state when a run does
+    not re-create it, and these are created only while the editor is open — reusing
+    `edit-send-0` across two openings is exactly the shape that makes a stale button
+    value arrive as a click nobody made. A question re-sent because the reader opened
+    the editor is worse than any bug this file has had, because it costs a turn and
+    deletes the conversation under it.
     """
     attachments = message.get("attachments") or []
-    with st.container(key=f"edit-box-{position}"):
+    session = st.session_state.edit_session
+    with (
+        st.container(key=f"edit-box-{position}"),
+        st.form(key=f"edit-form-{session}", border=False, clear_on_submit=False),
+    ):
         if attachments:
             st.caption(
                 "Still attached: " + ", ".join(item.filename for item in attachments)
@@ -422,18 +446,20 @@ def render_user_editor(position: int, message: dict) -> None:
         edited = st.text_area(
             "Edit your question",
             value=message.get("text", ""),
-            key=f"edit-text-{position}",
+            key=f"edit-text-{session}",
             label_visibility="collapsed",
         )
-        columns = st.columns([1, 1, 5], gap="small")
-        with columns[0]:
-            send = st.button(
-                "Send", key=f"edit-send-{position}", use_container_width=True
-            )
+        # Right-aligned, and the wide spacer is what does it: the buttons belong under
+        # the right-hand edge of a box that stands where a right-aligned bubble stood,
+        # not adrift at the left margin of a page whose questions are all on the other
+        # side.
+        columns = st.columns([6, 2, 2], gap="small")
         with columns[1]:
-            cancel = st.button(
-                "Cancel", key=f"edit-cancel-{position}", use_container_width=True
+            send = st.form_submit_button(
+                "Send", type="primary", use_container_width=True
             )
+        with columns[2]:
+            cancel = st.form_submit_button("Cancel", use_container_width=True)
         asked = (edited or "").strip()
         if send and len(asked) > config.MAX_PROMPT_CHARS:
             # The same cap the composer enforces, said here because this box does not
@@ -936,9 +962,18 @@ def render_stop_hook() -> None:
 
     Rendered before the turn block and nowhere else. That block ends in `st.rerun()`,
     so a widget declared after it does not exist on the one run where it is needed.
+
+    Rendered on EVERY run, though, not only while a turn is in flight. It used to be
+    conditional, which tied a widget's lifetime to a turn's: Streamlit forgets a
+    widget the moment a run does not re-create it, and this one is created on the runs
+    where an answer is streaming and destroyed on the run that stops it. Nothing was
+    ever proved to go wrong there — a stop trigger was traced across three
+    stop-then-ask cycles and never fired twice — but the window costs nothing to
+    close, and what it would look like if it ever opened is a turn nobody stopped
+    ending as `Stopped`. `finish_stopped_turn` ignores a request with no turn running,
+    so an always-present button is inert exactly when it should be, and app.js only
+    draws the square while `#processing-signal` is on the page.
     """
-    if not st.session_state.processing:
-        return
     st.button("Stop generating", key="stop-generation", on_click=request_stop)
 
 
@@ -1024,6 +1059,7 @@ def render_controls() -> None:
             st.session_state.partial = []
             st.session_state.stop_requested = False
             st.session_state.editing = None
+            st.session_state.edit_session += 1
             st.session_state.attachments = []
             st.session_state.dropped_uploads = {}
             st.session_state.upload_refusals = {}

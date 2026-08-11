@@ -239,6 +239,53 @@ class TestOpenAICompat:
         )
         assert provider._order(["kept", "new"]) == ["kept", "new"]
 
+    def test_a_family_is_never_split_up(self):
+        """Reported from the picker: "there are several nemotron models but they are
+        not adjacent to each other". The ranking put one fifth because the preference
+        list named it and the other last because nothing did."""
+        provider = providers.OpenAICompatProvider(
+            "k", "https://x.test/v1",
+            preferred=("deepseek-v4-flash-free", "nemotron-3-ultra-free"),
+        )
+        ordered = provider._order([
+            "nemotron-3.5-lightning-free", "ling-3.0-tiny-free",
+            "deepseek-v4-flash-free", "ling-3.0-flash-free",
+            "nemotron-3-ultra-free",
+        ])
+        assert ordered == [
+            "deepseek-v4-flash-free",
+            "nemotron-3-ultra-free", "nemotron-3.5-lightning-free",
+            "ling-3.0-flash-free", "ling-3.0-tiny-free",
+        ]
+
+    def test_grouping_does_not_move_the_first_model(self):
+        """The head of the list is the session default and the failover target, so
+        grouping is only allowed to decide where a family's OTHER members go."""
+        provider = providers.OpenAICompatProvider(
+            "k", "https://x.test/v1", preferred=("deepseek-v4-flash-free",)
+        )
+        for found in (
+            ["aaa-first", "deepseek-v4-flash-free", "deepseek-v4-pro"],
+            ["deepseek-v4-pro", "deepseek-v4-flash-free", "zzz-last"],
+        ):
+            assert provider._order(found)[0] == "deepseek-v4-flash-free"
+
+    @pytest.mark.parametrize("model_id, family", [
+        ("nemotron-3.5-lightning-free", "nemotron"),
+        ("nemotron-3-ultra-free", "nemotron"),
+        ("ling-3.0-tiny-free", "ling"),
+        ("deepseek-v4-flash-free", "deepseek"),
+        ("mistral-small-latest", "mistral"),
+        ("laguna-s-2.1-free", "laguna"),
+        # No version to split on: a family of one, which is the right answer for a
+        # codename rather than a wrong guess at a version scheme.
+        ("big-pickle", "big"),
+        ("hy3-free", "hy3"),
+        ("", ""),
+    ])
+    def test_the_family_is_the_name_before_the_version(self, model_id, family):
+        assert providers.family_of(model_id) == family
+
 
 def test_build_rejects_an_unknown_provider():
     with pytest.raises(ValueError, match="Unknown provider"):

@@ -89,6 +89,21 @@ class Provider(Protocol):
     ) -> Iterator[Chunk]: ...
 
 
+def family_of(model_id: str) -> str:
+    """The maker's name at the front of a model id — `nemotron-3.5-lightning-free`
+    and `nemotron-3-ultra-free` are both `nemotron`.
+
+    The first segment, and nothing cleverer. Every id either provider serves puts the
+    family first and the version straight after it (`ling-3.0-tiny`, `deepseek-v4`,
+    `mistral-small-latest`, `gpt-5.2-codex`), so the split is where the version
+    begins. A rule that tried to parse the version out as well would have to know
+    that `laguna-s-2.1` has a letter in the middle and `big-pickle` has no version at
+    all, and it would be wrong about the next naming scheme a free tier invents. This
+    one degrades into "a family of one", which is what an unrecognised name should be.
+    """
+    return (model_id or "").split("-", 1)[0].lower()
+
+
 def _tool_fragments(raw) -> list[dict]:
     """Normalise a delta's tool_calls, whether objects (SDK) or dicts (JSON)."""
     fragments = []
@@ -256,9 +271,29 @@ class OpenAICompatProvider:
         return [Model(self.name, model_id) for model_id in self._preferred]
 
     def _order(self, found: list[str]) -> list[str]:
-        """Preferred models first, in preferred order; then the rest, alphabetically."""
+        """Preferred first, then the rest alphabetically — and families kept together.
+
+        The ranking on its own scattered a family down the list. `nemotron-3-ultra`
+        sat fifth because the preference list puts it there and
+        `nemotron-3.5-lightning` sat last because nothing named it, so the picker
+        offered two Nemotrons eight rows apart, with three unrelated models between
+        them. A reader choosing a model is comparing versions of the same thing —
+        which Nemotron, which Ling — and a list that splits them up makes the one
+        comparison the picker exists for the hardest thing to do in it.
+
+        Grouping is applied AFTER the ranking rather than instead of it, so the two
+        jobs stay separate: the ranking still decides which model a fresh session
+        starts on and which one an automatic failover lands on, and this only decides
+        where a family's other members are drawn. A family takes the position of its
+        best-ranked member, and members keep their ranked order inside it — so the
+        first row of the picker is the same model it was before.
+        """
         known = [model_id for model_id in self._preferred if model_id in found]
-        return known + sorted(set(found) - set(known))
+        ranked = known + sorted(set(found) - set(known))
+        families: dict[str, list[str]] = {}
+        for model_id in ranked:
+            families.setdefault(family_of(model_id), []).append(model_id)
+        return [model_id for members in families.values() for model_id in members]
 
     def stream(self, model, messages, tools) -> Iterator[Chunk]:
         import httpx  # noqa: PLC0415
