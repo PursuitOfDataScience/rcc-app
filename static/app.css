@@ -1185,8 +1185,21 @@ body[data-sage-dropping] .stChatInput > div {
 .stChatMessage > div { margin-top: 0 !important; }
 .stChatMessage > div:nth-child(2) { max-width: 100% !important; flex: 1 !important; }
 
-/* Hide the assistant avatar and collapse its gutter. */
+/* Hide the assistant avatar and collapse its gutter.
+ *
+ * The gap is the other half of that job and it was missing. `.stChatMessage` is a flex
+ * row with `gap: 8px` between the avatar and the text; zeroing the avatar's width left
+ * the gap behind, so every answer's text began 8px to the right of everything else in
+ * its own container — the Sources strip and the 👍/👎 row are siblings of the message,
+ * not children, so they never got it.
+ *
+ * Eight pixels is not much on its own. What it did was leave the references unable to
+ * line up with the prose they belong to at any indent, which is half of why they read
+ * as "stretched out": the labels hung 8px into the left margin while the citations sat
+ * 80px inside it, and nothing in the block shared an edge with the answer. Collapsing
+ * the gap gives the whole answer — prose, citations, ratings — one left edge. */
 .stChatMessage [data-testid="chatAvatarIcon-assistant"] { display: none !important; }
+.stChatMessage { gap: 0 !important; }
 .stChatMessage > div:first-child {
     width: 0 !important; min-width: 0 !important;
     padding: 0 !important; margin: 0 !important;
@@ -1274,11 +1287,25 @@ body[data-sage-dropping] .stChatInput > div {
  * `minmax(0, 1fr)` rather than `1fr`: a grid item's automatic minimum size is its
  * content, so a single unbreakable long title would otherwise widen the column past
  * the answer and scroll the page sideways. */
+/* The label above its list, not beside it.
+ *
+ * Beside it, the strip was a two-column grid whose columns pulled apart: the label
+ * took the left edge and the citations began after it, 80px inside the answer's own
+ * left margin, with the whole block spanning more width than the prose above it and
+ * agreeing with it nowhere. Reported as "a bit stretched out and looks very ugly",
+ * and as wanting the references to "align with the main generated text".
+ *
+ * Stacked, every line of the block starts at the answer's left edge: the label, the
+ * citation numbers, and the leads under Related. What sets the apparatus apart from
+ * the answer is then the things that should — small muted uppercase, a smaller type
+ * size, and the numbering — rather than a horizontal displacement that read as a
+ * layout accident. The hanging indent inside each row survives untouched, so a title
+ * that wraps still lines up under itself and the number keeps its own column. */
 .sources {
     display: grid;
-    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr);
     align-items: start;
-    column-gap: 10px;
+    row-gap: 3px;
     /* 20px off the end of the answer, up from the 8.8px it was — which is tighter than
      * the gap between two paragraphs of the answer itself, so the references read as a
      * last line of it rather than as the apparatus underneath. Reported as "too close",
@@ -1328,9 +1355,9 @@ body[data-sage-dropping] .stChatInput > div {
     letter-spacing: 0.06em;
     text-transform: uppercase;
     color: var(--text-muted);
-    /* The label's cap height against the first line of the list beside it. Both are
-     * small type on different line heights, so this is optical, not arithmetic. */
-    padding-top: 3px;
+    /* No top padding any more. It optically aligned the label's cap height with the
+     * first line of the list BESIDE it; above the list there is nothing to align to
+     * and it only opened the block up. */
 }
 
 /* Sources: a numbered reference list, one per line. The number is what makes a

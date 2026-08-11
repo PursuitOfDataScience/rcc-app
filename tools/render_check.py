@@ -1619,42 +1619,53 @@ SELECT_DRIVER = """
     document.dispatchEvent(new MouseEvent('mouseup', {bubbles: true}));
     return true;
   }
+  // Polled, not slept. `placeAskBubble` runs on a 10ms timer and the machine this
+  // renders on is shared — a fixed 120ms wait reported "selecting a passage offered
+  // no way to ask about it" once in four sequences under load, which is a check that
+  // fails for a reason that has nothing to do with the app.
+  async function settle(want) {
+    for (var i = 0; i < 40; i++) {
+      var b = document.getElementById('ask-selection');
+      if (!!(b && !b.hidden) === want) return;
+      await tick(25);
+    }
+  }
 
   if (rehooked) out.push({at: 'rehooked', rehooked: rehooked});
   report('idle');
 
   // A passage of an answer: the case the control exists for.
   pick('[class*="st-key-answer-"] .stChatMessage p');
-  await tick(120);
+  await settle(true);
   report('answer selected');
 
   // Clicking it drafts into the composer and stands down.
   var b = bubble();
   if (b && !b.hidden) b.click();
-  await tick(120);
+  await settle(false);
   report('after clicking it');
 
   // A question is the reader's own words; there is nothing to ask about them.
   getSelection().removeAllRanges();
   await tick(60);
   pick('.user-bubble');
-  await tick(120);
+  await settle(false);
   report('question selected');
 
   // A stray click's worth of text is not a passage.
   getSelection().removeAllRanges();
   await tick(60);
   pick('[class*="st-key-answer-"] .stChatMessage p', 4);
-  await tick(120);
+  await settle(false);
   report('four characters selected');
 
   // And it does not ride the page: it is fixed, so it hides rather than drift.
   getSelection().removeAllRanges();
   await tick(60);
   pick('[class*="st-key-answer-"] .stChatMessage p');
-  await tick(120);
+  await settle(true);
   document.dispatchEvent(new Event('scroll', {bubbles: true}));
-  await tick(120);
+  await settle(false);
   report('after a scroll');
 
   document.title = JSON.stringify(out);
