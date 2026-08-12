@@ -19,6 +19,7 @@ import pytest
 from test_app_smoke import ScriptedProvider, event, run_app, tool_call  # noqa: F401
 
 import stub_streamlit
+from sage import llm
 
 
 @pytest.fixture(autouse=True)
@@ -192,6 +193,61 @@ class TestStopping:
         assert stub.session_state["partial"] == []
 
 
+class TestWhatCountsAsTheAnswer:
+    """A model that narrates its tool call has not answered anything yet."""
+
+    SEARCH = [
+        event("Let me search for more specific Midway3 hardware details."),
+        event(tool_calls=[tool_call(0, "c1", "search_docs", '{"query":"gpu"}')]),
+    ]
+    READ = [
+        event(tool_calls=[
+            tool_call(0, "c2", "read_doc", '{"path":"docs/storage/main.md#quotas"}')
+        ])
+    ]
+
+    def session(self):
+        return {
+            "messages": conversation(("how many gpus are on midway3", None)),
+            "processing": True,
+        }
+
+    def test_a_preamble_is_not_kept_when_the_next_round_is_silent(self, monkeypatch):
+        """The bug, with the screenshot: the narration shipped as the reply, with a
+        Sources strip of four documents under it."""
+        client = ScriptedProvider([self.SEARCH, self.READ, []])
+        stub, _module = run_app(monkeypatch, client=client, session=self.session())
+
+        answers = [m for m in stub.session_state["messages"]
+                   if m["role"] == "assistant"]
+        assert not answers, f"a silent final round still produced {answers}"
+        # And it is the recoverable failure, not a confident non-answer.
+        assert stub.session_state["error"] == llm.AssistantError("empty").user_message
+
+    def test_the_answer_is_the_round_that_stopped_calling_tools(self, monkeypatch):
+        client = ScriptedProvider([
+            self.SEARCH, self.READ, [event("Midway3 has 44 GPUs in the shared "),
+                                     event("gpu partition.")],
+        ])
+        stub, _module = run_app(monkeypatch, client=client, session=self.session())
+        answer = stub.session_state["messages"][-1]
+        assert answer["text"] == "Midway3 has 44 GPUs in the shared gpu partition."
+        assert "Let me search" not in answer["text"]
+
+    def test_the_round_limit_still_says_so_rather_than_quoting_a_preamble(
+        self, monkeypatch
+    ):
+        from sage import config  # noqa: PLC0415
+
+        monkeypatch.setattr(config, "MAX_TOOL_ROUNDS", 2)
+        looping = [self.SEARCH] + [self.READ] * 5
+        stub, _module = run_app(
+            monkeypatch, client=ScriptedProvider(looping), session=self.session()
+        )
+        answer = stub.session_state["messages"][-1]
+        assert answer["text"].startswith("I wasn't able to finish looking that up")
+
+
 class TestWhatAStoppedAnswerTellsTheNextTurn:
     """A stopped answer ends mid-word, and the next turn ships it upstream."""
 
@@ -293,6 +349,24 @@ class TestEditingAQuestion:
             buttons={"edit-open-2": True},
         )
         assert stub.session_state["editing"] == 2
+
+    def test_it_says_what_sending_will_remove(self, monkeypatch):
+        """Reported as a shock: "i edited the first message in the chat history but
+        everything got wiped off, all the chat"."""
+        stub, _module = run_app(
+            monkeypatch, client=ScriptedProvider([]), session=self.open_on(0)
+        )
+        assert any("removes the 1 later question" in text for text in stub.captions), (
+            f"captions were {stub.captions}"
+        )
+
+    def test_it_says_nothing_when_there_is_nothing_to_lose(self, monkeypatch):
+        """Editing the last question replaces only its own answer, which is what the
+        reader just asked for. A warning there is noise."""
+        stub, _module = run_app(
+            monkeypatch, client=ScriptedProvider([]), session=self.open_on(2)
+        )
+        assert not any("removes the" in text for text in stub.captions)
 
     def test_the_editor_opens_holding_the_question(self, monkeypatch):
         stub, _module = run_app(

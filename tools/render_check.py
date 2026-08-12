@@ -1121,6 +1121,10 @@ SEND = '.stChatInput button:not(#paperclip-btn):not(#stop-btn)'
 # a control that lands in the wrong place is a feature that shipped broken.
 STOP = "#stop-btn"
 EDIT = ".user-edit-btn"
+# The copy button beside a question, in the same gutter as the pencil. Unlike the
+# pencil it stays available mid-answer — copying costs no turn — so it is the one of
+# the pair that must fit alongside the other without either reaching the bubble.
+QCOPY = ".user-copy-btn"
 # The box a reopened question is edited in, and the row of buttons under it. Measured
 # because the first version was a full-bleed box at the left margin under a column of
 # right-aligned questions, and nothing here could see it: the replica had no markup
@@ -1153,7 +1157,7 @@ SELECTORS = [
     ".st-key-answer-5", ".st-key-answer-0", ".stChatMessage pre",
     ".stChatMessage code", '[data-testid="stBottomBlockContainer"]',
     ANSWER_COPY, ANSWER_TEXT, ANSWER_TABLE,
-    STRIP, INPUT, INPUT_BOX, SEND, STOP, EDIT, "last:" + EDIT, EDITOR,
+    STRIP, INPUT, INPUT_BOX, SEND, STOP, EDIT, "last:" + EDIT, QCOPY, EDITOR,
     CHIPS, ".st-key-attachments button",
     PANEL, PANEL_BUTTON, ".status-text",
     ".st-key-composer-strip button",
@@ -1922,6 +1926,13 @@ def page(body: str, scheme: str, scroll: bool, generating: bool = False,
     overlays. Anything in there is outside every container this app styles, which is
     the whole reason it needs modelling separately.
 
+    `window.__sageWatched` is set for any body with a conversation in it, because in
+    the app there is no other kind: a conversation only ever appears by growing in
+    front of the reader, and `fill()` reads that flag to leave it where it is rather
+    than padding it down to the composer. Without this the replica would render the
+    one state the app never reaches — a short conversation nobody watched arrive — and
+    every check here would pass on a layout the reader never sees.
+
     `column_input` stacks the send button under the textarea instead of beside it. In
     the row shape a full box has 2px under its last line; in the column shape it has
     46px, and 46px under what you just typed is what got reported as "an empty space
@@ -2007,7 +2018,8 @@ def page(body: str, scheme: str, scroll: bool, generating: bool = False,
   {'' if sticky else bar}</div>
 {'<div id="processing-signal" hidden></div>' if generating else ''}
 {portal}
-<script>window.__scrollBottom = {str(scroll).lower()}; window.__pinLast = {str(pin).lower()};</script>
+<script>window.__scrollBottom = {str(scroll).lower()}; window.__pinLast = {str(pin).lower()};
+window.__sageWatched = {str('chat-container' in body).lower()};</script>
 {'<script id="sage-js">' + JS + '</script>' if script else ''}
 {driver or MEASURE.replace("HOSTBAR", str(HOST_BAR)).replace("TOPGAP", str(TOP_GAP)).replace("SELECTORS", json.dumps(SELECTORS)).replace("SEND_SELECTOR", json.dumps(SEND)).replace("PICKER_SELECTOR", json.dumps(PICKER))}
 </body></html>"""
@@ -2587,6 +2599,43 @@ def audit(data, scenario, scheme, width, state: str) -> list[str]:
     # width. Overlapping the bubble would put it on top of the question text at the
     # one width where the question is long enough to reach its own maximum.
     pencil, bubble = els.get(EDIT), els.get(".user-bubble")
+
+    # The copy button is the pencil's neighbour and outlives it: it stays through a
+    # turn, because putting a question on the clipboard costs nothing and reruns
+    # nothing. So it is checked in every state, and it is the one that decides whether
+    # the pair still fits in the gutter.
+    qcopy = els.get(QCOPY)
+    if bubble and state != "unmeasured":
+        if not qcopy or qcopy["right"] - qcopy["left"] <= 0:
+            problems.append(
+                f"{where}: no copy button beside a question — app.js injected "
+                "nothing, so a sent question cannot be copied"
+            )
+        else:
+            if qcopy["right"] > bubble["left"] + 1:
+                problems.append(
+                    f"{where}: the question's copy button overlaps its bubble by "
+                    f"{qcopy['right'] - bubble['left']}px"
+                )
+            if qcopy["left"] < 0:
+                problems.append(
+                    f"{where}: the question's copy button is {-qcopy['left']}px off "
+                    "the left edge of the page"
+                )
+            side = min(qcopy["right"] - qcopy["left"], qcopy["bottom"] - qcopy["top"])
+            if side < MIN_CONTROL_SIDE:
+                problems.append(
+                    f"{where}: the question's copy button's smallest side is {side}px "
+                    f"(want at least {MIN_CONTROL_SIDE})"
+                )
+            if pencil and pencil["right"] - pencil["left"] > 0 and (
+                qcopy["right"] > pencil["left"] + 1
+            ):
+                problems.append(
+                    f"{where}: the question's copy button and pencil overlap each "
+                    f"other by {qcopy['right'] - pencil['left']}px"
+                )
+
     if generating:
         # Disabled for the length of a turn, and app.css hides a disabled one, so a
         # rectangle here means the reader is being offered a control that cannot work.
@@ -2794,6 +2843,18 @@ def audit(data, scenario, scheme, width, state: str) -> list[str]:
             f"{where}: {fill} of slack above a conversation that scrolls "
             f"without it (only a page shorter than the window has slack to take)"
         )
+    # And none at all on a conversation the reader watched arrive, which is all of
+    # them. This is the check for the thing that was actually reported: the padding
+    # arriving at the end of a short turn moved the question 463px down the window,
+    # and the same padding moved it again whenever the editor opened or closed. Any
+    # non-zero value here is that jump coming back.
+    if (state != "unmeasured" and "chat-container" in SCENARIOS.get(scenario, "")
+            and fill not in ("", "0px")):
+        problems.append(
+            f"{where}: {fill} of slack was applied to a conversation the reader "
+            f"watched arrive — that is the page moving under them at the moment the "
+            f"turn ends"
+        )
 
     if newest and bar:
         gap = bar["top"] - newest["bottom"]
@@ -2821,7 +2882,17 @@ def audit(data, scenario, scheme, width, state: str) -> list[str]:
         # Not the first frame: closing this space is app.js's job (it is measured
         # slack, put above the conversation), and that frame's job is only to not
         # hide anything, which the check above covers.
-        if state in ("rest", "settled") and gap > MAX_TAIL_GAP:
+        #
+        # Only where there is somewhere to scroll. A conversation shorter than the
+        # window now keeps the position it had while it was being answered — the
+        # padding that used to slide it down to the composer was a 463px jump at the
+        # moment the reader was reading, and "it has to stay at where it is" settled
+        # which of the two costs more. So the empty space on a short conversation
+        # falls below it, deliberately, and this bound no longer applies there. On a
+        # page that DOES scroll the same gap still means the scroll stopped short,
+        # which is the failure this was written for and which it still catches.
+        if (state in ("rest", "settled") and gap > MAX_TAIL_GAP
+                and data.get("canScroll", True)):
             problems.append(
                 f"{where}: {gap}px of dead space between the last message and the "
                 f"input bar (want at most {MAX_TAIL_GAP}; {room})"

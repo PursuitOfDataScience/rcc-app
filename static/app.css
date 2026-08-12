@@ -1021,7 +1021,8 @@ body[data-sage-dropping] .stChatInput > div {
  * opacity so an invisible button cannot take a click in the empty gutter, and
  * `:focus-visible` brings it back for a reader arriving by keyboard, who never
  * hovers anything. */
-.user-edit-btn {
+.user-edit-btn,
+.user-copy-btn {
     align-self: flex-end;
     flex: 0 0 auto;
     margin: 0 8px 4px 0;
@@ -1041,12 +1042,18 @@ body[data-sage-dropping] .stChatInput > div {
 }
 
 .user-message:hover .user-edit-btn,
-.user-edit-btn:focus-visible {
+.user-message:hover .user-copy-btn,
+.user-edit-btn:focus-visible,
+.user-copy-btn:focus-visible {
     opacity: 1;
     pointer-events: auto;
 }
 
-.user-edit-btn:hover { background: var(--code-inline-bg); color: var(--icon-hover); }
+.user-edit-btn:hover,
+.user-copy-btn:hover { background: var(--code-inline-bg); color: var(--icon-hover); }
+
+/* The tick after a copy, in the same green the answer's copy button uses. */
+.user-copy-btn[data-copied="true"] { color: var(--ok); }
 
 /* Gone, not greyed, while an answer generates. app.py disables the widget behind it
  * for the length of a turn and app.js mirrors that onto this button; a pencil that
@@ -1057,7 +1064,8 @@ body[data-sage-dropping] .stChatInput > div {
 /* A touch screen has no hover, so a control that only appears on one is a control
  * that does not exist. Dimmed rather than hidden there. */
 @media (hover: none) {
-    .user-edit-btn { opacity: 0.55; pointer-events: auto; }
+    .user-edit-btn,
+    .user-copy-btn { opacity: 0.55; pointer-events: auto; }
 }
 
 /* The question, reopened for editing, standing where its bubble stood.
@@ -1616,6 +1624,9 @@ body[data-sage-dropping] .stChatInput > div {
 /* ===== FOCUS ===== */
 #paperclip-btn:focus-visible,
 .rcc-copy-btn:focus-visible,
+.user-copy-btn:focus-visible,
+.user-edit-btn:focus-visible,
+#ask-selection:focus-visible,
 .source-link:focus-visible,
 .related-link:focus-visible,
 .stChatInput button:focus-visible,
@@ -1688,7 +1699,8 @@ body[data-sage-dropping] .stChatInput > div {
 /* ===== PRINT ===== */
 @media print {
     .st-key-composer-strip, .stChatInput, [data-testid="stBottomBlockContainer"],
-    .rcc-copy-btn, [class*="st-key-rate-"] { display: none !important; }
+    .rcc-copy-btn, .user-copy-btn, .user-edit-btn, #ask-selection,
+    [class*="st-key-rate-"] { display: none !important; }
 
     /* Nothing is pinned on paper, so the reserved band is dead white space. */
     .main .block-container, [data-testid="stMainBlockContainer"] {

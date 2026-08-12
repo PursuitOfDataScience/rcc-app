@@ -435,10 +435,27 @@ def render_user_editor(position: int, message: dict) -> None:
     """
     attachments = message.get("attachments") or []
     session = st.session_state.edit_session
+    # Questions asked after this one. Their answers replied to wording that is being
+    # withdrawn, so sending takes them with it — which is right, and was a shock:
+    # "i edited the first message in the chat history but everything got wiped off,
+    # all the chat." It was one turn and the whole chat was that turn, so nothing
+    # unexpected happened except that nothing had said it would. Said here, before
+    # the button, and only when there is actually something to lose.
+    later = sum(
+        1
+        for item in st.session_state.messages[position + 1 :]
+        if item.get("role") == "user"
+    )
     with (
         st.container(key=f"edit-box-{position}"),
         st.form(key=f"edit-form-{session}", border=False, clear_on_submit=False),
     ):
+        if later:
+            st.caption(
+                f"⚠️ Sending replaces this question and removes the "
+                f"{later} later question{'s' if later != 1 else ''} and "
+                f"{'their' if later != 1 else 'its'} answers."
+            )
         if attachments:
             st.caption(
                 "Still attached: " + ", ".join(item.filename for item in attachments)
@@ -1511,8 +1528,24 @@ if st.session_state.processing:
             # write_stream returns a list when chunks are not all strings.
             if isinstance(streamed, list):
                 streamed = "".join(str(part) for part in streamed)
-            if streamed:
-                final_text = streamed
+            # THIS round's text, not the best text seen so far.
+            #
+            # It used to keep the last non-empty round, and that turned a model's
+            # throat-clearing into an answer. Several of them narrate the tool call
+            # they are about to make — "Let me search for more specific Midway3
+            # hardware details." — and then, if the round after the search comes back
+            # with nothing, that sentence was the only text the turn had. It shipped
+            # as the reply, with a Sources strip of four documents under it, looking
+            # for all the world like a finished answer that had been cut off. Reported
+            # from the running app, with the screenshot.
+            #
+            # A round that ends in a tool call is the model saying what it is about to
+            # do; the answer is whatever the round that stops calling tools produces.
+            # If that is nothing, the turn produced no answer, and the empty check
+            # below turns it into the error card that offers Try again and another
+            # model — which is the truth, and is recoverable, in a way that a
+            # confident non-answer is not.
+            final_text = streamed or ""
 
             if not turn.tool_calls or not use_tools:
                 break
