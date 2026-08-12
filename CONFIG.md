@@ -11,7 +11,7 @@ has to change and none of them are settings.
 | Variable | Default | Purpose |
 |---|---|---|
 | `SAGE_PROFILE` | `./profiles/rcc.toml` | The deployment profile |
-| `SAGE_DEFAULT_MODEL` | `opencode:deepseek-v4-flash-free` | Model a fresh session starts on, `provider:model-id` |
+| `SAGE_DEFAULT_MODEL` | `opencode:nemotron-3.5-lightning-free` | Model a fresh session starts on, `provider:model-id` |
 | `SAGE_TOOLLESS_MODELS` | *(empty)* | Substrings of models that cannot call tools |
 | `SAGE_VISION_MODELS` | `pixtral,claude` | Substrings of models that can be shown an image |
 | `SAGE_MAX_TOKENS` | `8000` | Response cap. Generous: 1600 cut answers off mid-sentence |

@@ -47,13 +47,23 @@ def _noop_context():
 
 
 class Slot:
-    """Stands in for st.empty()."""
+    """Stands in for st.empty().
+
+    A real `st.empty()` is a DeltaGenerator: writing to it *replaces* whatever it
+    holds, which is how the status row changes its words without the row being taken
+    out of the page and put back. Modelled here because the alternative is a stub
+    where only `empty()` exists, which quietly forces every caller into the
+    destroy-and-recreate shape that was the bug.
+    """
 
     def __init__(self, recorder):
         self._recorder = recorder
 
     def empty(self):
         self._recorder.events.append(("empty", None))
+
+    def markdown(self, body, unsafe_allow_html=False, **kwargs):
+        self._recorder.markdown(body, unsafe_allow_html=unsafe_allow_html, **kwargs)
 
     @contextmanager
     def container(self):
