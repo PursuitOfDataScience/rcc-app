@@ -1562,6 +1562,58 @@ SELECT_DRIVER = """
 (async function () {
   var out = [];
   function tick(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+  // Resolve once the document has gone `still` milliseconds without a mutation, or
+  // after `cap` whatever happens — a page that never stops moving is a finding for
+  // another check, not a reason for this one to hang.
+  function quiet(still, cap) {
+    return new Promise(function (done) {
+      var last = Date.now();
+      var observer = new MutationObserver(function () { last = Date.now(); });
+      observer.observe(document.documentElement, {
+        childList: true, subtree: true, attributes: true, characterData: true,
+      });
+      var started = Date.now();
+      (function poll() {
+        if (Date.now() - last >= still || Date.now() - started >= cap) {
+          observer.disconnect();
+          done();
+          return;
+        }
+        setTimeout(poll, 25);
+      })();
+    });
+  }
+
+  // Let the page finish arriving before driving it. Two conditions, both waited on
+  // rather than slept through.
+  //
+  // This sequence flaked, at 2 failures in 21 whole-suite runs — reporting "selecting
+  // a passage of an answer offered no way to ask about it" with nothing wrong with
+  // the app. Measured at the same rate on a commit from before the surrounding
+  // refactor, so it is the harness and it is not new; it had simply never landed on
+  // a run anyone was watching.
+  //
+  // What a failing run actually recorded: the bubble element exists from the moment
+  // of the selection onward and stays `hidden` for the rest of the sequence. So
+  // `placeAskBubble` ran and found no selection to place it against — the synthetic
+  // selection was made into a page still initialising, and did not survive to the
+  // 10ms timer that reads it. The `rebuilt` half never flaked, which is the tell: it
+  // already waited 120ms after injecting its second copy.
+  //
+  // 1. The listeners are attached. `addSelectionAsk` installs `__sageAskOff` last, so
+  //    its presence is the signal that the mouseup handler is live.
+  // 2. The DOM has stopped moving. app.js rewrites the answers it is given — a copy
+  //    button, an edit hook — and a selection made underneath that work is a
+  //    selection the page can still collapse.
+  //
+  // Waiting for quiet rather than retrying the selection, on purpose: a retry would
+  // also paper over an app that really does clobber a reader's selection, which is a
+  // bug this check should keep being able to see. A reader cannot select text in the
+  // first frame either.
+  for (var w = 0; w < 200 && !window.__sageAskOff; w++) await tick(25);
+  await quiet(120, 2000);
+
   var rehooked = null;
   if (REBUILD) {
     // `__sageAskOff` is the newest copy's own teardown function. Every copy of the
