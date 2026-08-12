@@ -8,6 +8,7 @@ one silently depended on the whole file having run first.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 from ..profile import Copy, Identity
@@ -39,14 +40,45 @@ class View:
     def examples(self):
         return self.runtime.examples
 
+    #: Failures whose remedy is a different model on the SAME provider, because the
+    #: key is fine and only this model is unavailable.
+    PER_MODEL = frozenset({"allowance"})
+
+    def alternative(self, kind: str = "", skip: Sequence[str] = ()) -> Model | None:
+        """The best other model to try, given what went wrong.
+
+        Which way to jump depends on the failure, and getting this wrong walks the
+        reader from one dead end into another:
+
+        * A spent **key** — 402, or a rejected key — kills every model behind it, so
+          the way out is a different provider.
+        * A spent **free allowance** is metered per model. `deepseek-v4-flash-free`
+          answered `FreeUsageLimitError` while `nemotron-3-ultra-free` on the same key
+          answered in under a second, and the other provider's key was itself out of
+          credit — so preferring a different provider offered a second dead end while
+          a working model sat one row down the picker.
+
+        Either preference falls back to the other rather than to nothing: with one
+        provider configured there was no switch button at all, on a screen whose own
+        error text says to switch. `models` is in preference order, so each branch
+        takes the best candidate rather than an alphabetical accident.
+
+        `skip` is what the turn has already tried, so a second hop does not land back
+        on a model that has just refused.
+        """
+        spent = set(skip) | {self.model.key}
+        same = [
+            option for option in self.models
+            if option.provider == self.model.provider and option.key not in spent
+        ]
+        elsewhere = [
+            option for option in self.models
+            if option.provider != self.model.provider and option.key not in spent
+        ]
+        order = (same, elsewhere) if kind in self.PER_MODEL else (elsewhere, same)
+        return next((group[0] for group in order if group), None)
+
     @property
     def fallback(self) -> Model | None:
-        """First model from a *different* provider — the way round a spent quota.
-
-        `models` is in preference order, so this is the best alternative, not an
-        alphabetical accident.
-        """
-        return next(
-            (option for option in self.models if option.provider != self.model.provider),
-            None,
-        )
+        """The alternative to offer when the reason is not known — the error card."""
+        return self.alternative()

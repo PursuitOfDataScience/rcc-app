@@ -56,6 +56,10 @@ SESSION_DEFAULTS: tuple[tuple[str, object], ...] = (
     ("model", ""),
     ("notice", ""),
     ("failed_over", False),
+    # Models this turn has already asked and been refused by. A refusal about a
+    # model — a spent free allowance — may be walked past to the next one, and
+    # this is what stops the walk landing back where it started.
+    ("tried", []),
     # (label, kind) of a model an automatic failover moved off. Held until the
     # replacement has actually answered, so the notice can never claim a switch
     # worked while an error card below it says it did not.
@@ -154,6 +158,7 @@ def start_new_turn(
     # the transcript, which puts a notice about the previous turn directly above the
     # new question while the new one generates, reading as if it belonged to it.
     st.session_state.failed_over = False
+    st.session_state.tried = []
     st.session_state.notice = ""
     st.session_state.attachments = []
     # Both, together: the widget is reset so its files stop being reported, and the
@@ -179,6 +184,7 @@ def clear_conversation() -> None:
     st.session_state.error = None
     st.session_state.notice = ""
     st.session_state.failed_over = False
+    st.session_state.tried = []
     st.session_state.switched_from = None
     st.session_state.uploader_key += 1
     # Nothing here can empty the composer — the text in it is client-side state

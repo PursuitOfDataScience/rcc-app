@@ -170,6 +170,7 @@ def render_model_picker(view: View) -> None:
                 # A deliberate choice clears the record of the automatic one,
                 # so the next quota error can fail over again.
                 st.session_state.failed_over = False
+                st.session_state.tried = []
                 st.session_state.switched_from = None
                 st.session_state.notice = ""
                 st.rerun()
