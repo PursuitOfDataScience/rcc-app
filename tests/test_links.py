@@ -581,3 +581,108 @@ class TestInlineParentheticalCitations:
         text = "Service units are what jobs consume (Running jobs on RCC clusters)."
         assert links.strip_inline_citations(text, []) == text
         assert links.strip_inline_citations(text, None) == text
+
+
+class TestInlineMarkers:
+    """A numbered marker at the end of each sentence that rests on a source.
+
+    The Sources strip says what the whole answer rests on; it cannot say which
+    sentence rests on which, and that is what a reader asks of any particular claim.
+    Built from the links the model already writes, so no model has to learn anything
+    and the tool-less ones get it too.
+    """
+
+    SOURCES = [
+        {"id": "docs/slurm/sbatch.md#gpu-jobs", "label": "Batch jobs — GPU jobs",
+         "url": "https://docs.rcc.uchicago.edu/slurm/sbatch/#gpu-jobs",
+         "source": "docs"},
+        {"id": "web/faqs.txt#1", "label": "FAQs",
+         "url": "https://cloud-skyway.rcc.uchicago.edu/faqs", "source": "web"},
+    ]
+
+    def mark(self, text):
+        return links.mark_sources(text, self.SOURCES)
+
+    def test_the_marker_lands_after_the_sentence_not_mid_clause(self):
+        out = self.mark(
+            "Request one with [GPU jobs](https://docs.rcc.uchicago.edu/slurm/"
+            "sbatch/#gpu-jobs) and --gres. Then submit it."
+        )
+        assert out == (
+            "Request one with GPU jobs and --gres."
+            ":small[:gray[[1](https://docs.rcc.uchicago.edu/slurm/sbatch/#gpu-jobs)]]"
+            " Then submit it."
+        )
+
+    def test_the_number_is_the_one_the_strip_shows(self):
+        out = self.mark("See [FAQs](https://cloud-skyway.rcc.uchicago.edu/faqs).")
+        assert "[2](" in out, "FAQs is the second entry in the strip"
+
+    def test_a_different_anchor_on_a_cited_page_takes_that_page_s_number(self):
+        """The strip lists one entry per destination, so a model citing another
+        section of the same page is citing entry 1, not a new one."""
+        out = self.mark(
+            "As in [Submitting](https://docs.rcc.uchicago.edu/slurm/sbatch/#submit)."
+        )
+        assert "[1](" in out
+
+    def test_two_sources_in_one_sentence_get_two_markers_in_order(self):
+        out = self.mark(
+            "Both [GPU jobs](https://docs.rcc.uchicago.edu/slurm/sbatch/#gpu-jobs) "
+            "and [FAQs](https://cloud-skyway.rcc.uchicago.edu/faqs) apply."
+        )
+        assert out.index("[1](") < out.index("[2](")
+        assert out.count(":small[") == 2
+
+    def test_the_same_source_twice_in_a_sentence_is_marked_once(self):
+        out = self.mark(
+            "See [GPU jobs](https://docs.rcc.uchicago.edu/slurm/sbatch/#gpu-jobs) and "
+            "[GPU jobs](https://docs.rcc.uchicago.edu/slurm/sbatch/#gpu-jobs) again."
+        )
+        assert out.count(":small[") == 1
+
+    def test_the_prose_keeps_its_words(self):
+        """The label is unlinked, not deleted — the sentence still has to read."""
+        out = self.mark(
+            "read [Batch jobs](https://docs.rcc.uchicago.edu/slurm/sbatch/#gpu-jobs) "
+            "for the flags."
+        )
+        assert "read Batch jobs for the flags." in out
+
+    def test_a_link_the_strip_does_not_list_is_left_alone(self):
+        out = self.mark("See [elsewhere](https://example.org/page) for that.")
+        assert out == "See [elsewhere](https://example.org/page) for that."
+
+    def test_code_is_never_touched(self):
+        fenced = (
+            "```bash\n"
+            "sbatch [x](https://docs.rcc.uchicago.edu/slurm/sbatch/#gpu-jobs)\n"
+            "```"
+        )
+        assert self.mark(fenced) == fenced
+        span = "Run `[x](https://docs.rcc.uchicago.edu/slurm/sbatch/#gpu-jobs)` now."
+        assert self.mark(span) == span
+
+    def test_a_sentence_that_never_ends_is_marked_at_the_end_of_its_line(self):
+        out = self.mark(
+            "- [GPU jobs](https://docs.rcc.uchicago.edu/slurm/sbatch/#gpu-jobs)"
+        )
+        assert out.endswith(
+            ":small[:gray[[1](https://docs.rcc.uchicago.edu/slurm/sbatch/#gpu-jobs)]]"
+        )
+
+    def test_the_marker_goes_outside_a_closing_quote(self):
+        out = self.mark(
+            'It says "use [GPU jobs](https://docs.rcc.uchicago.edu/slurm/sbatch/'
+            '#gpu-jobs)." Next.'
+        )
+        assert '."' + ":small[" in out
+
+    @pytest.mark.parametrize("sources", [None, []])
+    def test_no_sources_means_no_change(self, sources):
+        text = "See [GPU jobs](https://docs.rcc.uchicago.edu/slurm/sbatch/#gpu-jobs)."
+        assert links.mark_sources(text, sources) == text
+
+    def test_an_answer_with_no_citations_is_untouched(self):
+        text = "You cannot run commands from here.\n\nAsk RCC instead."
+        assert self.mark(text) == text

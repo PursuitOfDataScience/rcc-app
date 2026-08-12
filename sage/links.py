@@ -548,3 +548,151 @@ def strip_source_footer(
     if not any(line.strip() for line in kept):
         return text
     return "\n".join(kept)
+
+
+# --- inline markers ---------------------------------------------------------
+
+# The marker a sentence gets when it rests on a retrieved section: that section's
+# number in the strip below, small and dimmed, linked where the strip links.
+#
+# Streamlit's own `:small[]` and `:gray[]` directives rather than a span of HTML.
+# Rendering an answer with `unsafe_allow_html` would let anything the model emits —
+# or anything an uploaded file talked it into emitting — reach the page as markup,
+# and escaping the answer first would break every code sample containing a `<`, which
+# in this corpus is most of them.
+_MARKER = ":small[:gray[[{number}]({url})]]"
+
+# A sentence ends at one of these followed by space or nothing. Any closing quote or
+# bracket goes with it, so a marker lands outside the quotation rather than inside.
+_SENTENCE_END = re.compile(r"[.!?][\"'’”)\]]*(?=\s|$)")
+_CODE_SPAN = re.compile(r"`[^`]*`")
+
+
+def _numbering(sources: list[dict]) -> dict[str, int]:
+    """URL -> its position in the strip, by exact link and by page.
+
+    Both, because the two come apart: the strip shows one entry per destination, and
+    a model may cite `…/faq/#one-section` where the strip lists `…/faq/#another`. The
+    page is the same page and the number is the same number, so an exact match wins
+    and the page is the fallback.
+    """
+    numbers: dict[str, int] = {}
+    for index, source in enumerate(sources, start=1):
+        url = str(source.get("url", ""))
+        if not url:
+            continue
+        numbers.setdefault(url, index)
+        numbers.setdefault(url.split("#", 1)[0], index)
+    return numbers
+
+
+def _number_for(url: str, numbers: dict[str, int]) -> int | None:
+    return numbers.get(url) or numbers.get(url.split("#", 1)[0])
+
+
+def _spans(pattern, line: str) -> list[tuple[int, int]]:
+    return [match.span() for match in pattern.finditer(line)]
+
+
+def _inside(position: int, spans: list[tuple[int, int]]) -> bool:
+    return any(start <= position < end for start, end in spans)
+
+
+def _mark_line(line: str, numbers: dict[str, int]) -> str:
+    """Unlink the citations in one line and mark the sentences they belong to."""
+    code = _spans(_CODE_SPAN, line)
+    out: list[str] = []
+    pending: list[tuple[int, int]] = []   # (position in `out` text, number)
+    cursor = 0
+    length = 0
+
+    for match in _MARKDOWN_LINK.finditer(line):
+        if _inside(match.start(), code):
+            continue
+        number = _number_for(match.group(2), numbers)
+        if number is None:
+            continue                      # not a retrieved section: leave it linked
+        label = match.group(1)
+        out.append(line[cursor : match.start()])
+        length += match.start() - cursor
+        out.append(label)
+        length += len(label)
+        pending.append((length, number))
+        cursor = match.end()
+
+    if not pending:
+        return line
+    out.append(line[cursor:])
+    plain = "".join(out)
+
+    # Each citation attaches to the end of the sentence it sits in, which is where a
+    # reader looks for one — not mid-clause, where the model happened to put the link.
+    # Sentences are found in the unlinked text, so a URL's own full stops cannot be
+    # mistaken for one.
+    plain_code = _spans(_CODE_SPAN, plain)
+    placed: dict[int, list[int]] = {}
+    for position, number in pending:
+        end = len(plain)
+        for match in _SENTENCE_END.finditer(plain):
+            if match.end() >= position and not _inside(match.start(), plain_code):
+                end = match.end()
+                break
+        placed.setdefault(end, [])
+        if number not in placed[end]:
+            placed[end].append(number)
+
+    result: list[str] = []
+    last = 0
+    for at in sorted(placed):
+        result.append(plain[last:at])
+        result.append(
+            "".join(
+                _MARKER.format(number=number, url=_url_of(number, numbers))
+                for number in placed[at]
+            )
+        )
+        last = at
+    result.append(plain[last:])
+    return "".join(result)
+
+
+def _url_of(number: int, numbers: dict[str, int]) -> str:
+    """The longest URL recorded for a number — the one with its anchor still on."""
+    found = [url for url, value in numbers.items() if value == number]
+    return max(found, key=len) if found else ""
+
+
+def mark_sources(text: str, sources: list[dict] | None) -> str:
+    """Put a small numbered marker at the end of every sentence that cites a source.
+
+    The Sources strip under an answer says what the whole answer rests on. It cannot
+    say which sentence rests on which, and that is the question a reader asks of any
+    particular claim. A marker where the claim is answers it, and clicking it opens
+    the same page the strip's entry opens.
+
+    Built from the links the model already wrote — the system prompt asks for
+    `[Section title](path)` inline — so nothing new is asked of the model and every
+    model gets this, including the ones that cannot call tools. A link the strip does
+    not list is left exactly as it is: it resolved to something real, it is just not
+    one of the numbered sections, and inventing a number for it would make the strip
+    and the answer disagree.
+
+    Render-time only. The stored answer keeps its links, because that text goes back
+    upstream as history, and a transcript full of `:small[:gray[[1](…)]]` teaches the
+    model to write markers instead of citations.
+    """
+    if not text or not sources:
+        return text
+    numbers = _numbering(sources)
+    if not numbers:
+        return text
+
+    out: list[str] = []
+    fenced = False
+    for line in text.splitlines():
+        if _FENCE.match(line):
+            fenced = not fenced
+            out.append(line)
+            continue
+        out.append(line if fenced else _mark_line(line, numbers))
+    return "\n".join(out)

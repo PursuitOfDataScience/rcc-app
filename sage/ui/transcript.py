@@ -341,11 +341,19 @@ def render_rating(position: int, message: dict) -> None:
 
 
 def render_assistant(view: View, position: int, message: dict) -> None:
+    sources = message.get("sources", [])
     with st.container(key=f"answer-{position}"):
         with st.chat_message("assistant"):
             text = message.get("text", "")
             if text:
-                st.markdown(links.fix_links(text, view.corpus))
+                # Resolve the paths the model wrote, then number them against the
+                # strip below, so a claim carries a marker to the section it rests on
+                # and the marker and the strip agree. Both are render-time: the stored
+                # answer keeps its links, because that text goes back upstream as
+                # history.
+                st.markdown(
+                    links.mark_sources(links.fix_links(text, view.corpus), sources)
+                )
             if message.get("stopped"):
                 # Said inside the bubble, under the text it belongs to. A stopped
                 # answer that ends mid-sentence otherwise reads as a model that broke
@@ -356,7 +364,6 @@ def render_assistant(view: View, position: int, message: dict) -> None:
                 st.markdown(
                     '<div class="stopped-note">Stopped</div>', unsafe_allow_html=True
                 )
-        sources = message.get("sources", [])
         render_sources(sources, related_sections(view.corpus, sources))
         # Not on a stopped answer. Rating half a sentence the reader cut off says
         # nothing about whether the app answered the question.

@@ -200,6 +200,7 @@ def base_css(scheme: str) -> str:
 * {{ box-sizing: border-box; }}
 body {{ margin: 0; background: {BACKGROUNDS[scheme]}; color: {FOREGROUNDS[scheme]};
        font-family: "Source Sans Pro", system-ui, sans-serif; }}
+.stMarkdownColoredText {{ color: {COLORED_TEXT[scheme]}; }}
 [data-testid="stAppViewContainer"] {{ min-height: 100vh; }}
 [data-testid="stMain"] {{ overflow: auto; height: 100vh; }}
 /* The other place Streamlit's scrollbar can be: on the document, with stMain just
@@ -515,6 +516,26 @@ def references(sources=None, related=None) -> str:
 REFERENCES = references()
 
 
+# The inline citation marker `links.mark_sources` puts at the end of a cited sentence,
+# as Streamlit renders `:small[:gray[[1](url)]]`: a size span, a colour span, and an
+# anchor inside them. Modelled because the replica is the only place the marker's own
+# rule can be seen at every width — it sits in the flow of a paragraph, so if it ever
+# grew a line box of its own it would push an answer around.
+MARKER = (
+    '<span style="font-size: 0.875rem;">'
+    '<span class="stMarkdownColoredText">'
+    '<a href="https://docs.rcc.uchicago.edu/slurm/sbatch/#gpu-jobs" '
+    'target="_blank" rel="noopener noreferrer">1</a></span></span>'
+)
+
+# What Streamlit's `:gray[]` resolves to, per theme. Measured in the running app:
+# `rgba(49, 51, 63, 0.6)` on white, `rgba(250, 250, 250, 0.6)` on its dark surface.
+# Per theme and not hardcoded to one, because the app's rule is `color: inherit` and
+# a marker modelled with the light grey on the dark page is a contrast reading of a
+# thing that never renders — a pass this check has not earned.
+COLORED_TEXT = {"light": "rgba(49, 51, 63, 0.6)", "dark": "rgba(250, 250, 250, 0.6)"}
+
+
 def answer_block(index: int, question: bool = True) -> str:
     """One turn. `question=False` drops the bubble, for the screen where the reader
     has reopened it and an editor is standing in its place."""
@@ -530,7 +551,7 @@ def answer_block(index: int, question: bool = True) -> str:
  <div class="stMarkdown"><div data-testid="stMarkdownContainer">
   <h2>Requesting a GPU</h2>
   <p>Add <code>--gres=gpu:1</code> to your script and submit to the
-  <code>gpu</code> partition.</p>
+  <code>gpu</code> partition.{MARKER}</p>
   <pre><code>#!/bin/bash
 #SBATCH --partition=gpu
 #SBATCH --gres=gpu:1
@@ -1141,6 +1162,12 @@ ANSWER_COPY = '[class*="st-key-answer-"] .rcc-copy-btn'
 # is where a line of the answer is allowed to end.
 ANSWER_TEXT = '[class*="st-key-answer-"] .stChatMessage p'
 ANSWER_TABLE = '[class*="st-key-answer-"] table'
+# The inline citation marker. Measured like any other text, because it is: 14px, in
+# the flow of a paragraph, and dim by design — which is the combination that goes
+# under AA without anyone noticing. Streamlit's own `:gray[]` renders it at 3.69:1 on
+# white, so `app.css` overrides the anchor with `--text-muted` and this is what holds
+# that override to the same bar as everything else a reader has to read.
+ANSWER_MARKER = '[class*="st-key-answer-"] .stMarkdownColoredText a'
 
 SELECTORS = [
     ".welcome-title", ".welcome-subtitle", ".user-bubble", "last:.user-bubble",
@@ -1150,7 +1177,7 @@ SELECTORS = [
     ".source-kind",
     ".st-key-answer-5", ".st-key-answer-0", ".stChatMessage pre",
     ".stChatMessage code", '[data-testid="stBottomBlockContainer"]',
-    ANSWER_COPY, ANSWER_TEXT, ANSWER_TABLE,
+    ANSWER_COPY, ANSWER_TEXT, ANSWER_TABLE, ANSWER_MARKER,
     STRIP, INPUT, INPUT_BOX, SEND, STOP, EDIT, "last:" + EDIT, QCOPY, EDITOR,
     CHIPS, ".st-key-attachments button",
     PANEL, PANEL_BUTTON, ".status-text",
