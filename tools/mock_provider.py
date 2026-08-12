@@ -175,6 +175,17 @@ class Handler(BaseHTTPRequestHandler):
                 call(0, "c2", "read_doc", '{"path": "docs/slurm/sbatch.md"}'),
             ]))
             yield sse(delta(finish="tool_calls"))
+        elif mode == "preamble" and tools and rounds == 0:
+            # Narrate the tool call, then call it. Several real free models do this,
+            # and it is the first half of the bug where that narration became the
+            # whole answer.
+            yield sse(delta(text="Let me search for more specific Midway3 "
+                                 "hardware details."))
+            yield sse(delta(tool_calls=[call(0, "c1", "search_docs", '{"query":"gpu"}')]))
+            yield sse(delta(finish="tool_calls"))
+        elif mode == "preamble" and tools:
+            # And the second half: the round after the search says nothing at all.
+            yield sse(delta(finish="stop"))
         elif mode == "loop" and tools:
             # Never stops asking, which is what MAX_TOOL_ROUNDS is for.
             yield sse(delta(tool_calls=[

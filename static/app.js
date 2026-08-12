@@ -382,6 +382,11 @@
     // padding the space above it, so the reader is not left looking at a screenful
     // of nothing between the answer and the box they type in.
     //
+    // NOT for a conversation the reader watched arrive, which in this app is all of
+    // them. See `watched` below: the padding is correct for a short conversation
+    // someone opens, and wrong for one that grew in front of them, because applying
+    // it is a 463px jump at the exact moment they are reading.
+    //
     // The stylesheet used to do this with `min-height: 100dvh` and
     // `justify-content: flex-end`. That shipped, and on the landing screen the
     // hero ended up above the top of the window: where flex puts the free space
@@ -399,6 +404,37 @@
     // extra reflow and cannot diverge, because nothing it reads depends on its own
     // previous output. If something is ignoring the padding, this now does nothing
     // instead of doing damage.
+    // Has a turn run in front of the reader on this page?
+    //
+    // Parked on the parent window because Streamlit rebuilds this script's iframe on
+    // every rerun, and the answer has to survive that: the whole point is to remember
+    // something about a moment that has already passed. Cleared on the landing screen,
+    // which is the one place the conversation genuinely starts again.
+    //
+    // Why it exists. `fill()` below pads above a short conversation so it sits by the
+    // composer, and it is suppressed while an answer streams — so every short turn
+    // ended with the padding arriving all at once. Measured: a question and a one-line
+    // answer, or a question and a turn stopped before its first token, dropped 463px
+    // down the window the instant the turn finished, and the editor moved the same way
+    // when the pencil opened it. Reported as the stopped message ending up "near the
+    // bottom of the page", and as the editor "floating around" — "it has to stay at
+    // where it is".
+    //
+    // It cannot both stay where it is and end up beside the composer; the empty space
+    // is the same either way and only its side changes. This chooses staying put, and
+    // the space now falls below a short conversation instead of above it. That
+    // reverses the earlier reading of "such a big empty space between the end of an
+    // answer and the input box" — the same pixels, complained about from the other
+    // end — so it is written down here rather than left to be rediscovered.
+    function watched() {
+        if (!doc.querySelector('.chat-container')) {
+            view.__sageWatched = false;
+            return false;
+        }
+        if (isProcessing()) view.__sageWatched = true;
+        return !!view.__sageWatched;
+    }
+
     function fill(port) {
         var bar = doc.querySelector('[data-testid="stBottomBlockContainer"]');
         // Not while an answer is coming. A question and a "Reading…" row are short,
@@ -407,7 +443,16 @@
         // where a question goes to be read, not where it goes to be answered. The
         // pin puts it at the top for the duration; this takes over once the answer
         // has landed and its real height is known.
+        // `watched()` first, because it is also what records the answer: it has to run
+        // on the passes where a turn IS in flight, which are the passes this returns
+        // on.
+        var seen = watched();
         if (!bar || isProcessing() || !doc.querySelector('.chat-container')) {
+            publish('--fill', 0);
+            return;
+        }
+        if (seen) {
+            // Where the reader left it. The padding would only move it now.
             publish('--fill', 0);
             return;
         }
@@ -1119,10 +1164,10 @@
         });
     }
 
-    function makeCopyButton(getText, label) {
+    function makeCopyButton(getText, label, className) {
         var btn = injected('button');
         btn.type = 'button';
-        btn.className = 'rcc-copy-btn';
+        btn.className = className || 'rcc-copy-btn';
         btn.innerHTML = COPY_SVG;
         btn.title = label;
         btn.setAttribute('aria-label', label);
@@ -1497,6 +1542,35 @@
         return doc.querySelectorAll('[class*="st-key-edit-open-"]');
     }
 
+    // The question's own text, without the attachment chips that live inside its
+    // bubble. `textContent` runs them together with the words — a turn with a file on
+    // it reads as "🖼️ pasted-image-1.pngHow do I read this log?" — so they come off a
+    // clone first, the same way `askedBefore()` does it for the prompt history.
+    function questionText(row) {
+        var bubble = row.querySelector('.user-bubble') || row;
+        var copy = bubble.cloneNode(true);
+        copy.querySelectorAll('.attachment-badges, .attachment-badge')
+            .forEach(function (badge) { badge.remove(); });
+        return (copy.innerText || copy.textContent || '').trim();
+    }
+
+    // A copy button beside every question, including the one being answered right
+    // now: copying costs no turn and reruns nothing, so unlike the pencil there is no
+    // reason to take it away mid-answer. Injected separately from the pencil for that
+    // reason, and because it needs no Streamlit widget behind it — the clipboard is
+    // something this script can reach on its own.
+    function addQuestionCopyButtons() {
+        doc.querySelectorAll('.user-message').forEach(function (row) {
+            if (row.querySelector('.user-copy-btn')) return;
+            var btn = makeCopyButton(function () {
+                return questionText(row);
+            }, 'Copy this question', 'user-copy-btn');
+            // After the pencil in the DOM but before the bubble, so the row reads
+            // copy, edit, question from the left.
+            row.insertBefore(btn, row.firstChild);
+        });
+    }
+
     function addEditButtons() {
         var bubbles = doc.querySelectorAll('.user-message');
         var hooks = editHooks();
@@ -1592,6 +1666,7 @@
         addCodeCopyButtons();
         addAnswerCopyButtons();
         addEditButtons();
+        addQuestionCopyButtons();
         addSelectionAsk();
         markGenerating();
         // `scroller()` first, because it is the one that asks which element actually
