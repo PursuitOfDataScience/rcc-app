@@ -686,3 +686,102 @@ class TestInlineMarkers:
     def test_an_answer_with_no_citations_is_untouched(self):
         text = "You cannot run commands from here.\n\nAsk RCC instead."
         assert self.mark(text) == text
+
+
+class TestAttributingWhatTheModelDidNotLink:
+    """Markers cannot depend on whether a free model felt like citing.
+
+    Asked the same question twice, `nemotron-3.5-lightning` linked two sections on one
+    run and none on the next — which is how an answer came back with a Sources strip
+    and no markers at all. A paragraph the model left unlinked is attributed from what
+    the turn actually read, and only where that cannot be wrong.
+    """
+
+    SUBMITTING = "docs/slurm/sbatch.md#submitting"
+    SCRIPTS = "docs/slurm/sbatch.md#scripts"
+
+    def one_source(self):
+        return (
+            [{"id": self.SUBMITTING, "label": "Batch jobs — Submitting",
+              "url": "https://docs.rcc.uchicago.edu/slurm/sbatch/#submitting",
+              "source": "docs"}],
+            {self.SUBMITTING: "Submit the script with the sbatch command. Slurm "
+                              "replies with a job identifier you can watch using "
+                              "squeue on the login node."},
+        )
+
+    def test_a_paragraph_with_no_link_is_attributed_to_the_one_section_read(self):
+        sources, evidence = self.one_source()
+        out = links.mark_sources(
+            "Submit it with the sbatch command and Slurm returns a job identifier.",
+            sources, evidence,
+        )
+        assert out.endswith(
+            ":small[:gray[[1](https://docs.rcc.uchicago.edu/slurm/sbatch/#submitting)]]"
+        )
+
+    def test_a_sentence_the_section_has_nothing_to_do_with_is_left_alone(self):
+        sources, evidence = self.one_source()
+        text = "The weather in Chicago is fine today."
+        assert links.mark_sources(text, sources, evidence) == text
+
+    def test_two_sections_read_means_no_guessing(self):
+        """Measured on the real corpus: word overlap handed almost every sentence to
+        the longer of two sections, because a longer section owns more words. A
+        plausible wrong citation is the thing this module exists to prevent."""
+        sources = [
+            {"id": self.SUBMITTING, "label": "a", "source": "docs",
+             "url": "https://docs.rcc.uchicago.edu/slurm/sbatch/#submitting"},
+            {"id": self.SCRIPTS, "label": "b", "source": "docs",
+             "url": "https://docs.rcc.uchicago.edu/slurm/sbatch/#scripts"},
+        ]
+        evidence = {
+            self.SUBMITTING: "Submit the script with the sbatch command.",
+            self.SCRIPTS: "A script begins with a shebang and SBATCH directives "
+                          "such as job-name and partition and time and memory.",
+        }
+        out = links.mark_sources(
+            "Submit it with the sbatch command and set the directives you need.",
+            sources, evidence,
+        )
+        assert ":small[" not in out
+
+    def test_the_model_s_own_link_still_wins_where_it_wrote_one(self):
+        """An exact citation beats an inferred one, so a linked paragraph is marked
+        from the link and never attributed a second time."""
+        sources, evidence = self.one_source()
+        out = links.mark_sources(
+            "Submit it with [Batch jobs](https://docs.rcc.uchicago.edu/slurm/"
+            "sbatch/#submitting) and watch it with squeue.",
+            sources, evidence,
+        )
+        assert out.count(":small[") == 1
+
+    def test_one_marker_per_paragraph_not_per_sentence(self):
+        sources, evidence = self.one_source()
+        out = links.mark_sources(
+            "Submit the script with sbatch. Slurm replies with a job identifier. "
+            "Watch it with squeue on the login node.",
+            sources, evidence,
+        )
+        assert out.count(":small[") == 1
+
+    @pytest.mark.parametrize("line", [
+        "## Submitting the sbatch script to Slurm",
+        "> Submit the script with the sbatch command and squeue.",
+        "| sbatch | submit the script to Slurm with squeue |",
+    ])
+    def test_headings_quotes_and_tables_are_not_prose_making_a_claim(self, line):
+        sources, evidence = self.one_source()
+        assert links.mark_sources(line, sources, evidence) == line
+
+    def test_evidence_the_strip_does_not_list_is_ignored(self):
+        sources, _ = self.one_source()
+        stray = {"docs/somewhere/else.md#x": "sbatch squeue slurm job identifier"}
+        text = "Submit it with the sbatch command and watch with squeue."
+        assert links.mark_sources(text, sources, stray) == text
+
+    def test_no_evidence_is_the_behaviour_it_had_before(self):
+        sources, _ = self.one_source()
+        text = "Submit it with the sbatch command and watch with squeue."
+        assert links.mark_sources(text, sources) == text
