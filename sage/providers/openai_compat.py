@@ -132,8 +132,40 @@ class OpenAICompatProvider:
             if response.status_code >= 400:
                 # Body must be read before the status can be raised on a stream.
                 response.read()
-                response.raise_for_status()
+                raise _with_body(response)
             yield from parse_sse(response.iter_lines())
+
+
+def _with_body(response):
+    """The HTTP error, carrying what the endpoint said in its body.
+
+    `raise_for_status()` produces "Client error '429 Too Many Requests' for url …" and
+    nothing else, and the status alone cannot tell two different situations apart.
+    Zen answers a spent free allowance with
+
+        429 {"error": {"type": "FreeUsageLimitError", "message": "Rate limit
+             exceeded. Please try again later."}}
+
+    which is not "you are going too fast" — waiting does not help, and the reader was
+    told to wait a moment and retry while ten other models would have answered
+    immediately. `llm.classify` can only tell the difference if the body reaches it.
+
+    Truncated, because a body is whatever a gateway feels like sending and this string
+    ends up in the technical-details panel.
+    """
+    import httpx  # noqa: PLC0415
+
+    body = ""
+    try:
+        body = response.text[:400].strip().replace("\n", " ")
+    except Exception:  # a body that cannot be decoded is not worth failing over
+        logger.debug("Could not read an error body", exc_info=True)
+    message = f"HTTP {response.status_code} from {response.request.url}"
+    return httpx.HTTPStatusError(
+        f"{message}: {body}" if body else message,
+        request=response.request,
+        response=response,
+    )
 
 
 def parse_sse(lines: Iterator[str]) -> Iterator[Chunk]:

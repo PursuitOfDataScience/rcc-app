@@ -33,6 +33,14 @@ _MESSAGES = {
     "rate_limit": "The assistant is busy right now. Please wait a moment and retry.",
     "quota": "This model is out of credit or its quota is used up. "
              "Switch to another model and try again.",
+    # Distinct from `quota`, because the remedy is different and the difference is
+    # not cosmetic. A spent *key* kills every model behind it, so the way out is a
+    # different provider. A spent *free allowance* is metered per model: the other
+    # models on the same key answer immediately, and sending the reader to a second
+    # provider — whose key may itself be out of credit — walks them into another
+    # dead end.
+    "allowance": "This model has used up its free allowance for now. "
+                 "Another model can answer it — try one from the model button.",
     "context": "This conversation got too long for the model. "
                "Clear the chat and ask again.",
     # Not a transport failure: the request succeeded and the stream carried no text.
@@ -81,6 +89,19 @@ def classify(exc: BaseException) -> AssistantError:
 
     if status in (401, 403) or "unauthorized" in text or "invalid api key" in text:
         kind = "auth"
+    elif any(needle in text for needle in ("usage limit", "usagelimit", "usage_limit")):
+        # A free tier's allowance, spent. It arrives as a 429 whose body names
+        # `FreeUsageLimitError` and whose *message* reads "Rate limit exceeded. Please
+        # try again later." — so both the status and the prose say "wait", and waiting
+        # is the one thing that does not work: the allowance resets on the provider's
+        # schedule, not in a moment. Told to wait, a reader sat on a dead model while
+        # other free models on the same key answered in under a second.
+        #
+        # Checked before the 402 branch and before the 429 one, because the body
+        # satisfies both and only this reading of it leads anywhere useful. Matched on
+        # the limit's *name*, which is the one part of that body that means what it
+        # says.
+        kind = "allowance"
     elif status == 402 or any(
         needle in text
         for needle in ("quota", "insufficient", "credit", "billing",

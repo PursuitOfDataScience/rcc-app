@@ -438,6 +438,7 @@ def render_error_card(view: View) -> None:
             # asking for another attempt, and leaving the guard set means the retry
             # cannot fail over even though this is a fresh attempt at the question.
             st.session_state.failed_over = False
+            st.session_state.tried = []
             st.session_state.error = None
             st.session_state.error_detail = ""
             if st.session_state.messages[-1]["role"] == "user":

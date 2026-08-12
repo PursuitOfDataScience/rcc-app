@@ -743,6 +743,7 @@ class TestQuotaFailover:
         assert "switch-model" not in stub.button_labels
         assert "retry" in stub.button_labels
 
+
     def test_a_clean_answer_clears_a_notice_from_an_earlier_turn(self, monkeypatch):
         provider = ScriptedProvider([[event("Fresh answer.")]], models=("m1",))
         session = self.session() | {"notice": "left over from two turns ago"}
@@ -769,6 +770,171 @@ class TestQuotaFailover:
         assert stub.session_state["processing"] is False
         assert "out of credit" in stub.session_state["error"]
         assert "402" in stub.session_state["error_detail"]
+
+
+class TestASpentFreeAllowance:
+    """A free tier meters per model, and it says so in a 429.
+
+    Reported from the running app: `deepseek-v4-flash-free` answered
+
+        429 {"error": {"type": "FreeUsageLimitError",
+                       "message": "Rate limit exceeded. Please try again later."}}
+
+    and the reader was told "The assistant is busy right now. Please wait a moment and
+    retry." Waiting does not help — the allowance resets on the provider's schedule —
+    and `nemotron-3-ultra-free` on the same key answered in under a second throughout.
+    """
+
+    @staticmethod
+    def _free_limit_429():
+        error = RuntimeError(
+            'HTTP 429 from https://opencode.ai/zen/v1/chat/completions: '
+            '{"type":"error","error":{"type":"FreeUsageLimitError",'
+            '"message":"Error from provider (Console): Rate limit exceeded. '
+            'Please try again later."}}'
+        )
+        error.status_code = 429
+        return error
+
+    def test_a_spent_allowance_is_not_a_busy_signal(self):
+        assert llm.classify(self._free_limit_429()).kind == "allowance"
+        assert "another model" in llm.classify(
+            self._free_limit_429()
+        ).user_message.lower()
+
+    def test_it_is_not_confused_with_a_key_that_is_out_of_credit(self):
+        """Different remedies: a spent key means another provider, a spent allowance
+        means another model on the same one."""
+        assert llm.classify(self._free_limit_429()).kind != "quota"
+
+    def test_it_is_not_retried_against_the_model_that_has_none_left(self):
+        """Three attempts at a spent allowance is three certain failures and 3s."""
+        assert not llm.classify(self._free_limit_429()).retryable
+
+    def test_it_fails_over_within_the_provider_rather_than_across(self, monkeypatch):
+        """The whole point of telling the two apart.
+
+        The key is fine — it is this model's allowance that is spent — so the turn
+        should land on the next model behind the same key, not on a second provider
+        whose own key may be out of credit. In the deployment this came from, it was.
+        """
+        zen = ScriptedProvider(
+            [], name="opencode", error=self._free_limit_429(),
+            models=("deepseek-v4-flash-free", "nemotron-3-ultra-free"),
+        )
+        mistral = ScriptedProvider([], name="mistral", models=("m1",))
+        session = {
+            "messages": [{"role": "user", "text": "hello", "attachments": []}],
+            "processing": True,
+            "model": "opencode:deepseek-v4-flash-free",
+        }
+        stub, _m = run_app(monkeypatch, client=zen, extra={"mistral": mistral},
+                           session=session, opencode=True)
+        assert stub.session_state["model"] == "opencode:nemotron-3-ultra-free"
+        assert stub.session_state["processing"] is True, "the turn should be retried"
+        assert stub.session_state["error"] is None
+        assert "free allowance" in stub.session_state["notice"]
+
+    def test_an_ordinary_429_is_still_a_busy_signal(self):
+        """The discriminator is the limit's *name*, not the status or the prose —
+        both of which say "wait" in the message above too."""
+        busy = RuntimeError("HTTP 429: Rate limit exceeded, please slow down")
+        busy.status_code = 429
+        assert llm.classify(busy).kind == "rate_limit"
+        assert llm.classify(busy).retryable
+
+    def test_the_body_reaches_the_classifier(self, monkeypatch):
+        """`raise_for_status()` says only "Client error '429 …' for url", and the
+        status alone cannot tell the two apart — so the adapter carries the body."""
+        import sys
+        from types import ModuleType
+
+        class HTTPStatusError(Exception):
+            def __init__(self, message, request=None, response=None):
+                super().__init__(message)
+                self.request = request
+                self.response = response
+
+        class Response:
+            status_code = 429
+            request = SimpleNamespace(url="https://x.test/v1/chat/completions")
+            text = '{"error":{"type":"FreeUsageLimitError","message":"…"}}'
+
+            def read(self):
+                return None
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_exc):
+                return False
+
+        class Client:
+            def __init__(self, **_kwargs):
+                pass
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_exc):
+                return False
+
+            def stream(self, *_args, **_kwargs):
+                return Response()
+
+        fake = ModuleType("httpx")
+        fake.Client = Client
+        fake.Timeout = lambda *_a, **_k: None
+        fake.HTTPStatusError = HTTPStatusError
+        monkeypatch.setitem(sys.modules, "httpx", fake)
+
+        from sage.profile import ProviderEntry
+        from sage.providers.openai_compat import OpenAICompatProvider
+
+        entry = ProviderEntry(name="zen", base_url="https://x.test/v1")
+        with pytest.raises(HTTPStatusError) as raised:
+            list(OpenAICompatProvider(entry, "k").stream("m", [], None))
+        assert "FreeUsageLimitError" in str(raised.value)
+        assert llm.classify(raised.value).kind == "allowance"
+
+
+class TestSwitchingWithinAProvider:
+    """When the other provider is spent too — or there is only one.
+
+    Both happened at once in the running deployment: the Mistral key answered 402 and
+    three of Zen's free models answered 429, while two others answered fine. Preferring
+    a different provider and then giving up offered a second dead key, and on a
+    single-provider deployment offered nothing at all.
+    """
+
+    def session(self):
+        return {
+            "messages": [{"role": "user", "text": "hello", "attachments": []}],
+            "processing": False,
+            "error": "This model has used up its free allowance for now.",
+            "error_detail": "HTTP 429",
+            "model": "opencode:deepseek-v4-flash-free",
+        }
+
+    def test_it_offers_another_model_on_the_same_provider(self, monkeypatch):
+        zen = ScriptedProvider(
+            [], name="opencode",
+            models=("deepseek-v4-flash-free", "nemotron-3-ultra-free"),
+        )
+        stub, _m = run_app(monkeypatch, client=zen, session=self.session(),
+                           opencode=True)
+        assert stub.button_labels.get("switch-model") == "→ Use nemotron-3-ultra"
+
+    def test_another_provider_is_still_preferred_when_there_is_one(self, monkeypatch):
+        """A spent *key* kills every model behind it, so a different key comes first."""
+        zen = ScriptedProvider(
+            [], name="opencode",
+            models=("deepseek-v4-flash-free", "nemotron-3-ultra-free"),
+        )
+        mistral = ScriptedProvider([], name="mistral", models=("m1",))
+        stub, _m = run_app(monkeypatch, client=mistral, extra={"opencode": zen},
+                           session=self.session(), opencode=True)
+        assert stub.button_labels.get("switch-model") == "→ Use m1"
 
 
 class TestConversationRendering:
