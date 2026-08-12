@@ -264,7 +264,7 @@ def pretty_title(rel_path: str) -> str:
     """Readable title from a path, for documents with no usable heading.
 
     An index page is named after the directory it indexes, which is the same mapping
-    `docs_url` makes when it publishes `software/index.md` at `software/`. "Index"
+    the mkdocs URL scheme makes when it publishes `software/index.md` at `software/`. "Index"
     names no page a reader could place in a citation, and that is what the software
     index would otherwise be called now that a page with no H1 falls back to here.
     """

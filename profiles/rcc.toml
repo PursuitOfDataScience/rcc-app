@@ -1,0 +1,239 @@
+# Sage as the University of Chicago RCC deployment.
+#
+# This file is the subject. Nothing in `sage/` names the RCC; everything that does is
+# here, so serving a different set of documents is a copy of this file with different
+# values in it and `SAGE_PROFILE` pointed at the copy. See `profiles/README.md`.
+
+[assistant]
+name = "Sage"
+icon = "🌱"
+page_title = "Sage — RCC Assistant"
+# The long form, for the sentence the system prompt introduces itself with.
+subject = "the University of Chicago's Research Computing Center (RCC)"
+# The short one, for mid-sentence use: "Ask any question about the RCC…", "No
+# matching RCC documentation was found."
+topic = "RCC"
+# What the search tool tells the model it is searching, and what it covers.
+corpus_name = "the official RCC User Guide and website"
+topics = "accounts, connecting, Slurm, storage, software, GPUs or policy"
+# A real path from this corpus: the one worked example the read tool gives the model.
+path_example = "docs/slurm/sbatch.md#gpu-jobs"
+# The email, not a page: it is what the system prompt hands a user whose question the
+# documentation cannot answer, and it goes into the answer text.
+contact = "help@rcc.uchicago.edu"
+contact_label = "RCC Help Desk"
+# Who to tell when the deployment itself is broken — the one message addressed to
+# staff rather than to a reader.
+operator = "RCC staff"
+
+[copy]
+welcome_title = "What can I help you with?"
+welcome_subtitle = "Answers from the official UChicago RCC documentation, with citations."
+placeholder = "Ask any question about the RCC…"
+followup_placeholder = "Ask a follow-up question…"
+login_heading = "Sage — RCC documentation assistant"
+login_prompt = "Sign in with your University account to continue."
+login_denied = "That account is outside the domains this deployment allows. Sign in with your University account."
+
+[prompt]
+file = "rcc.prompt.md"
+
+# --- starter cards ---------------------------------------------------------
+#
+# The label is kept short so every card is a single line; the question stays
+# conversational, because it is what the model is actually asked.
+
+[[examples]]
+icon = "🚀"
+label = "Connect to Midway via SSH"
+question = "How do I connect to Midway via SSH?"
+
+[[examples]]
+icon = "💾"
+label = "Storage quotas"
+question = "What are the storage quotas on Midway?"
+
+[[examples]]
+icon = "⚙️"
+label = "Submit a batch job"
+question = "How do I submit a batch job with sbatch?"
+
+[[examples]]
+icon = "🐍"
+label = "Set up a Python environment"
+question = "How do I set up a Python environment?"
+
+[[examples]]
+icon = "🎮"
+label = "Run PyTorch on GPUs"
+question = "How do I run PyTorch on GPUs?"
+
+[[examples]]
+icon = "📊"
+label = "Check my allocation"
+question = "How do I check my allocation balance?"
+
+# --- the corpus ------------------------------------------------------------
+
+[[sources]]
+name = "docs"
+path = "./docs"
+path_env = "RCC_DOCS_PATH"
+extensions = [".md"]
+reader = "markdown"
+# mkdocs with `use_directory_urls`: `slurm/sbatch.md` publishes at `slurm/sbatch/`,
+# and an `index.md` is the directory it sits in at every depth.
+links = "mkdocs"
+# The canonical host, which is what `docs/CNAME` in this repository publishes. The
+# github.io address that used to be here still works, but only as a 301 to this one:
+# every citation cost a redirect, showed the reader a github.io hostname on hover for
+# a University service, and would break the day GitHub Pages stopped forwarding.
+base_url = "https://docs.rcc.uchicago.edu/"
+base_url_env = "RCC_DOCS_BASE_URL"
+# The user guide is canonical and maintained; the scraped site is marketing copy. A
+# mild prior keeps the guide on top when both match equally well.
+weight = 1.15
+exclude_files_env = "SAGE_EXCLUDE_FILES"
+
+[[sources]]
+name = "web"
+path = "./web"
+path_env = "RCC_WEB_PATH"
+extensions = [".txt"]
+reader = "scraped"
+# Each scraped file records its own source URL on line 1, which is what makes
+# per-page citations possible across five different hosts.
+links = "embedded"
+base_url = "https://rcc.uchicago.edu/"
+weight = 1.0
+# Bare citation dumps: thousands of paper titles that answer no how-to question but
+# match a lot of keywords. Matched against the path suffix.
+exclude_files = [
+    "grants-publications_list-of-publications.txt",
+    "grants-publications_publications.txt",
+    "publications.txt",
+]
+exclude_files_env = "SAGE_EXCLUDE_FILES"
+# Scraped hosts that are not RCC computing documentation. `learn-radiology` is
+# radiology teaching material (PI-RADS, mpMRI) and `vislab` is project showcase
+# content; neither can answer an HPC how-to, and both add false-positive matches.
+# Clear with `SAGE_EXCLUDE_HOSTS=` to index everything again.
+exclude_hosts = [
+    "learn-radiology.rcc.uchicago.edu",
+    "vislab.rcc.uchicago.edu",
+]
+exclude_hosts_env = "SAGE_EXCLUDE_HOSTS"
+
+# --- retrieval -------------------------------------------------------------
+
+[retrieval]
+engine = "bm25"
+
+# Terms the stemmer must leave alone: stemming these would help nothing and hurt
+# matching.
+protected = [
+    "gres", "globus", "https", "lammps", "gromacs", "dss", "hpss", "tmux",
+    "linux", "emacs",
+]
+
+# Bidirectional groups, and the one piece of genuine domain knowledge in retrieval:
+# users describe symptoms ("my job got killed") while the documentation describes
+# mechanisms ("OOM", "time limit"). Members are expanded at query time only, at a
+# reduced weight, so an exact match always outranks a synonym match.
+#
+# No "cancelled" in the OOM group. It was added for "my job was cancelled by the
+# scheduler", which is an OOM or a timeout — but now that verb inflections collapse,
+# it keys on `cancel`, and *the user cancelling their own job* is the opposite
+# question. It made "cancel a running job" retrieve the exceeded-memory FAQ ahead of
+# the page about scancel. The words that carry the meaning are the other four.
+synonyms = [
+    ["ssh", "login", "connect", "logon"],
+    ["thinlinc", "vdi", "desktop", "gui"],
+    ["sbatch", "batch", "submit", "script"],
+    ["sinteractive", "srun", "interactive", "salloc"],
+    ["squeue", "sacct", "status", "queue"],
+    ["partition", "queue", "qos"],
+    ["scavenge", "preemptible", "preempt"],
+    ["oom", "memory", "killed", "timeout"],
+    ["quota", "limit", "usage", "space"],
+    ["allocation", "su", "balance", "accounts"],
+    ["module", "software", "lmod", "package"],
+    ["conda", "venv", "environment", "virtualenv", "mamba"],
+    ["globus", "transfer", "scp", "rsync", "upload", "download"],
+    ["gpu", "cuda", "a100", "v100", "nvidia"],
+    ["scratch", "temporary", "purge"],
+    ["project", "shared", "group"],
+    ["cnetid", "account", "username"],
+    ["midway", "cluster", "hpc"],
+    ["snapshot", "backup", "restore", "recover"],
+]
+
+# --- where models come from ------------------------------------------------
+#
+# Order is preference order: it decides which provider a fresh session starts on when
+# `SAGE_DEFAULT_MODEL` names nothing available, and which one an automatic failover
+# reaches for. A provider with no key set is skipped entirely.
+
+[[providers]]
+name = "mistral"
+kind = "mistral"
+key_env = "MISTRAL_API_KEY"
+models = ["mistral-small-latest", "mistral-medium-latest", "mistral-large-latest"]
+models_env = "SAGE_MISTRAL_MODELS"
+
+[[providers]]
+name = "opencode"
+kind = "openai"
+key_env = "OPENCODE_API_KEY"
+hint = "OpenCode Zen keys are free and start with `sk-zen-`."
+# OpenCode Zen is an OpenAI-compatible endpoint fronting a set of free models — a way
+# to keep working once a paid key is out of credit.
+base_url = "https://opencode.ai/zen/v1"
+base_url_env = "OPENCODE_BASE_URL"
+models_env = "SAGE_OPENCODE_MODELS"
+# The live list is discovered from GET /models at runtime; this is only the fallback,
+# since a free tier's lineup changes without notice.
+#
+# `hy3-free` was taken off this list and is back on it, which is the whole argument
+# for the rule below rather than a list. It answered `401 {"message": "Model hy3-free
+# is not supported"}` and was not in the served catalogue at all; two days later Zen
+# serves it again and it answers. Nothing about this deployment changed.
+#
+# So nothing is removed for being broken today. `north-mini-code-free` returns 401
+# from Zen's own upstream and `ling-3.0-tiny-free` returns 503 "Endpoint is
+# unavailable", and both stay: a free tier's lineup moves, an endpoint that is down
+# this week is back the next, and a blocklist that quietly outlives the outage it was
+# written for is worse than no blocklist. What the app does with them is already
+# right — a 401 fails over, a 503 offers Try again and a different model.
+#
+# Ordering is a separate job from membership: the OpenAI-compatible adapter keeps a
+# family's models adjacent in the picker whatever order they appear in here, so this
+# list only has to say which model a fresh session starts on and which one a failover
+# reaches for.
+models = [
+    "deepseek-v4-flash-free",
+    "big-pickle",
+    "mimo-v2.5-free",
+    "nemotron-3-ultra-free",
+    "north-mini-code-free",
+    "hy3-free",
+    "laguna-s-2.1-free",
+    "ling-3.0-tiny-free",
+    "longcat-2.0-free",
+    "ling-3.0-flash-free",
+    "nemotron-3.5-lightning-free",
+]
+# Zen serves paid models from the same endpoint as the free ones — the discovery call
+# came back with the whole Claude and GPT lineup, none of which this deployment has a
+# balance for, and every one of which was offered in the picker as if it worked.
+#
+# Filtered by a RULE rather than a list, because Zen's free lineup changes without
+# notice and a hardcoded set goes stale silently: every free model it serves is named
+# with a `-free` suffix, the exception being the stealth models it publishes under a
+# codename while they are free. Naming the convention keeps working when the list
+# changes; naming the list does not.
+free_marks = ["-free", "big-pickle"]
+free_marks_env = "SAGE_ZEN_FREE_MARKS"
+# Off for a deployment with a paid Zen balance, which should see everything it can use.
+free_only = true
+free_only_env = "SAGE_ZEN_FREE_ONLY"

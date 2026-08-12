@@ -1,5 +1,7 @@
 from sage import config
 from sage import corpus as corpus_mod
+from sage.corpus import urls
+from sage.profile import Source
 
 DOC = """# Batch jobs
 
@@ -19,38 +21,75 @@ Use squeue.
 """
 
 
-def test_sections_become_separate_chunks_with_anchors():
-    _document, chunks = corpus_mod.chunk_markdown("docs", "slurm/sbatch.md", DOC)
+def test_sections_become_separate_chunks_with_anchors(docs_source):
+    _document, chunks = corpus_mod.read(docs_source, "slurm/sbatch.md", DOC)
     ids = [chunk.id for chunk in chunks]
     assert "docs/slurm/sbatch.md#sbatch-scripts" in ids
     assert "docs/slurm/sbatch.md#submitting-a-script" in ids
     assert "docs/slurm/sbatch.md#managing-jobs" in ids
 
 
-def test_breadcrumb_carries_the_ancestor_trail_without_repeating_the_title():
-    _document, chunks = corpus_mod.chunk_markdown("docs", "slurm/sbatch.md", DOC)
+def test_breadcrumb_carries_the_ancestor_trail_without_repeating_the_title(docs_source):
+    _document, chunks = corpus_mod.read(docs_source, "slurm/sbatch.md", DOC)
     deep = next(c for c in chunks if c.id.endswith("#submitting-a-script"))
     assert deep.breadcrumb == "Batch jobs › .sbatch scripts › Submitting a script"
     top = next(c for c in chunks if c.id.endswith("#batch-jobs"))
     assert top.breadcrumb == "Batch jobs"
 
 
-def test_citation_url_deep_links_to_the_section():
-    _document, chunks = corpus_mod.chunk_markdown("docs", "slurm/sbatch.md", DOC)
+def test_citation_url_deep_links_to_the_section(docs_source):
+    _document, chunks = corpus_mod.read(docs_source, "slurm/sbatch.md", DOC)
     deep = next(c for c in chunks if c.id.endswith("#managing-jobs"))
     assert deep.url == (
         "https://docs.rcc.uchicago.edu/slurm/sbatch/#managing-jobs"
     )
 
 
-def test_index_page_maps_to_the_site_root():
-    assert corpus_mod.docs_url("index.md") == config.DOCS_BASE_URL
+def test_index_page_maps_to_the_site_root(docs_source):
+    assert corpus_mod.url_for(docs_source, "index.md") == docs_source.base_url
 
 
-def test_oversized_sections_split_without_breaking_fences():
+class TestUrlSchemes:
+    """Where a document is published is a property of the tree it came from.
+
+    It used to be `if source == "docs"` inside the chunker, which is why a second
+    corpus could not be added without editing the chunker. Each scheme is a function
+    now, registered under the name a source declares.
+    """
+
+    def test_mkdocs_publishes_a_page_as_a_directory(self, docs_source):
+        assert corpus_mod.url_for(docs_source, "slurm/sbatch.md", "gpu-jobs") == (
+            "https://docs.rcc.uchicago.edu/slurm/sbatch/#gpu-jobs"
+        )
+
+    def test_mkdocs_publishes_a_nested_index_as_its_directory(self, docs_source):
+        """`software/index.md` at `software/index/` is a 404, and it was: 16 sections
+        across two index pages pointed at a dead page."""
+        assert corpus_mod.url_for(docs_source, "software/index.md") == (
+            "https://docs.rcc.uchicago.edu/software/"
+        )
+
+    def test_a_directly_served_tree_keeps_the_path(self):
+        source = Source(
+            name="notes", path="./notes", links="direct", base_url="https://x.test/"
+        )
+        assert corpus_mod.url_for(source, "a/b.md", "top") == "https://x.test/a/b.md#top"
+
+    def test_a_private_corpus_has_no_url_rather_than_a_wrong_one(self):
+        source = Source(name="private", path="./private", links="none")
+        assert corpus_mod.url_for(source, "a/b.md", "top") == ""
+
+    def test_an_unregistered_scheme_says_so(self, docs_source):
+        import pytest
+
+        with pytest.raises(LookupError, match="Unknown url scheme"):
+            urls.build(Source(name="x", path=".", links="carrier-pigeon"), "a.md")
+
+
+def test_oversized_sections_split_without_breaking_fences(docs_source):
     body = "\n\n".join(f"Paragraph number {n} with some filler text." for n in range(400))
     source = f"# Big\n\n## Section\n\n```bash\necho keep-together\n```\n\n{body}\n"
-    _document, chunks = corpus_mod.chunk_markdown("docs", "big.md", source)
+    _document, chunks = corpus_mod.read(docs_source, "big.md", source)
     section_chunks = [c for c in chunks if c.id.startswith("docs/big.md#section")]
     assert len(section_chunks) > 1
     assert all(len(c.text) <= config.MAX_CHUNK_CHARS * 1.2 for c in section_chunks)
@@ -59,7 +98,7 @@ def test_oversized_sections_split_without_breaking_fences():
     assert fence_owner[0].text.count("```") == 2
 
 
-def test_the_page_title_is_its_h1_and_not_its_first_subsection():
+def test_the_page_title_is_its_h1_and_not_its_first_subsection(docs_source):
     """Five pages in the bundled guide have no H1, and the title scan took whatever
     heading came first — so `software/apps-and-envs/r.md` was cited as "Table of
     Contents" and `software/index.md` as "Private Software".
@@ -74,8 +113,8 @@ def test_the_page_title_is_its_h1_and_not_its_first_subsection():
         "intermediate staging area — long enough to be indexed as the page's intro.\n\n"
         "## Step 1. From Data Provider to SDE Virtual Desktop\n\nLog in and copy.\n"
     )
-    document, chunks = corpus_mod.chunk_markdown(
-        "docs", "tutorials/sde3/data-transfer.md", source
+    document, chunks = corpus_mod.read(
+        docs_source, "tutorials/sde3/data-transfer.md", source
     )
     assert document.title == "Data transfer"
     assert {chunk.heading for chunk in chunks} == {
@@ -84,7 +123,7 @@ def test_the_page_title_is_its_h1_and_not_its_first_subsection():
     }
 
 
-def test_a_heading_inside_a_code_fence_is_not_the_page_title():
+def test_a_heading_inside_a_code_fence_is_not_the_page_title(docs_source):
     """`# Install renv if not already installed` is an R comment, and the R page has
     five of them. The old scan was not fence-aware and was saved from them only by a
     40-line window — which is also what hid the page's real problem, so widening the
@@ -94,42 +133,42 @@ def test_a_heading_inside_a_code_fence_is_not_the_page_title():
         "## Table of Contents\n\nA list of what is on this page, long enough to keep.\n\n"
         "```r\n# Install renv if not already installed\ninstall.packages('renv')\n```\n"
     )
-    document, _chunks = corpus_mod.chunk_markdown(
-        "docs", "software/apps-and-envs/r.md", source
+    document, _chunks = corpus_mod.read(
+        docs_source, "software/apps-and-envs/r.md", source
     )
     assert document.title == "R"
 
 
-def test_an_index_page_is_titled_after_the_directory_it_indexes():
-    """`docs_url` already publishes `software/index.md` at `software/`. "Index" names
+def test_an_index_page_is_titled_after_the_directory_it_indexes(docs_source):
+    """the mkdocs URL scheme already publishes `software/index.md` at `software/`. "Index" names
     no page a reader could recognise in a citation."""
     source = "## Private Software\n\nBody text long enough to be kept as a chunk.\n"
-    document, _chunks = corpus_mod.chunk_markdown("docs", "software/index.md", source)
+    document, _chunks = corpus_mod.read(docs_source, "software/index.md", source)
     assert document.title == "Software"
 
 
-def test_duplicate_headings_get_distinct_ids():
+def test_duplicate_headings_get_distinct_ids(docs_source):
     source = "# T\n\n## Notes\n\nFirst body here, long enough.\n\n## Notes\n\nSecond body.\n"
-    _document, chunks = corpus_mod.chunk_markdown("docs", "d.md", source)
+    _document, chunks = corpus_mod.read(docs_source, "d.md", source)
     ids = [c.id for c in chunks if "notes" in c.id]
     assert len(ids) == len(set(ids)) == 2
 
 
-def test_scraped_pages_window_and_keep_their_real_url():
+def test_scraped_pages_window_and_keep_their_real_url(web_source):
     raw = (
         "URL: https://beag3.rcc.uchicago.edu/software\n"
         "Title: Software | Beagle3 - RCC\n"
         "=================================\n"
         + "\n".join(f"Sentence {n} about the Beagle3 software stack." for n in range(200))
     )
-    document, chunks = corpus_mod.chunk_scraped("web", "software.txt", raw)
+    document, chunks = corpus_mod.read(web_source, "software.txt", raw)
     assert document.url == "https://beag3.rcc.uchicago.edu/software"
     assert document.title == "Software"
     assert len(chunks) > 1
     assert all(c.url == document.url for c in chunks)
 
 
-def test_a_window_is_not_a_section_named_part_2():
+def test_a_window_is_not_a_section_named_part_2(web_source):
     """`(part 3)` was bookkeeping in a section heading's clothes.
 
     A scraped page has no headings, so a window of one is not a section — it is the
@@ -144,7 +183,7 @@ def test_a_window_is_not_a_section_named_part_2():
         "=====================\n"
         + "\n".join(f"Staff member {n} supports research computing." for n in range(200))
     )
-    _document, chunks = corpus_mod.chunk_scraped("web", "about-rcc_our-team.txt", raw)
+    _document, chunks = corpus_mod.read(web_source, "about-rcc_our-team.txt", raw)
 
     assert len(chunks) > 3
     assert {chunk.heading for chunk in chunks} == {"Our Team"}

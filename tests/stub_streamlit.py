@@ -268,11 +268,29 @@ class StubStreamlit(ModuleType):
         return decorate
 
 
+# Every module that does `import streamlit`. Each one binds the stub *object* it was
+# imported against, so a module left in `sys.modules` across two installs would go on
+# writing to the previous run's session state — the widget keys would be recorded on a
+# stub no assertion is looking at, and the app would read a `messages` list the test
+# never set. `app` was the only such module until the view was split up; now it is
+# `app` plus everything under `sage.ui`, and the rule is "anything that imports
+# streamlit is forgotten between installs", applied by prefix so a new UI module is
+# covered the day it is written rather than the day someone remembers this list.
+_STREAMLIT_MODULES = ("streamlit", "app")
+_STREAMLIT_PACKAGES = ("streamlit.", "sage.ui")
+
+
+def forget_importers() -> None:
+    """Drop the stub and everything that imported it, so the next install is clean."""
+    for name in list(sys.modules):
+        if name in _STREAMLIT_MODULES or name.startswith(_STREAMLIT_PACKAGES):
+            sys.modules.pop(name, None)
+
+
 def install(**kwargs) -> StubStreamlit:
-    """Put the stub in sys.modules and drop any cached `app` import."""
-    stub = install_module(**kwargs)
-    sys.modules.pop("app", None)
-    return stub
+    """Put the stub in sys.modules, and drop anything that imported the last one."""
+    forget_importers()
+    return install_module(**kwargs)
 
 
 def install_module(**kwargs) -> StubStreamlit:

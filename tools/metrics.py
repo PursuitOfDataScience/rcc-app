@@ -27,7 +27,7 @@ ROOT = os.path.dirname(HERE)
 sys.path.insert(0, ROOT)
 
 from sage import corpus as corpus_mod  # noqa: E402
-from sage.search import Index  # noqa: E402
+from sage import retrieval  # noqa: E402
 
 EVAL = os.path.join(ROOT, "tests", "test_retrieval_eval.py")
 
@@ -53,7 +53,7 @@ def cases() -> tuple[list, list]:
     return found["CASES"], found["KNOWN_GAPS"]
 
 
-def measure(index: Index, questions: list, limit: int = 6) -> dict:
+def measure(index: retrieval.Retriever, questions: list, limit: int = 6) -> dict:
     hits = {5: 0, 3: 0, 1: 0}
     reciprocal = 0.0
     depth = 0
@@ -109,7 +109,7 @@ def main() -> int:
     parsed = parser.parse_args()
 
     known, gaps = cases()
-    index = Index(corpus_mod.build())
+    index = retrieval.build(corpus_mod.build())
     if not index.total:
         print("no documentation trees available", file=sys.stderr)
         return 2

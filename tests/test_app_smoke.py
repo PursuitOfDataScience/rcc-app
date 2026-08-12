@@ -79,10 +79,7 @@ def run_app(monkeypatch, *, client=None, session=None, extra=None,
 @pytest.fixture(autouse=True)
 def _clean_modules():
     yield
-    import sys
-
-    for name in ("app", "streamlit", "streamlit.components", "streamlit.components.v1"):
-        sys.modules.pop(name, None)
+    stub_streamlit.forget_importers()
 
 
 class TestWelcome:
@@ -214,7 +211,9 @@ class TestTurnLoop:
 
     def test_the_prompt_asks_for_no_sources_list(self):
         """Stripping is the backstop. Not spending the tokens is the fix."""
-        from sage.prompts import SYSTEM_PROMPT
+        from sage.prompts import system_prompt
+
+        SYSTEM_PROMPT = system_prompt()
 
         assert "Cite inline" in SYSTEM_PROMPT
         # Every form of it, not just the word "Sources": told only that, a model drops
@@ -518,19 +517,19 @@ class TestStatusLine:
         it."""
         module = self.app(monkeypatch)
         sectioned = next(
-            (c for c in module.CORPUS.chunks if " — " in c.label
-             and len(c.doc_title) < module.STATUS_MAX),
+            (c for c in module.RUNTIME.corpus.chunks if " — " in c.label
+             and len(c.doc_title) < module.turn.STATUS_MAX),
             None,
         )
         assert sectioned, "expected the corpus to have a chunk with its own heading"
-        said = module.describe([{"name": tools.READ_DOC,
+        said = module.turn.describe(module.RUNTIME.corpus, [{"name": tools.READ_DOC,
                                  "input": {"path": sectioned.id}}])
         assert said == f"Reading {sectioned.doc_title}"
         assert " — " not in said
 
     def test_a_long_name_is_cut_at_a_word(self, monkeypatch):
         module = self.app(monkeypatch)
-        said = module.describe([
+        said = module.turn.describe(module.RUNTIME.corpus, [
             {"name": tools.SEARCH_DOCS,
              "input": {"query": "how do I check the number of service units my "
                                 "allocation has left on midway3"}}
@@ -539,20 +538,20 @@ class TestStatusLine:
         # The cut lands between words, not mid-syllable.
         assert "servic…" not in said
         quoted = said[said.index("“") + 1:said.rindex("”")]
-        assert len(quoted) <= module.STATUS_MAX + 1
+        assert len(quoted) <= module.turn.STATUS_MAX + 1
 
     def test_a_short_one_is_left_alone(self, monkeypatch):
         module = self.app(monkeypatch)
-        assert module.describe([
+        assert module.turn.describe(module.RUNTIME.corpus, [
             {"name": tools.SEARCH_DOCS, "input": {"query": "gpu partitions"}}
         ]) == "Searching the docs for “gpu partitions”"
 
     def test_search_wins_over_read_and_neither_leaves_it_blank(self, monkeypatch):
         module = self.app(monkeypatch)
-        assert module.describe([{"name": tools.SEARCH_DOCS, "input": {}}]) == (
+        assert module.turn.describe(module.RUNTIME.corpus, [{"name": tools.SEARCH_DOCS, "input": {}}]) == (
             "Searching the docs"
         )
-        assert module.describe([]) == "Working"
+        assert module.turn.describe(module.RUNTIME.corpus, []) == "Working"
 
 
 class TestToollessModels:
@@ -1224,7 +1223,7 @@ class TestDistinctDestinations:
 
     @staticmethod
     def source(module, chunk_id):
-        chunk = module.CORPUS.chunk(chunk_id)
+        chunk = module.RUNTIME.corpus.chunk(chunk_id)
         assert chunk is not None, f"{chunk_id} is not in the bundled corpus"
         return {
             "id": chunk.id,
@@ -1238,7 +1237,7 @@ class TestDistinctDestinations:
     ):
         _stub, module = run_app(monkeypatch)
         cited = self.source(module, "web/about-rcc_our-team.txt#1")
-        related = module.related_sections([cited])
+        related = module.transcript.related_sections(module.RUNTIME.corpus, [cited])
         assert [item["url"] for item in related] == []
 
     def test_every_lead_is_somewhere_the_reader_is_not_already_being_sent(
@@ -1248,9 +1247,9 @@ class TestDistinctDestinations:
         536 chunks that produce a Related list led back to their own citation, and 36
         listed one destination twice."""
         _stub, module = run_app(monkeypatch)
-        for chunk in module.CORPUS.chunks:
+        for chunk in module.RUNTIME.corpus.chunks:
             cited = self.source(module, chunk.id)
-            urls = [item["url"] for item in module.related_sections([cited])]
+            urls = [item["url"] for item in module.transcript.related_sections(module.RUNTIME.corpus, [cited])]
             assert len(urls) == len(set(urls)), f"{chunk.id} repeats a lead"
             assert chunk.url not in urls, f"{chunk.id} leads back to itself"
 
@@ -1259,7 +1258,7 @@ class TestDistinctDestinations:
         too: an anchored docs page still offers its siblings."""
         _stub, module = run_app(monkeypatch)
         cited = self.source(module, "docs/storage/main.md#quotas")
-        related = module.related_sections([cited])
+        related = module.transcript.related_sections(module.RUNTIME.corpus, [cited])
         assert len(related) == 3
         assert all(item["url"].startswith("https://") for item in related)
 
@@ -1272,10 +1271,10 @@ class TestDistinctDestinations:
         from sage import tools
 
         _context, chunks = tools.gather_context(
-            module.INDEX, "who is the director of the rcc"
+            module.RUNTIME.retriever, "who is the director of the rcc"
         )
         assert len(chunks) > 1, "expected a multi-section retrieval to test against"
-        urls = [item["url"] for item in module.citations(chunks)]
+        urls = [item["url"] for item in module.transcript.citations(chunks)]
         assert len(urls) == len(set(urls))
 
 
@@ -1321,12 +1320,12 @@ class TestUsageLimits:
         import app  # noqa: PLC0415
 
         with pytest.raises(stub_streamlit.Rerun):
-            app.start_new_turn("first question")      # spends the only token
+            app.state.start_new_turn("first question")      # spends the only token
         stub.session_state["processing"] = False
         before = list(stub.session_state["messages"])
 
         with pytest.raises(stub_streamlit.Rerun):
-            app.start_new_turn("second question")     # refused
+            app.state.start_new_turn("second question")     # refused
 
         assert stub.session_state["messages"] == before, "nothing was appended"
         assert not stub.session_state["processing"], "no turn was started"
@@ -1341,9 +1340,9 @@ class TestUsageLimits:
         # The same clock the app uses. Spending at 0.0 while the app checks at
         # `time.monotonic()` puts the two more than a window apart, and the budget
         # legitimately rolls over between them.
-        app.get_limiter().record_calls(1, time.monotonic())
+        app.state.get_limiter().record_calls(1, time.monotonic())
         with pytest.raises(stub_streamlit.Rerun):
-            app.start_new_turn("a question")
+            app.state.start_new_turn("a question")
 
         assert stub.session_state["messages"] == []
         assert "deployment" in stub.session_state["notice"]
@@ -1356,7 +1355,7 @@ class TestUsageLimits:
 
         for index in range(25):
             with pytest.raises(stub_streamlit.Rerun):
-                app.start_new_turn(f"question {index}")
+                app.state.start_new_turn(f"question {index}")
             stub.session_state["processing"] = False
         assert len(stub.session_state["messages"]) == 25
 
@@ -1367,9 +1366,9 @@ class TestUsageLimits:
         stub, _ = run_app(monkeypatch, chat_input=None)
         import app  # noqa: PLC0415
 
-        first = app.whoami()
+        first = app.access.whoami()
         stub.session_state.pop("session_id")
-        assert app.whoami() != first
+        assert app.access.whoami() != first
 
     def test_a_refusal_is_visible_on_the_landing_screen(self, monkeypatch):
         """The screen a refused *first* question is refused on.
@@ -1606,7 +1605,7 @@ class TestLoginGate:
         )
         import app  # noqa: PLC0415
 
-        assert app.whoami() == "user:abc", "limits key off the account, not the tab"
+        assert app.access.whoami() == "user:abc", "limits key off the account, not the tab"
 
 
 class TestAllowedDomains:

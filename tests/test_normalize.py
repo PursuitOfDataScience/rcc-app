@@ -169,7 +169,7 @@ def test_pretty_title():
 
 
 def test_pretty_title_of_an_index_page_names_its_directory():
-    """`docs_url` publishes `software/index.md` at `software/`; "Index" is not a page
+    """the mkdocs URL scheme publishes `software/index.md` at `software/`; "Index" is not a page
     name a reader can place in a citation."""
     assert normalize.pretty_title("software/index.md") == "Software"
     assert normalize.pretty_title("tutorials/gis/index.md") == "Gis"

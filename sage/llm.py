@@ -17,15 +17,19 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from . import config
+from .profile import active as _active
 from .providers import Chunk
 
 logger = logging.getLogger(__name__)
 
 _RETRYABLE = {"rate_limit", "network", "unavailable"}
 
+# `{operator}` is the one deployment-specific word in here, and it is deployment-
+# specific because the sentence is addressed to whoever can fix a rejected key. Every
+# other message is about the model or the network and reads the same anywhere.
 _MESSAGES = {
     "auth": "The assistant is not configured correctly (API key rejected). "
-            "Please tell RCC staff.",
+            "Please tell {operator}.",
     "rate_limit": "The assistant is busy right now. Please wait a moment and retry.",
     "quota": "This model is out of credit or its quota is used up. "
              "Switch to another model and try again.",
@@ -51,11 +55,14 @@ class AssistantError(Exception):
     def __init__(self, kind: str, original: BaseException | None = None) -> None:
         self.kind = kind if kind in _MESSAGES else "unknown"
         self.original = original
-        super().__init__(_MESSAGES[self.kind])
+        self._message = _MESSAGES[self.kind].replace(
+            "{operator}", _active().identity.operator
+        )
+        super().__init__(self._message)
 
     @property
     def user_message(self) -> str:
-        return _MESSAGES[self.kind]
+        return self._message
 
     @property
     def retryable(self) -> bool:

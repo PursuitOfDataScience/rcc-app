@@ -11,12 +11,12 @@ Two bugs shipped for want of this check, both silent:
   an identifier — `EVP_KDF_ctrl`, `ssh_exchange_identification`, `<job_id>` —
   generated anchors mkdocs has never published. Those are exactly the FAQ entries a
   reader reaches by pasting an error message.
-* `docs_url()` special-cased only a top-level `index`, so `software/index.md` was
+* the mkdocs URL scheme special-cased only a top-level `index`, so `software/index.md` was
   cited to `software/index/`, which is a 404. mkdocs with `use_directory_urls`
   publishes `<dir>/index.md` at `<dir>/`.
 
 Network-bound and therefore not part of the test suite: run it after touching
-`slugify`, `plain_heading` or `docs_url`, and when the corpus is refreshed.
+`slugify`, `plain_heading` or a URL scheme, and when the corpus is refreshed.
 
     python tools/anchor_check.py            # every cited page
     python tools/anchor_check.py --limit 20 # a quick sample
@@ -35,8 +35,8 @@ from concurrent.futures import ThreadPoolExecutor
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from sage import config  # noqa: E402
 from sage import corpus as corpus_mod  # noqa: E402
+from sage import profile  # noqa: E402
 
 # `id="..."` on any element. mkdocs-material puts the heading id on the <h_> itself,
 # but permalink anchors and admonitions carry ids too and a match against any of them
@@ -74,9 +74,18 @@ def main() -> int:
         return 0
 
     built = corpus_mod.build()
+    # Only trees whose URL scheme places an anchor have anchors worth checking: a
+    # scraped mirror cites whole pages, and a private corpus cites nothing. Read from
+    # the profile rather than from one hardcoded base URL, so a deployment that adds a
+    # third documentation site gets it checked without editing this file.
+    bases = tuple(
+        source.base_url
+        for source in profile.active().sources
+        if source.base_url and source.links in ("mkdocs", "direct")
+    )
     wanted: dict[str, list[tuple[str, str, str]]] = defaultdict(list)
     for chunk in built.chunks:
-        if not chunk.url.startswith(config.DOCS_BASE_URL) or "#" not in chunk.url:
+        if not bases or not chunk.url.startswith(bases) or "#" not in chunk.url:
             continue
         if not chunk.heading:
             continue
