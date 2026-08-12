@@ -72,6 +72,7 @@
     ".stChatInput button:not(#paperclip-btn):not(:disabled) :: background": "var(--brand) !important",
     ".stChatInput button:not(#paperclip-btn):not(:disabled) :: color": "#ffffff !important",
     ".stChatInput textarea::placeholder :: color": "var(--text-muted) !important",
+    ".stChatMessage .stMarkdownColoredText a :: color": "var(--text-muted)",
     ".stChatMessage :: background": "transparent !important",
     ".stChatMessage :: border": "none !important",
     ".stChatMessage code:not(pre code) :: background": "var(--code-inline-bg) !important",

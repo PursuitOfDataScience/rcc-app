@@ -1422,6 +1422,34 @@ body[data-sage-dropping] .stChatInput > div {
     border-bottom-color: var(--card-border-hover);
 }
 
+/* The inline citation marker — `:small[:gray[[1](url)]]`, emitted by
+ * `links.mark_sources` at the end of every sentence that rests on a retrieved
+ * section, numbered to match the strip below.
+ *
+ * Streamlit dims the span its `:gray[]` directive makes, but an anchor's own colour
+ * wins inside it, so the number arrived the same blue as a link, underlined, and
+ * hard against the full stop it follows — reading as a word to click rather than as
+ * a footnote.
+ *
+ * `--text-muted` rather than the dimming the span already carries: Streamlit's
+ * `:gray[]` is the foreground at 0.6 alpha, which is 3.69:1 on white — under AA for
+ * text this size, and precisely what the `do not add opacity` beside that token
+ * warns about. The token is 4.83:1 on white and 7.44:1 on the dark surface, and it
+ * is the colour the rest of this app's quiet text already uses. The underline comes
+ * back on hover, where it says the number is a link after all.
+ *
+ * Scoped to answers. The Sources strip has its own rules below and the composer must
+ * not be touched. */
+.stChatMessage .stMarkdownColoredText a {
+    color: var(--text-muted);
+    text-decoration: none;
+    padding-left: 2px;
+}
+
+.stChatMessage .stMarkdownColoredText a:hover {
+    text-decoration: underline;
+}
+
 .source-kind {
     margin-left: 6px;
     font-size: 0.66rem;
