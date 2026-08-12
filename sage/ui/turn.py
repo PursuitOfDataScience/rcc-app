@@ -47,12 +47,21 @@ CONTROL_FLOW_NAMES = frozenset(
     {"RerunException", "StopException", "Rerun", "Stop", "RerunError"}
 )
 
-# The most of a name or a query the status line will say. Neither is written by this
-# app — a doc title comes from the corpus and a query from the model — so both need a
-# ceiling, and the ceiling has to hold on a phone: at 500px this line has room for
-# about 60 characters before it takes a second row, and a progress cue that grows the
-# page it sits on is worse than one that says less.
-STATUS_MAX = 48
+# What the row says at each stage of a turn lives in the profile (`Copy`), because
+# every one of them is a fixed phrase and a deployment over something other than
+# documentation would word them differently.
+#
+# Fixed, and that is the point: the line is progress, not a log. It used to name what
+# was being read — "Reading Batch jobs", or "Reading sbatch.md" when a model handed
+# over a path the index could not resolve. A filename is not something a reader can
+# place, and even the document's own title is the app narrating its internals to
+# someone who asked a question about GPUs. The search line quoted the model's query
+# back and had the same problem: it is the model's wording, not the reader's, and
+# watching it scroll past says nothing about whether an answer is coming.
+#
+# What the reader needs from this row is that something is happening and roughly what.
+# Everything specific is still in the Sources strip under the answer, where it is a
+# link next to the claim it supports — which is when a section's name is worth reading.
 
 
 def is_control_flow(exc: BaseException) -> bool:
@@ -78,9 +87,9 @@ class Status:
     new row 32px lower — the row's own height — before it settled back. Measured at
     16ms per hop, on every transition:
 
-        t=4496  top=682  'Searching the docs for “sbatch”'
-        t=4510  top=650  'Searching the docs for “sbatch”'     (+14ms)
-        t=4994  top=682  'Reading sbatch.md'
+        t=4496  top=682  'Searching the documentation'
+        t=4510  top=650  'Searching the documentation'          (+14ms)
+        t=4994  top=682  'Reading the relevant sections'
         t=5010  gone                                            (+16ms)
 
     A reader sees that as the line twitching downward each time it changes, which
@@ -138,50 +147,26 @@ def recording(stream):
         yield delta
 
 
-def argument(call: dict, name: str) -> str:
-    """One tool argument, as a string. A model types whatever it likes in there.
+def describe(copy, calls: list[dict]) -> str:
+    """Which stage of the turn this round is, in words a reader can place.
 
-    `llm._parse` guarantees a dict and nothing about its values, so a query typed as
-    a number — `{"query": 123}` — used to raise AttributeError here and end the turn
-    with an error card blaming the network. `sage/tools.py` coerces the same way.
+    Search before read, because a round that does both is on its way to reading and
+    the search is the thing that just started. A round calling neither is a model
+    doing something this app has no name for, which is what `Working` is for — never
+    an empty row, because a blank line where progress should be reads as a hang.
+
+    Nothing about the arguments reaches the screen. That is deliberate: see the
+    phrases above. It also means this cannot be tripped by whatever a model puts in
+    them — the previous version coerced every argument to a string for exactly that
+    reason, after a query typed as a number ended a turn with an error card blaming
+    the network.
     """
-    value = call.get("input", {}).get(name)
-    return "" if value is None else str(value).strip()
-
-
-def _short(text: str) -> str:
-    """`text`, cut at a word boundary if it is longer than the line has room for."""
-    if len(text) <= STATUS_MAX:
-        return text
-    cut = text[:STATUS_MAX].rsplit(" ", 1)[0] or text[:STATUS_MAX]
-    return f"{cut.rstrip(' ,;:—-')}…"
-
-
-def describe(corpus, calls: list[dict]) -> str:
-    """Say what is actually happening instead of a generic shimmer.
-
-    The document, not the section of it. `chunk.label` is `"{title} — {heading}"`,
-    which is right on a citation chip — that is a link, and the heading says which part
-    of a long page it goes to. It is wrong here: this line is on screen for a second
-    while a reader waits, and RCC headings are frequently whole questions, so it was
-    dragging sentences like "Allocations and Service Units FAQ — How do I check how many
-    service units I have remaining on my allocation?" across the page. 146 characters at
-    the worst, 38 at the median; the titles alone are 60 and 15. The precise section is
-    not lost, it is in the Sources strip under the answer, next to the link that uses
-    it — and by then the reader is deciding whether to click, which is when it helps.
-    """
-    for call in calls:
-        if call["name"] == SEARCH_DOCS:
-            query = argument(call, "query")
-            return (f"Searching the docs for “{_short(query)}”" if query
-                    else "Searching the docs")
-    for call in calls:
-        if call["name"] == READ_DOC:
-            path = argument(call, "path")
-            chunk = corpus.chunk(path)
-            title = chunk.doc_title if chunk else path.split("/")[-1]
-            return f"Reading {_short(title)}" if title else "Reading documentation"
-    return "Working"
+    names = {call.get("name") for call in calls}
+    if SEARCH_DOCS in names:
+        return copy.status_searching
+    if READ_DOC in names:
+        return copy.status_reading
+    return copy.status_working
 
 
 def detail(view: View, exc: BaseException | None) -> str:
@@ -212,7 +197,7 @@ def run(view: View) -> None:
 
     render_user(st.session_state.messages[-1])
     status = Status(st.empty())
-    status.show("Thinking")
+    status.show(view.copy.status_thinking)
 
     answer = st.empty()
     runner = runtime.toolset.runner()
@@ -329,7 +314,7 @@ def run(view: View) -> None:
                 break
 
             answer.empty()
-            status.show(describe(view.corpus, turn.tool_calls))
+            status.show(describe(view.copy, turn.tool_calls))
             messages.append(turn.as_message())
             for call in turn.tool_calls:
                 result = runner.run(call["name"], call["input"])

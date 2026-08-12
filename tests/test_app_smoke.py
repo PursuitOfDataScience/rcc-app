@@ -507,57 +507,78 @@ class TestComposerStrip:
 
 
 class TestStatusLine:
-    """What the row over an empty answer says while a reader waits for it."""
+    """What the row over an empty answer says while a reader waits for it.
+
+    Fixed phrases, and nothing from inside the machine. It used to name the document
+    being read — "Reading Batch jobs", or "Reading sbatch.md" when a model handed over
+    a path the index could not resolve — and quote the model's search query back. A
+    filename is not something a reader can place, and the query is the model's wording
+    rather than theirs. What is specific is still in the Sources strip under the
+    answer, where it is a link next to the claim it supports.
+    """
 
     def app(self, monkeypatch):
         _stub, module = run_app(monkeypatch, client=ScriptedProvider([], models=("m1",)),
                                 session={"messages": [], "processing": False})
         return module
 
-    def test_reading_names_the_document_not_the_section(self, monkeypatch):
-        """`chunk.label` is "{title} — {heading}", which belongs on a citation chip:
-        that is a link, and the heading says which part of a long page it goes to.
-        Here it was dragging whole questions across the screen — RCC headings are
-        frequently questions, and the labels run to 146 characters against 60 for the
-        titles alone. The section is still in the Sources strip, on the link that uses
-        it."""
+    def test_reading_does_not_name_the_document(self, monkeypatch):
         module = self.app(monkeypatch)
-        sectioned = next(
-            (c for c in module.RUNTIME.corpus.chunks if " — " in c.label
-             and len(c.doc_title) < module.turn.STATUS_MAX),
-            None,
+        chunk = module.RUNTIME.corpus.chunks[0]
+        said = module.turn.describe(
+            module.RUNTIME.copy,
+            [{"name": tools.READ_DOC, "input": {"path": chunk.id}}],
         )
-        assert sectioned, "expected the corpus to have a chunk with its own heading"
-        said = module.turn.describe(module.RUNTIME.corpus, [{"name": tools.READ_DOC,
-                                 "input": {"path": sectioned.id}}])
-        assert said == f"Reading {sectioned.doc_title}"
-        assert " — " not in said
+        assert said == "Reading the relevant sections"
+        for leak in (chunk.doc_title, chunk.path, ".md", "—"):
+            assert leak not in said
 
-    def test_a_long_name_is_cut_at_a_word(self, monkeypatch):
+    def test_a_path_the_index_cannot_resolve_leaks_no_filename(self, monkeypatch):
+        """The case the reader actually hit: a model naming a page that is not
+        indexed used to put the bare filename on screen."""
         module = self.app(monkeypatch)
-        said = module.turn.describe(module.RUNTIME.corpus, [
+        said = module.turn.describe(
+            module.RUNTIME.copy,
+            [{"name": tools.READ_DOC, "input": {"path": "docs/slurm/sbatch.md"}}],
+        )
+        assert said == "Reading the relevant sections"
+        assert "sbatch" not in said
+
+    def test_searching_does_not_quote_the_query(self, monkeypatch):
+        module = self.app(monkeypatch)
+        said = module.turn.describe(module.RUNTIME.copy, [
             {"name": tools.SEARCH_DOCS,
              "input": {"query": "how do I check the number of service units my "
                                 "allocation has left on midway3"}}
         ])
-        assert said.endswith("…”")
-        # The cut lands between words, not mid-syllable.
-        assert "servic…" not in said
-        quoted = said[said.index("“") + 1:said.rindex("”")]
-        assert len(quoted) <= module.turn.STATUS_MAX + 1
-
-    def test_a_short_one_is_left_alone(self, monkeypatch):
-        module = self.app(monkeypatch)
-        assert module.turn.describe(module.RUNTIME.corpus, [
-            {"name": tools.SEARCH_DOCS, "input": {"query": "gpu partitions"}}
-        ]) == "Searching the docs for “gpu partitions”"
+        assert said == "Searching the documentation"
+        assert "“" not in said and "…" not in said
 
     def test_search_wins_over_read_and_neither_leaves_it_blank(self, monkeypatch):
         module = self.app(monkeypatch)
-        assert module.turn.describe(module.RUNTIME.corpus, [{"name": tools.SEARCH_DOCS, "input": {}}]) == (
-            "Searching the docs"
-        )
-        assert module.turn.describe(module.RUNTIME.corpus, []) == "Working"
+        both = [{"name": tools.READ_DOC, "input": {"path": "docs/a.md"}},
+                {"name": tools.SEARCH_DOCS, "input": {"query": "gpu"}}]
+        copy = module.RUNTIME.copy
+        assert module.turn.describe(copy, both) == "Searching the documentation"
+        assert module.turn.describe(copy, []) == "Working"
+
+    def test_no_argument_can_reach_the_screen(self, monkeypatch):
+        """A model puts whatever it likes in there — a number, a list, nothing at
+        all. None of it is read now, so none of it can end a turn."""
+        module = self.app(monkeypatch)
+        for arguments in ({}, {"query": 123}, {"query": ["a"]}, {"path": None}):
+            said = module.turn.describe(
+                module.RUNTIME.copy,
+                [{"name": tools.SEARCH_DOCS, "input": arguments}],
+            )
+            assert said == "Searching the documentation"
+
+    def test_every_phrase_fits_the_line_it_is_drawn_on(self, monkeypatch):
+        """The row is one line at 500px. Fixed phrases mean this is checkable once
+        rather than being a cap on something variable."""
+        module = self.app(monkeypatch)
+        for phrase in module.RUNTIME.copy.status_phrases:
+            assert len(phrase) <= 40, phrase
 
 
 class TestToollessModels:
