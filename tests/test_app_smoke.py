@@ -862,6 +862,33 @@ class TestASpentFreeAllowance:
         assert stub.session_state["error"] is None
         assert "free allowance" in stub.session_state["notice"]
 
+    def test_when_every_model_is_spent_it_stops_and_says_so(self, monkeypatch):
+        """The state a shared IP puts a deployment in near the end of a UTC day.
+
+        The hop limit is what makes this end: without it a turn would walk the whole
+        picker, one provider call per model, on a tier where every one of them is
+        going to refuse. It stops with an error card the reader can act on rather
+        than a spinner."""
+        zen = ScriptedProvider(
+            [], name="opencode", error=self._free_limit_429(),
+            models=("nemotron-3.5-lightning-free", "deepseek-v4-flash-free",
+                    "hy3-free", "mimo-v2.5-free", "big-pickle"),
+        )
+        session = {
+            "messages": [{"role": "user", "text": "hello", "attachments": []}],
+            "processing": True,
+            "model": "opencode:nemotron-3.5-lightning-free",
+            # Three models already refused this turn: the hop budget is spent.
+            "tried": ["opencode:deepseek-v4-flash-free", "opencode:hy3-free",
+                      "opencode:mimo-v2.5-free"],
+        }
+        stub, _m = run_app(monkeypatch, client=zen, session=session, opencode=True)
+        assert stub.session_state["processing"] is False, "it must not spin"
+        assert "free allowance" in stub.session_state["error"]
+        assert stub.session_state["notice"] == "", (
+            "no 'retrying with…' left over promising something that never happened"
+        )
+
     def test_an_ordinary_429_is_still_a_busy_signal(self):
         """The discriminator is the limit's *name*, not the status or the prose —
         both of which say "wait" in the message above too."""
@@ -965,6 +992,34 @@ class TestSwitchingWithinAProvider:
         session = self.session() | {"model": "opencode:nemotron-3.5-lightning-free"}
         stub, _m = run_app(monkeypatch, client=zen, session=session, opencode=True)
         assert stub.button_labels.get("switch-model") == "→ Use deepseek-v4-flash"
+
+    def test_a_chain_of_hops_never_returns_to_a_spent_family(self, monkeypatch):
+        """The hole a single-model check leaves, one hop wide.
+
+        Reading the excluded family from the CURRENT model only, a chain starting on
+        nemotron leaves for deepseek and then — deepseek being the current model by
+        then — happily takes the other nemotron, whose daily counter hop 0 exhausted.
+        Simulated against the live free catalogue that chain touched 3 buckets out of
+        4; excluding every family already tried touches all 4.
+        """
+        from sage.ui.view import View
+
+        live = ("nemotron-3.5-lightning-free", "nemotron-3-ultra-free",
+                "deepseek-v4-flash-free", "big-pickle", "mimo-v2.5-free")
+        models = tuple(providers.Model("opencode", name) for name in live)
+        current, tried, chain = models[0], [], [models[0].id]
+        for _hop in range(3):
+            nxt = View(runtime=None, models=models, model=current).alternative(
+                "allowance", skip=tried
+            )
+            assert nxt is not None
+            tried.append(current.key)
+            current = nxt
+            chain.append(nxt.id)
+        # Zen buckets on the first two characters of the id.
+        buckets = [name[:2] for name in chain]
+        assert len(set(buckets)) == len(buckets), f"revisited a spent bucket: {chain}"
+        assert "nemotron-3-ultra-free" not in chain, "the 23s model, and a spent bucket"
 
     def test_a_sibling_is_still_better_than_nothing(self, monkeypatch):
         """Leaving the family is a preference, not a requirement: with only siblings

@@ -33,10 +33,15 @@ class OpenAICompatProvider:
         self._preferred = tuple(entry.models)
 
     def _headers(self) -> dict:
-        return {
+        headers = {
             "Authorization": f"Bearer {self._key}",
             "Content-Type": "application/json",
         }
+        # Only when the profile asks for one; otherwise httpx sends its own, which is
+        # the honest default. See `ProviderEntry.user_agent` for why this exists.
+        if self.entry.user_agent:
+            headers["User-Agent"] = self.entry.user_agent
+        return headers
 
     def _is_free(self, model: str) -> bool:
         lowered = (model or "").lower()

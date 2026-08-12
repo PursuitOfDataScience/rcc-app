@@ -74,20 +74,27 @@ class View:
         is, by definition, already spent. `family_of` is the general form of that —
         siblings share a maker, and a maker is what a tier meters — and it costs
         nothing where a provider meters some other way.
+
+        Every family the turn has already burned, not merely the current one. Taking
+        it from `self.model` alone left a hole one hop wide: starting on
+        `nemotron-3.5-lightning-free`, hop 1 correctly leaves for `deepseek`, and then
+        hop 2 — with the current model now `deepseek` — finds `nemotron-3-ultra-free`
+        a perfectly good "different family" and jumps straight back into the counter
+        hop 0 exhausted. Simulated against the live catalogue, that chain touched 3
+        buckets out of 4; excluding every spent family touches all 4, and drops the
+        23-second model out of the chain as a bonus.
         """
         spent = set(skip) | {self.model.key}
-        here = family_of(self.model.id)
+        burned = {family_of(key.split(":", 1)[-1]) for key in spent}
         available = [option for option in self.models if option.key not in spent]
         same = [item for item in available if item.provider == self.model.provider]
         elsewhere = [item for item in available if item.provider != self.model.provider]
-        # Each group tried by a different family first, then anything left in it.
-        ordered = [
-            [item for item in same if family_of(item.id) != here], same,
-            elsewhere,
-        ] if kind in self.PER_MODEL else [
-            elsewhere,
-            [item for item in same if family_of(item.id) != here], same,
-        ]
+        fresh = [item for item in same if family_of(item.id) not in burned]
+        # Each group tried by a fresh family first, then anything left in it.
+        ordered = (
+            [fresh, same, elsewhere] if kind in self.PER_MODEL
+            else [elsewhere, fresh, same]
+        )
         return next((group[0] for group in ordered if group), None)
 
     @property
