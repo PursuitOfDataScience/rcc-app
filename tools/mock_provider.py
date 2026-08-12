@@ -6,7 +6,7 @@ It cannot see anything that is about time: the moment a turn lands and the page 
 underneath the reader, an empty completion, a refused upload, a rate-limited click.
 Those need the actual app, and the actual app needs a provider.
 
-The OpenCode adapter in `sage/providers.py` is a plain OpenAI-compatible HTTP client,
+The OpenCode adapter in `sage/providers/` is a plain OpenAI-compatible HTTP client,
 so pointing it at this is enough — no key, no network, no code in the app that exists
 only for tests:
 

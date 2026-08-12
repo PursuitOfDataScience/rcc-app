@@ -25,10 +25,7 @@ from sage import llm
 @pytest.fixture(autouse=True)
 def _clean_modules():
     yield
-    import sys
-
-    for name in ("app", "streamlit", "streamlit.components", "streamlit.components.v1"):
-        sys.modules.pop(name, None)
+    stub_streamlit.forget_importers()
 
 
 def conversation(*turns):

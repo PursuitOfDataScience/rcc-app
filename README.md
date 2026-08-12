@@ -28,9 +28,29 @@ At least one key is needed; set both and the picker offers both. OpenCode Zen ke
 are free, which is a way to keep working once a paid quota runs out. Either can go
 in `.streamlit/secrets.toml` (gitignored) instead of the environment.
 
+## Pointing it at your own documentation
+
+Nothing under `sage/` names the RCC. What this deployment is *about* — its name, its
+documents, the URL its citations open, the synonyms that turn "my job got killed"
+into the OOM page, the address it hands out when the docs cannot answer — is a
+profile: [`profiles/rcc.toml`](profiles/rcc.toml) and the prompt beside it.
+
+```bash
+cp profiles/rcc.toml profiles/mine.toml && cp profiles/rcc.prompt.md profiles/mine.prompt.md
+SAGE_PROFILE=profiles/mine.toml streamlit run app.py
+```
+
+Under that, five registries are where an implementation is substituted rather than a
+value: a **reader** turns a file into chunks, a **link scheme** turns a document into
+the URL a citation opens, an **engine** searches the corpus, an **adapter** talks to a
+provider, and a **tool** is something the model can call. Each is a function and a
+`register()` call. [`profiles/README.md`](profiles/README.md) has the details and
+worked examples; [`sage/runtime.py`](sage/runtime.py) is the twenty lines that put
+them together.
+
 ## Providers
 
-Both sit behind one interface in [`sage/providers.py`](sage/providers.py) and normalise onto the same streaming chunk, so nothing downstream knows which is in use.
+Both sit behind one interface in [`sage/providers/`](sage/providers/) and normalise onto the same streaming chunk, so nothing downstream knows which is in use. Which providers exist at all is a profile list, so a third one — Together, Groq, vLLM, Ollama — is an entry with `kind = "openai"` and a base URL, not a code change.
 
 - **Mistral** — the official SDK.
 - **OpenCode Zen** — the OpenAI-compatible endpoint at `https://opencode.ai/zen/v1`. Its model list comes from `GET /models` at runtime, because a free tier's lineup changes without notice; `SAGE_OPENCODE_MODELS` is only the fallback. Zen serves its paid lineup from the same endpoint, so the picker keeps only the free ones — matched by naming convention (`-free`, plus stealth codenames) rather than a hardcoded list, since the lineup moves. `SAGE_ZEN_FREE_ONLY=0` shows everything, for a deployment with a balance. The tier marker is part of the id sent upstream and of the filter that reads it, but not of the name in the picker: `Model.label` drops it as a whole segment, since it is billing plumbing rather than something to pick between models on.
@@ -45,10 +65,16 @@ The corpus is indexed at **heading-sized chunks**, so a citation can deep-link t
 
 ## Configuration
 
-Environment-driven; defaults in [`sage/config.py`](sage/config.py).
+Two places, and the split is deliberate. **Knobs** — numbers, limits, switches — are
+environment variables with defaults in [`sage/config.py`](sage/config.py). **Content**
+— what the assistant is about, which documents it reads, where models come from — is
+the profile, because those are the things a second deployment has to change and none
+of them are settings. Where a variable below overrides something in the profile, it
+still wins, so an existing deployment keeps working unchanged.
 
 | Variable | Default | Purpose |
 |---|---|---|
+| `SAGE_PROFILE` | `./profiles/rcc.toml` | The deployment profile: subject, documents, copy, providers |
 | `MISTRAL_API_KEY` | *(one required)* | Mistral API key |
 | `OPENCODE_API_KEY` | *(one required)* | OpenCode Zen key (`sk-zen-…`), free tier |
 | `SAGE_DEFAULT_MODEL` | `opencode:deepseek-v4-flash-free` | Model a fresh session starts on, `provider:model-id` |
@@ -137,26 +163,55 @@ Paths are repo-relative and overridable with `RCC_USER_GUIDE_REPO`, `RCC_WEB_MIR
 ## Layout
 
 ```
-app.py                  # Streamlit UI: layout, session state, the tool loop
+app.py                    # the order of the page, and nothing else
+profiles/rcc.toml         # WHAT this deployment is about: subject, docs, copy, models
+profiles/rcc.prompt.md    #   …and its system prompt
 sage/
-  config.py             # environment-driven settings
-  normalize.py          # mkdocs/kramdown -> clean text
-  corpus.py             # discovery, heading-level chunking, citation URLs
-  search.py             # BM25 + stemming + synonym expansion
-  tools.py              # the two model-facing tools
-  links.py              # rewrite internal paths to published URLs
-  files.py              # upload handling
-  history.py            # message building, attachment stubbing, trimming
-  providers.py          # Mistral + OpenAI-compatible (OpenCode Zen) adapters
-  llm.py                # turn assembly, streaming, typed errors
-  prompts.py            # system prompt
-  feedback.py           # optional 👍/👎 sink
-static/app.css          # all styling
-static/app.js           # DOM touch-ups Streamlit cannot express
-tests/                  # unit tests, app smoke tests, retrieval eval
-tools/render_check.py   # renders app.css in headless Chromium and measures it
-refresh-docs.sh         # pull upstream docs -> docs/ + web/
-docs/                   # RCC User Guide (markdown)
-web/                    # scraped RCC website (text)
-docs_snapshot.json      # source commit + sync date
+  profile.py              # the profile: dataclasses + TOML loader
+  runtime.py              # the composition root: profile -> corpus -> retriever -> tools
+  registry.py             # the named-factory registry the five seams share
+  config.py               # environment-driven knobs (numbers, limits, switches)
+  env.py                  # reading those out of the environment
+  corpus/
+    __init__.py           # discovery and the walk
+    model.py              # Chunk, Document, Corpus
+    readers.py            # a file -> documents and chunks     [registry]
+    urls.py               # a document -> its published URL    [registry]
+  retrieval/
+    base.py               # Retriever, Result, Assessment      [registry]
+    bm25.py               # the engine this repo ships
+    text.py               # stemming, tokenizing, snippets
+  providers/
+    base.py               # Model, Chunk, the Provider protocol
+    mistral.py            # SDK adapter                        [registry]
+    openai_compat.py      # /chat/completions adapter          [registry]
+  tools.py                # search_docs and read_doc           [registry]
+  ui/
+    view.py               # what one render is handed
+    assets.py             # the stylesheet and the script
+    access.py             # keys, the login gate, who is asking
+    state.py              # session state, the limiter, starting and stopping a turn
+    landing.py            # the welcome screen and its cards
+    transcript.py         # questions, answers, sources, ratings
+    uploads.py            # taking files off the uploader
+    composer.py           # attachments, the input box, the controls
+    turn.py               # the tool loop
+  normalize.py            # mkdocs/kramdown -> clean text
+  links.py                # rewrite internal paths to published URLs
+  files.py                # upload handling
+  history.py              # message building, attachment stubbing, trimming
+  llm.py                  # turn assembly, streaming, typed errors
+  prompts.py              # rendering a profile's prompt
+  feedback.py             # optional 👍/👎 sink
+static/app.css            # all styling
+static/app.js             # DOM touch-ups Streamlit cannot express
+tests/                    # unit tests, app smoke tests, retrieval eval
+tools/render_check.py     # renders app.css in headless Chromium and measures it
+refresh-docs.sh           # pull upstream docs -> docs/ + web/
+docs/                     # RCC User Guide (markdown)
+web/                      # scraped RCC website (text)
+docs_snapshot.json        # source commit + sync date
 ```
+
+`[registry]` marks the five places an implementation is chosen by name at runtime, so
+a deployment can add its own. See [`profiles/README.md`](profiles/README.md).

@@ -94,6 +94,9 @@ CHROME = os.environ.get(
 )
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
+sys.path.insert(0, REPO)
+
+from sage import profile as profile_module  # noqa: E402
 
 # Streamlit's own header (`[data-testid="stHeader"]`) is a FULL-WIDTH fixed strip
 # across the top of every app at a z-index far above anything a stylesheet sets.
@@ -122,32 +125,21 @@ def _read(*parts: str) -> str:
 
 CSS = _read("static", "app.css")
 JS = _read("static", "app.js")
-APP = _read("app.py")
 
-
-def _subtitle() -> str:
-    match = re.search(r'class="welcome-subtitle">(.*?)</p>', APP, re.S)
-    return re.sub(r"\s+", " ", match.group(1)).strip() if match else "(missing)"
-
-
-def _card_labels() -> list[str]:
-    block = re.search(r"EXAMPLES = \[(.*?)\n\]", APP, re.S).group(1)
-    return [
-        f"{icon} {label}"
-        for icon, label, _q in re.findall(
-            r'\(\s*"([^"]+)",\s*"([^"]+)",\s*"([^"]+)"\s*\)', block
-        )
-    ]
-
-
-# There was a `_disclaimer()` here that read the caveat line out of app.py so the two
-# could not drift apart. The caveat line is gone from the app, so it is gone from here
-# — not left pointing at nothing, which is how a check comes to pass on a placeholder.
-# The lesson it taught is kept in `_subtitle()`'s neighbours: read the real string, or
-# do not claim to be measuring it.
-
-SUBTITLE = _subtitle()
-CARDS = _card_labels()
+# The strings the landing screen actually draws, read from the profile that supplies
+# them. They used to be scraped out of `app.py` with two regexes, which stopped
+# finding anything the day they moved — and a harness that cannot find the text it is
+# supposed to measure has to say so rather than measure a placeholder, so this now
+# reads the same object the app does.
+#
+# There was a `_disclaimer()` beside these that read the caveat line out of app.py so
+# the two could not drift apart. The caveat line is gone from the app, so it is gone
+# from here — not left pointing at nothing, which is how a check comes to pass on a
+# placeholder. The lesson is the same one: read the real string, or do not claim to be
+# measuring it.
+PROFILE = profile_module.active()
+SUBTITLE = PROFILE.copy.welcome_subtitle or "(missing)"
+CARDS = [f"{card.icon} {card.label}" for card in PROFILE.examples]
 # Read from app.js so the two can never drift apart.
 TOP_GAP = int(re.search(r"var TOP_GAP = (\d+)", JS).group(1))
 

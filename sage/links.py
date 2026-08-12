@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import re
 
-from .corpus import Corpus, docs_url
+from .corpus import Corpus
 
 # One level of nesting inside the label, because `[Batch jobs [beta]](docs/…)` is a
 # link a model writes and `[^\]]+` could not match it: the target was neither resolved
@@ -84,9 +84,11 @@ def resolve(target: str, corpus: Corpus) -> str | None:
 
     if document is None:
         return None
-    if document.source == "web":
-        return document.url
-    return docs_url(document.path, anchor)
+    # The document's own source knows how to place an anchor — or that it cannot,
+    # which is the right answer for a scraped page with no headings to point at.
+    # This used to be `if document.source == "web"`, one of six places the corpus's
+    # two tree names were spelled out in code that had no other business knowing them.
+    return corpus.url_for(document, anchor)
 
 
 def unresolved(text: str, corpus: Corpus) -> list[str]:

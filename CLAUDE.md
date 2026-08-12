@@ -1,5 +1,34 @@
 # Working on Sage
 
+## Where things go
+
+The app is assembled, not written down one file. Before adding anything, work out
+which of these it is — putting it in the wrong one is how the previous version came
+to have the RCC's name in nine modules and forty functions closed over four globals
+in `app.py`.
+
+- **Is it about the subject?** The name, the documents, the copy, the starter cards,
+  the synonyms, the prompt, which providers exist. That is `profiles/rcc.toml`, and
+  nothing under `sage/` may name the RCC. A test for it reads the profile rather than
+  a literal.
+- **Is it a number or a switch?** `sage/config.py`, environment-driven.
+- **Is it a new way of doing something the app already does?** Reading a file format,
+  building a URL, searching, talking to a provider, offering a tool: those are the
+  five registries (`corpus.readers`, `corpus.urls`, `retrieval.engines`,
+  `providers.adapters`, `tools.factories`). Register an implementation; do not add a
+  branch to the caller.
+- **Is it view?** `sage/ui/`, one module per region of the page, taking a `View`.
+  `app.py` is the order those are called in and nothing else — keep it that way, and
+  keep the order, because Streamlit renders in call order and `app.js` finds widgets
+  by where they are drawn.
+- **Everything else** — normalising markdown, resolving links, building history,
+  reading uploads, classifying errors — is a plain module that takes what it needs as
+  an argument.
+
+`sage/runtime.py` is the composition root: profile → corpus → retriever → tools →
+prompt. If a change means a UI module has to import the corpus builder or the
+retrieval engine, it belongs in the runtime instead.
+
 ## Finish the job
 
 A task is done when the work is **merged to `main`**, not when it is pushed and CI
@@ -35,11 +64,11 @@ httpx. Outbound HTTPS works. Chromium is at
 `~/.cache/ms-playwright/chromium-1217/chrome-linux64/chrome`.
 
 - **Lint**: `ruff check .`
-- **Tests**: `python -m pytest -q` — 387 pass. Real pytest; no shim is needed.
+- **Tests**: `python -m pytest -q` — 572 pass, 1 xpass. Real pytest; no shim is needed.
 - **Layout**: `SAGE_CHROME=~/.cache/ms-playwright/chromium-1217/chrome-linux64/chrome
-  python tools/render_check.py` — ~7 minutes for 576 renders.
+  python tools/render_check.py` — ~7 minutes for 660 renders.
 - **Anchors**: `python tools/anchor_check.py` — network-bound, so not in the suite.
-  Run it after touching `slugify`, `plain_heading` or `docs_url`.
+  Run it after touching `slugify`, `plain_heading` or a URL scheme.
 - **Palette**: `python tools/palette_check.py` — every declared colour and token
   against `tools/palette_baseline.json`. Milliseconds, and `pytest` runs it too.
 

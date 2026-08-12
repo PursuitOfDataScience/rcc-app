@@ -1,11 +1,11 @@
 import pytest
 
-from sage import tools
-from sage.search import Index
+from sage import retrieval, tools
 
 
-def runner(real_index) -> tools.ToolRunner:
-    return tools.ToolRunner(real_index)
+def runner(index) -> tools.ToolRunner:
+    """A turn's tool runner over a given index, built the way the app builds one."""
+    return tools.build(index).runner()
 
 
 def test_search_returns_paths_the_model_can_read_back(real_index):
@@ -105,18 +105,57 @@ class TestArgumentsAreWhateverTheModelTyped:
         )
 
 
-def test_tool_schemas_are_well_formed():
-    names = {schema["function"]["name"] for schema in tools.TOOL_SCHEMAS}
+def test_tool_schemas_are_well_formed(real_index):
+    schemas = tools.build(real_index).schemas
+    names = {schema["function"]["name"] for schema in schemas}
     assert names == {tools.SEARCH_DOCS, tools.READ_DOC}
-    for schema in tools.TOOL_SCHEMAS:
+    for schema in schemas:
         function = schema["function"]
         assert schema["type"] == "function"
         assert function["description"]
         assert function["parameters"]["required"]
 
 
+def test_the_schema_describes_this_deployments_corpus(real_index, profile):
+    """The description is what tells a model when to reach for the tool, so it names
+    the corpus — and it gets the name from the profile, not from this repository."""
+    search = next(
+        schema for schema in tools.build(real_index).schemas
+        if schema["function"]["name"] == tools.SEARCH_DOCS
+    )
+    assert profile.identity.corpus_name in search["function"]["description"]
+
+
+def test_a_deployment_can_register_a_tool_of_its_own(real_index):
+    """The registry is the seam: a third tool is a factory and a name, and the
+    schemas the provider is sent follow from the set, not from a constant."""
+
+    class Weather:
+        name = "weather"
+
+        def __init__(self, retriever, identity):
+            self.identity = identity
+
+        @property
+        def schema(self):
+            return {"type": "function", "function": {"name": self.name}}
+
+        def run(self, arguments, record):
+            return "cold"
+
+    tools.factories.register("weather", Weather)
+    try:
+        toolset = tools.build(real_index, names=(tools.SEARCH_DOCS, "weather"))
+        assert [s["function"]["name"] for s in toolset.schemas] == [
+            tools.SEARCH_DOCS, "weather"
+        ]
+        assert toolset.runner().run("weather", {}) == "cold"
+    finally:
+        tools.factories.remove("weather")
+
+
 def test_runner_works_on_an_empty_index():
     from sage.corpus import Corpus
 
-    tool = tools.ToolRunner(Index(Corpus()))
+    tool = runner(retrieval.Index(Corpus()))
     assert "No matching" in tool.run(tools.SEARCH_DOCS, {"query": "anything"})

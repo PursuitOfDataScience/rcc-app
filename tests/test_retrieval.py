@@ -1,7 +1,13 @@
 import pytest
 
-from sage import config, search
+from sage import config, retrieval
 from sage.corpus import Chunk, Corpus
+
+# The shipped profile's vocabulary: its protected terms and its synonym groups. That
+# split is the seam under test here — the stemming rules are about English and live in
+# code, while which words are technical terms, and which stand in for each other, is
+# about the subject and arrives from `profiles/rcc.toml`.
+words = retrieval.vocabulary()
 
 
 def make_corpus(*bodies: tuple[str, str, str]) -> Corpus:
@@ -23,27 +29,27 @@ def make_corpus(*bodies: tuple[str, str, str]) -> Corpus:
 
 class TestTokenize:
     def test_stems_plurals_consistently(self):
-        assert search.tokenize("quotas") == search.tokenize("quota")
-        assert search.tokenize("nodes") == search.tokenize("node")
-        assert search.tokenize("processes") == search.tokenize("process")
-        assert search.tokenize("directories") == search.tokenize("directory")
+        assert words.tokenize("quotas") == words.tokenize("quota")
+        assert words.tokenize("nodes") == words.tokenize("node")
+        assert words.tokenize("processes") == words.tokenize("process")
+        assert words.tokenize("directories") == words.tokenize("directory")
 
     def test_double_s_words_are_not_mangled(self):
-        assert "clas" not in search.tokenize("class")
+        assert "clas" not in words.tokenize("class")
 
     def test_technical_terms_are_protected(self):
-        assert "gres" in search.tokenize("--gres=gpu:1")
-        assert "globus" in search.tokenize("Globus")
+        assert "gres" in words.tokenize("--gres=gpu:1")
+        assert "globus" in words.tokenize("Globus")
 
     def test_cluster_names_emit_both_forms(self):
-        tokens = search.tokenize("midway3")
+        tokens = words.tokenize("midway3")
         assert "midway3" in tokens
         assert "midway" in tokens
         assert "3" in tokens
 
     def test_single_characters_are_kept_so_r_is_searchable(self):
         """`R` is a language users ask about; IDF handles the noisy letters."""
-        assert search.tokenize("use R") == ["use", "r"]
+        assert words.tokenize("use R") == ["use", "r"]
 
     def test_single_letter_language_is_retrievable(self, real_index):
         pages = {result.chunk.path for result in real_index.search("use R on midway", 5)}
@@ -52,16 +58,16 @@ class TestTokenize:
 
 class TestExpandQuery:
     def test_exact_terms_outweigh_synonyms(self):
-        weights = search.expand_query("scavenge")
-        assert weights[search._stem("scavenge")] == 1.0
-        assert weights[search._stem("preemptible")] == config.SYNONYM_WEIGHT
+        weights = words.expand("scavenge")
+        assert weights[words.stem("scavenge")] == 1.0
+        assert weights[words.stem("preemptible")] == config.SYNONYM_WEIGHT
 
     def test_symptom_language_reaches_mechanism_language(self):
-        weights = search.expand_query("my job was killed")
-        assert search._stem("memory") in weights
+        weights = words.expand("my job was killed")
+        assert words.stem("memory") in weights
 
     def test_empty_query_expands_to_nothing(self):
-        assert search.expand_query("   ") == {}
+        assert words.expand("   ") == {}
 
 
 class TestRanking:
@@ -72,7 +78,7 @@ class TestRanking:
             ("focused.md", "Storage quota", "Your storage quota is 25 GB on /home."),
             ("dump.md", "Publications", f"quota {filler}"),
         )
-        results = search.Index(corpus).search("storage quota")
+        results = retrieval.Index(corpus).search("storage quota")
         assert results[0].chunk.path == "focused.md"
 
     def test_rare_terms_outrank_common_ones(self):
@@ -81,7 +87,7 @@ class TestRanking:
             ("b.md", "B", "the the the the the the the the"),
             ("c.md", "C", "the the the the the"),
         )
-        results = search.Index(corpus).search("the sbatch")
+        results = retrieval.Index(corpus).search("the sbatch")
         assert results[0].chunk.path == "a.md"
 
     def test_title_matches_are_boosted(self):
@@ -89,24 +95,33 @@ class TestRanking:
             ("a.md", "Unrelated heading", "globus appears once here"),
             ("b.md", "Globus transfers", "some other body text entirely"),
         )
-        results = search.Index(corpus).search("globus")
+        results = retrieval.Index(corpus).search("globus")
         assert results[0].chunk.path == "b.md"
 
-    def test_the_user_guide_outranks_the_scraped_site_on_a_tie(self):
+    def test_the_user_guide_outranks_the_scraped_site_on_a_tie(self, profile):
+        """The prior travels with the corpus, not with the scorer.
+
+        `Corpus.weight` is what applies it, and it reads the source records the
+        corpus was built with — so a corpus assembled without them scores every tree
+        the same, which is the right answer for a corpus that never said otherwise.
+        """
         text = "Storage quotas are enforced per directory."
         chunks = [
             Chunk("web/p.txt#1", "web", "p.txt", "Storage", "Storage", "Storage", text, "u"),
             Chunk("docs/p.md#1", "docs", "p.md", "Storage", "Storage", "Storage", text, "u"),
         ]
-        results = search.Index(Corpus(chunks=chunks)).search("storage quotas")
+        corpus = Corpus(chunks=chunks, sources=profile.sources)
+        assert corpus.weight("docs") > corpus.weight("web")
+        results = retrieval.Index(corpus).search("storage quotas")
         assert results[0].source == "docs"
+        assert results[0].score > results[1].score
 
     def test_no_match_returns_nothing(self):
         corpus = make_corpus(("a.md", "A", "storage quota information"))
-        assert search.Index(corpus).search("xylophone unicorn") == []
+        assert retrieval.Index(corpus).search("xylophone unicorn") == []
 
     def test_empty_index_is_safe(self):
-        assert search.Index(Corpus()).search("anything") == []
+        assert retrieval.Index(Corpus()).search("anything") == []
 
     def test_limit_is_respected(self, real_index):
         assert len(real_index.search("storage", limit=3)) == 3
@@ -116,18 +131,18 @@ class TestSnippet:
     def test_original_casing_is_preserved(self):
         """The old snippet sliced a lowercased copy, mangling Midway3 and CNetID."""
         text = "Connect to Midway3 with your CNetID and run sbatch --gres=gpu:1 now."
-        out = search.snippet(text, search.expand_query("cnetid"))
+        out = retrieval.snippet(text, words.expand("cnetid"), config.SNIPPET_CHARS)
         assert "CNetID" in out
         assert "--gres=gpu:1" in out
 
     def test_window_centres_on_the_match(self):
         text = "filler " * 60 + "QUOTA MARKER" + " tail" * 60
-        out = search.snippet(text, search.expand_query("quota"), width=80)
+        out = retrieval.snippet(text, words.expand("quota"), 80)
         assert "QUOTA MARKER" in out
         assert out.startswith("…")
 
     def test_short_text_is_returned_whole(self):
-        out = search.snippet("Short body.", search.expand_query("short"))
+        out = retrieval.snippet("Short body.", words.expand("short"), config.SNIPPET_CHARS)
         assert out == "Short body."
 
 
@@ -154,7 +169,7 @@ class TestStemming:
         ],
     )
     def test_a_verb_and_its_inflection_share_a_key(self, inflected, base):
-        assert search._stem(inflected) == search._stem(base)
+        assert words.stem(inflected) == words.stem(base)
 
     @pytest.mark.parametrize("word", ["running", "getting", "making"])
     def test_generic_verbs_are_left_apart(self, word):
@@ -162,17 +177,17 @@ class TestStemming:
         set charged 2.9pp of recall for it: `ecosystems.md` stopped being the best
         answer to "what clusters does RCC run" because every page mentions running
         something. A three-letter stem is scaffolding, not a topic."""
-        assert search._stem(word) != search._stem(word[:3])
+        assert words.stem(word) != words.stem(word[:3])
 
     @pytest.mark.parametrize("word", ["scoring", "sharing"])
     def test_gerunds_do_not_collapse_onto_four_letter_fragments(self, word):
         """`scoring` → `scor` matched a GIS page titled "Match Score" and scored a
         radiology question the corpus cannot answer at 28.7, on a title boost."""
-        assert search._stem(word) == word
+        assert words.stem(word) == word
 
     def test_the_synonym_group_written_for_preemption_now_fires(self, real_index):
-        weights = search.expand_query("my job was preempted")
-        assert search._stem("scavenge") in weights
+        weights = words.expand("my job was preempted")
+        assert words.stem("scavenge") in weights
 
 
 class TestAssessment:

@@ -1,7 +1,10 @@
 import pytest
 
-from sage import config, links
+from sage import links, profile
 from sage.corpus import Chunk, Corpus, Document
+
+PROFILE = profile.active()
+DOCS_BASE_URL = PROFILE.source("docs").base_url
 
 
 def build() -> Corpus:
@@ -39,7 +42,10 @@ def build() -> Corpus:
             "web", "faqs.txt", "FAQs", "https://cloud-skyway.rcc.uchicago.edu/faqs", "body"
         ),
     }
-    return Corpus(chunks=chunks, documents=documents)
+    # With its sources, because a corpus built by `corpus.build` always has them and
+    # they are what `url_for` needs to place an anchor on a page the model cited by
+    # path rather than by indexed section.
+    return Corpus(chunks=chunks, documents=documents, sources=PROFILE.sources)
 
 
 CORPUS = build()
@@ -88,7 +94,7 @@ def test_an_unresolvable_target_is_not_linked_at_all():
     while they believed they had reached the cited section."""
     out = links.fix_links("[mystery](docs/nope/missing.md)", CORPUS)
     assert out == "mystery"
-    assert config.DOCS_BASE_URL not in out
+    assert DOCS_BASE_URL not in out
 
 
 def test_invented_paths_are_reported_not_only_hidden():

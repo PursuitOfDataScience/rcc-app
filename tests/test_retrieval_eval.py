@@ -176,9 +176,9 @@ def test_excluded_content_never_scores_confidently(real_index):
 
 def test_every_advertised_path_can_be_read_back(real_index):
     """A path search_docs returns must always resolve in read_doc."""
-    from sage.tools import READ_DOC, ToolRunner
+    from sage.tools import READ_DOC, build
 
-    runner = ToolRunner(real_index)
+    runner = build(real_index).runner()
     for question, _expected in CASES[:12]:
         for result in real_index.search(question, limit=3):
             out = runner.run(READ_DOC, {"path": result.id})

@@ -1,13 +1,28 @@
-"""Provider adapters: Mistral SDK and the OpenAI-compatible OpenCode Zen endpoint."""
+"""Provider adapters: Mistral SDK and the OpenAI-compatible OpenCode Zen endpoint.
+
+Both are reached through the registry: a profile entry says *where* a provider is and
+an adapter registered under its `kind` says *how* to talk to it. The tests build
+entries directly, which is the same thing `profile.load` does from TOML.
+"""
 
 import importlib
 import os
 import sys
+from dataclasses import replace
 from types import ModuleType, SimpleNamespace
 
 import pytest
 
-from sage import config, providers
+from sage import config, profile, providers
+from sage.providers.mistral import MistralProvider
+from sage.providers.openai_compat import OpenAICompatProvider
+
+ZEN = profile.active().provider("opencode")
+
+
+def zen(**overrides) -> providers.Provider:
+    """The shipped OpenCode entry, with whatever this test wants changed."""
+    return replace(ZEN, **overrides)
 
 
 class TestModel:
@@ -128,17 +143,17 @@ class TestNormalisation:
         call = SimpleNamespace(
             index=2, id="x", function=SimpleNamespace(name="read_doc", arguments="{}")
         )
-        assert providers._tool_fragments([call]) == [
+        assert providers.tool_fragments([call]) == [
             {"index": 2, "id": "x", "name": "read_doc", "arguments": "{}"}
         ]
 
     def test_dict_style_tool_calls(self):
         call = {"index": 1, "id": "y", "function": {"name": "search_docs"}}
-        assert providers._tool_fragments([call])[0]["name"] == "search_docs"
+        assert providers.tool_fragments([call])[0]["name"] == "search_docs"
 
     def test_missing_index_falls_back_to_position(self):
         calls = [{"function": {"name": "a"}}, {"function": {"name": "b"}}]
-        assert [f["index"] for f in providers._tool_fragments(calls)] == [0, 1]
+        assert [f["index"] for f in providers.tool_fragments(calls)] == [0, 1]
 
     @pytest.mark.parametrize(
         ("content", "expected"),
@@ -151,7 +166,7 @@ class TestNormalisation:
         ],
     )
     def test_content_shapes_flatten(self, content, expected):
-        assert providers._flatten(content) == expected
+        assert providers.flatten(content) == expected
 
 
 class TestMistralAdapter:
@@ -165,7 +180,7 @@ class TestMistralAdapter:
         )
 
     def _provider(self, stream):
-        adapter = providers.MistralProvider.__new__(providers.MistralProvider)
+        adapter = MistralProvider.__new__(MistralProvider)
         adapter._client = SimpleNamespace(
             chat=SimpleNamespace(stream=lambda **_kwargs: stream)
         )
@@ -207,26 +222,26 @@ class TestMistralAdapter:
 
 class TestOpenAICompat:
     def test_the_key_is_sent_as_a_bearer_token(self):
-        provider = providers.OpenAICompatProvider("sk-zen-abc", "https://x.test/v1/")
+        provider = OpenAICompatProvider(zen(base_url="https://x.test/v1/"), "sk-zen-abc")
         headers = provider._headers()
         assert headers["Authorization"] == "Bearer sk-zen-abc"
 
     def test_the_base_url_loses_a_trailing_slash(self):
-        provider = providers.OpenAICompatProvider("k", "https://x.test/v1/")
+        provider = OpenAICompatProvider(zen(base_url="https://x.test/v1/"), "k")
         assert provider._base == "https://x.test/v1"
 
     def test_model_discovery_falls_back_when_the_endpoint_is_unreachable(self):
-        provider = providers.OpenAICompatProvider("k", "http://127.0.0.1:1/v1")
+        provider = OpenAICompatProvider(zen(base_url="http://127.0.0.1:1/v1"), "k")
         found = provider.models()
-        assert [model.id for model in found] == list(config.OPENCODE_MODELS)
-        assert all(model.provider == providers.OPENCODE for model in found)
+        assert [model.id for model in found] == list(ZEN.models)
+        assert all(model.provider == "opencode" for model in found)
 
     def test_discovery_keeps_the_preferred_order_and_appends_the_rest(self):
         """Order is not cosmetic: it picks the session default *and* what an
         automatic failover lands on. Sorting alphabetically made a spent Mistral
         quota fail over to `big-pickle` rather than the free deepseek model."""
-        provider = providers.OpenAICompatProvider(
-            "k", "https://x.test/v1", preferred=("deepseek-v4-flash-free", "mimo-v2.5")
+        provider = OpenAICompatProvider(
+            zen(models=("deepseek-v4-flash-free", "mimo-v2.5")), "k"
         )
         ordered = provider._order(["zzz-model", "mimo-v2.5", "big-pickle",
                                    "deepseek-v4-flash-free"])
@@ -234,18 +249,15 @@ class TestOpenAICompat:
                            "big-pickle", "zzz-model"]
 
     def test_a_preferred_model_the_endpoint_no_longer_serves_is_dropped(self):
-        provider = providers.OpenAICompatProvider(
-            "k", "https://x.test/v1", preferred=("retired", "kept")
-        )
+        provider = OpenAICompatProvider(zen(models=("retired", "kept")), "k")
         assert provider._order(["kept", "new"]) == ["kept", "new"]
 
     def test_a_family_is_never_split_up(self):
         """Reported from the picker: "there are several nemotron models but they are
         not adjacent to each other". The ranking put one fifth because the preference
         list named it and the other last because nothing did."""
-        provider = providers.OpenAICompatProvider(
-            "k", "https://x.test/v1",
-            preferred=("deepseek-v4-flash-free", "nemotron-3-ultra-free"),
+        provider = OpenAICompatProvider(
+            zen(models=("deepseek-v4-flash-free", "nemotron-3-ultra-free")), "k"
         )
         ordered = provider._order([
             "nemotron-3.5-lightning-free", "ling-3.0-tiny-free",
@@ -261,9 +273,7 @@ class TestOpenAICompat:
     def test_grouping_does_not_move_the_first_model(self):
         """The head of the list is the session default and the failover target, so
         grouping is only allowed to decide where a family's OTHER members go."""
-        provider = providers.OpenAICompatProvider(
-            "k", "https://x.test/v1", preferred=("deepseek-v4-flash-free",)
-        )
+        provider = OpenAICompatProvider(zen(models=("deepseek-v4-flash-free",)), "k")
         for found in (
             ["aaa-first", "deepseek-v4-flash-free", "deepseek-v4-pro"],
             ["deepseek-v4-pro", "deepseek-v4-flash-free", "zzz-last"],
@@ -336,7 +346,7 @@ class TestTokenBudgetReachesTheRequest:
                 ))
             ])
 
-        adapter = providers.MistralProvider.__new__(providers.MistralProvider)
+        adapter = MistralProvider.__new__(MistralProvider)
         adapter._client = SimpleNamespace(chat=SimpleNamespace(stream=stream))
         assert "".join(chunk.text for chunk in adapter.stream("m", [], None)) == "ok"
         assert asked.get("max_tokens") == config.MAX_TOKENS
@@ -380,7 +390,7 @@ class TestTokenBudgetReachesTheRequest:
         fake.Timeout = lambda *_a, **_k: None
         monkeypatch.setitem(sys.modules, "httpx", fake)
 
-        provider = providers.OpenAICompatProvider("k", "https://x.test/v1")
+        provider = OpenAICompatProvider(zen(base_url="https://x.test/v1"), "k")
         streamed = "".join(c.text for c in provider.stream("z1", [], None))
         assert streamed == "ok"
         assert sent.get("max_tokens") == config.MAX_TOKENS
@@ -394,7 +404,7 @@ class TestFreeZenModels:
     button that returns a 402.
     """
 
-    def endpoint(self, monkeypatch, served):
+    def endpoint(self, monkeypatch, served, **overrides):
         """An OpenCode provider whose /models call returns `served`.
 
         httpx is imported inside the method under test and is not installed here, so
@@ -412,9 +422,8 @@ class TestFreeZenModels:
         fake = ModuleType("httpx")
         fake.get = lambda *a, **k: Response()
         monkeypatch.setitem(sys.modules, "httpx", fake)
-        return providers.OpenAICompatProvider(
-            "sk-zen-test", "https://opencode.ai/zen/v1",
-            preferred=("deepseek-v4-flash-free",),
+        return OpenAICompatProvider(
+            zen(models=("deepseek-v4-flash-free",), **overrides), "sk-zen-test"
         )
 
     def test_the_paid_lineup_is_not_offered(self, monkeypatch):
@@ -442,19 +451,18 @@ class TestFreeZenModels:
         assert offered == served
 
     def test_a_paid_deployment_can_see_its_whole_lineup(self, monkeypatch):
-        monkeypatch.setattr(config, "ZEN_FREE_ONLY", False)
         served = ["deepseek-v4-flash-free", "claude-opus-4-7"]
-        offered = [model.id for model in self.endpoint(monkeypatch, served).models()]
-        assert offered == served
+        endpoint = self.endpoint(monkeypatch, served, free_only=False)
+        assert [model.id for model in endpoint.models()] == served
 
 
 def test_a_model_label_is_just_the_model_name():
     """The provider prefix spent a third of the picker's width restating what the row
     already said, on every line."""
-    assert providers.Model(providers.OPENCODE, "deepseek-v4-flash-free").label == (
+    assert providers.Model("opencode", "deepseek-v4-flash-free").label == (
         "deepseek-v4-flash"
     )
-    assert providers.Model(providers.MISTRAL, "mistral-small-latest").label == (
+    assert providers.Model("mistral", "mistral-small-latest").label == (
         "mistral-small-latest"
     )
-    assert "Zen" not in providers.Model(providers.OPENCODE, "big-pickle").label
+    assert "Zen" not in providers.Model("opencode", "big-pickle").label

@@ -1,124 +1,29 @@
-"""Runtime configuration.
+"""Runtime knobs.
 
-Every value can be overridden by an environment variable so a deployment can be
+Numbers and switches only. What the assistant is *about* — its name, its documents,
+the URL its citations point at, the address it hands out when the documentation
+cannot help — lives in `sage/profile.py` and the TOML file it loads, because those
+are the things a second deployment has to change and none of them are settings.
+
+Every value here can be overridden by an environment variable so a deployment can be
 retuned without touching code. This module must stay importable without Streamlit.
 """
 
 from __future__ import annotations
 
 import json
-import os
 
-# --- helpers ---------------------------------------------------------------
-
-
-def _env_int(name: str, default: int, minimum: int | None = None) -> int:
-    """An integer setting, falling back to `default` on anything unusable.
-
-    `minimum` is for the settings where a non-positive value is not a choice but a
-    typo: `SAGE_MAX_TOKENS=-1` used to be handed straight to the provider, which
-    fails the request with a message about the model rather than about the setting.
-    """
-    raw = os.getenv(name)
-    if raw is None or not raw.strip():
-        return default
-    try:
-        value = int(raw)
-    except ValueError:
-        return default
-    return default if minimum is not None and value < minimum else value
-
-
-def _env_float(name: str, default: float, minimum: float | None = None) -> float:
-    raw = os.getenv(name)
-    if raw is None or not raw.strip():
-        return default
-    try:
-        value = float(raw)
-    except ValueError:
-        return default
-    return default if minimum is not None and value < minimum else value
-
-
-def _env_list(name: str, default: tuple[str, ...]) -> tuple[str, ...]:
-    """Comma-separated env override. `NAME=` (empty) explicitly clears the list."""
-    raw = os.getenv(name)
-    if raw is None:
-        return default
-    return tuple(item.strip() for item in raw.split(",") if item.strip())
-
+from .env import flag as _env_flag
+from .env import integer as _env_int
+from .env import items as _env_list
+from .env import number as _env_float
+from .env import text as _env_text
 
 # --- model -----------------------------------------------------------------
 
-# --- providers -------------------------------------------------------------
-# Which provider/model a fresh session starts on, as "provider:model-id".
-DEFAULT_MODEL = os.getenv("SAGE_DEFAULT_MODEL", "opencode:deepseek-v4-flash-free")
-
-MISTRAL_MODELS = _env_list(
-    "SAGE_MISTRAL_MODELS",
-    ("mistral-small-latest", "mistral-medium-latest", "mistral-large-latest"),
-)
-
-# OpenCode Zen is an OpenAI-compatible endpoint fronting a set of free models —
-# a way to keep working once a paid key is out of credit. The live list is
-# discovered from GET /models at runtime; this is only the fallback, since a free
-# tier's lineup changes without notice.
-OPENCODE_BASE_URL = os.getenv("OPENCODE_BASE_URL", "https://opencode.ai/zen/v1")
-OPENCODE_MODELS = _env_list(
-    "SAGE_OPENCODE_MODELS",
-    (
-        "deepseek-v4-flash-free",
-        "big-pickle",
-        "mimo-v2.5-free",
-        "nemotron-3-ultra-free",
-        "north-mini-code-free",
-        "hy3-free",
-        "laguna-s-2.1-free",
-        "ling-3.0-tiny-free",
-        "longcat-2.0-free",
-        # Both are served and both answer; they were missing from this list, so they
-        # were only ever reachable through discovery and sorted to the end of the
-        # picker.
-        "ling-3.0-flash-free",
-        "nemotron-3.5-lightning-free",
-    ),
-)
-# `hy3-free` was taken off this list and is back on it, which is the whole argument
-# for the rule below rather than a list. It answered `401 {"message": "Model hy3-free
-# is not supported"}` and was not in the served catalogue at all; two days later Zen
-# serves it again and it answers. Nothing about this deployment changed.
-#
-# So nothing is removed for being broken today. `north-mini-code-free` returns 401
-# from Zen's own upstream and `ling-3.0-tiny-free` returns 503 "Endpoint is
-# unavailable", and both stay: a free tier's lineup moves, an endpoint that is down
-# this week is back the next, and a blocklist that quietly outlives the outage it was
-# written for is worse than no blocklist. What the app does with them is already
-# right — a 401 fails over, a 503 offers Try again and a different model.
-#
-# Ordering is a separate job from membership. `providers.OpenAICompatProvider._order`
-# keeps a family's models adjacent in the picker whatever order they appear in here,
-# so this list only has to say which model a fresh session starts on and which one a
-# failover reaches for.
-
-# Zen serves paid models from the same endpoint as the free ones — the discovery call
-# came back with the whole Claude and GPT lineup, none of which this deployment has a
-# balance for, and every one of which was offered in the picker as if it worked.
-#
-# Filtered by a RULE rather than a list, because Zen's free lineup changes without
-# notice and a hardcoded set goes stale silently: every free model it serves is named
-# with a `-free` suffix, the exception being the stealth models it publishes under a
-# codename while they are free. Naming the convention keeps working when the list
-# changes; naming the list does not.
-ZEN_FREE_MARKS = _env_list("SAGE_ZEN_FREE_MARKS", ("-free", "big-pickle"))
-# Off for a deployment with a paid Zen balance, which should see everything it can use.
-ZEN_FREE_ONLY = os.getenv("SAGE_ZEN_FREE_ONLY", "1").strip().lower() not in (
-    "0", "false", "no", ""
-)
-
-
-def is_free_zen_model(model: str) -> bool:
-    lowered = (model or "").lower()
-    return any(mark and mark.lower() in lowered for mark in ZEN_FREE_MARKS)
+# Which provider/model a fresh session starts on, as "provider:model-id". The
+# provider half has to name an entry in the profile's provider list.
+DEFAULT_MODEL = _env_text("SAGE_DEFAULT_MODEL", "opencode:deepseek-v4-flash-free")
 
 # Substrings marking models that cannot call tools. Those answer from a single
 # retrieval pass instead of the search/read loop. The app also falls back
@@ -136,8 +41,7 @@ def sees_images(model: str) -> bool:
     lowered = (model or "").lower()
     return any(mark and mark.lower() in lowered for mark in VISION_MODELS)
 
-# Retained for compatibility; the UI picker overrides it per session.
-MODEL = os.getenv("SAGE_MODEL", "mistral-small-latest")
+
 # Generous on purpose. 1600 was the old value and it cut answers off mid-sentence —
 # "Per the RCC docs," and then nothing — which is worse than a long answer in every
 # way: the reader cannot tell a finished thought from a severed one, and asking again
@@ -159,38 +63,6 @@ MAX_TOOL_ROUNDS = _env_int("SAGE_MAX_TOOL_ROUNDS", 4, minimum=1)
 TOOL_RESULT_CHAR_BUDGET = _env_int("SAGE_TOOL_RESULT_CHAR_BUDGET", 60000, minimum=1)
 REQUEST_RETRIES = _env_int("SAGE_REQUEST_RETRIES", 2, minimum=0)
 
-# --- corpus ----------------------------------------------------------------
-
-DOCS_PATH = os.getenv("RCC_DOCS_PATH", "./docs")
-WEB_PATH = os.getenv("RCC_WEB_PATH", "./web")
-
-SOURCES = {"docs": DOCS_PATH, "web": WEB_PATH}
-SOURCE_EXTENSIONS = {"docs": (".md",), "web": (".txt",)}
-
-# The user guide is canonical and maintained; the scraped site is marketing copy.
-# A mild prior keeps the guide on top when both match equally well.
-SOURCE_WEIGHT = {"docs": 1.15, "web": 1.0}
-
-# Scraped hosts that are not RCC computing documentation. `learn-radiology` is
-# radiology teaching material (PI-RADS, mpMRI) and `vislab` is project showcase
-# content; neither can answer an HPC how-to, and both add false-positive matches.
-# Clear with `SAGE_EXCLUDE_HOSTS=` to index everything again.
-EXCLUDED_HOSTS = _env_list(
-    "SAGE_EXCLUDE_HOSTS",
-    ("learn-radiology.rcc.uchicago.edu", "vislab.rcc.uchicago.edu"),
-)
-
-# Bare citation dumps: thousands of paper titles that answer no how-to question
-# but match a lot of keywords. Matched against the path suffix.
-EXCLUDED_FILES = _env_list(
-    "SAGE_EXCLUDE_FILES",
-    (
-        "grants-publications_list-of-publications.txt",
-        "grants-publications_publications.txt",
-        "publications.txt",
-    ),
-)
-
 # --- chunking --------------------------------------------------------------
 #
 # Whole-file reads used to be truncated at 15k chars, which silently cut 62% of
@@ -202,6 +74,7 @@ MIN_CHUNK_CHARS = _env_int("SAGE_MIN_CHUNK_CHARS", 120, minimum=1)
 # Cap for reading a whole page. Pages above it return an outline plus their
 # opening, so the model asks for the section it actually needs.
 MAX_DOC_CHARS = _env_int("SAGE_MAX_DOC_CHARS", 20000, minimum=1)
+# For a reader with no heading structure to cut on, which is windowed instead.
 WEB_CHUNK_CHARS = _env_int("SAGE_WEB_CHUNK_CHARS", 2400, minimum=1)
 WEB_CHUNK_OVERLAP = _env_int("SAGE_WEB_CHUNK_OVERLAP", 240, minimum=0)
 
@@ -283,20 +156,6 @@ IMAGE_MAX_BYTES = _env_int("SAGE_IMAGE_MAX_BYTES", 256 * 1024, minimum=1)
 MAX_ATTACHED_BYTES = _env_int("SAGE_MAX_ATTACHED_BYTES", 20 * 1024 * 1024, minimum=1)
 MAX_FILE_TEXT_CHARS = _env_int("SAGE_MAX_FILE_TEXT_CHARS", 30000, minimum=1)
 
-
-# --- links -----------------------------------------------------------------
-
-# The canonical host, which is what `docs/CNAME` in this repository publishes. The
-# github.io address that used to be here still works, but only as a 301 to this one:
-# every citation cost a redirect, showed the reader a github.io hostname on hover for
-# a University service, and would break the day GitHub Pages stopped forwarding.
-DOCS_BASE_URL = os.getenv("RCC_DOCS_BASE_URL", "https://docs.rcc.uchicago.edu/")
-# The email, not a page: it is what the system prompt hands a user whose question the
-# documentation cannot answer, and it goes into the answer text. There was a
-# HELP_DESK_URL beside this for the caveat line under the input; that line is gone and
-# nothing else linked it, so it went too rather than sitting here unused.
-HELP_DESK_EMAIL = os.getenv("RCC_HELP_EMAIL", "help@rcc.uchicago.edu")
-
 # --- limits ----------------------------------------------------------------
 #
 # On by default, and deliberately so. The failure this guards against is not abuse
@@ -326,10 +185,8 @@ BUDGET_WINDOW_SECONDS = _env_float("SAGE_BUDGET_WINDOW_SECONDS", 86_400.0, minim
 #
 # Off unless configured, because turning it on without an OIDC provider in
 # `.streamlit/secrets.toml` would lock everyone out of a working app, including
-# whoever set the variable. `require_login()` checks both.
-REQUIRE_LOGIN = os.getenv("SAGE_REQUIRE_LOGIN", "0").strip().lower() in (
-    "1", "true", "yes", "on"
-)
+# whoever set the variable. The UI's login gate checks both.
+REQUIRE_LOGIN = _env_flag("SAGE_REQUIRE_LOGIN", False)
 # Email domains allowed past the login gate. Empty = any account the provider
 # authenticates, which for a Google client means the whole internet — so set it.
 ALLOWED_EMAIL_DOMAINS = _env_list("SAGE_ALLOWED_EMAIL_DOMAINS", ())
@@ -349,18 +206,10 @@ def email_allowed(email: str) -> bool:
 
 # --- ops -------------------------------------------------------------------
 
-LOG_LEVEL = os.getenv("LOG_LEVEL", "WARNING").upper()
+LOG_LEVEL = _env_text("LOG_LEVEL", "WARNING").upper()
 # Set to a writable path to collect thumbs-up/down as JSON lines. Unset = no sink.
-FEEDBACK_LOG = os.getenv("SAGE_FEEDBACK_LOG", "")
-SNAPSHOT_FILE = os.getenv("SAGE_SNAPSHOT_FILE", "./docs_snapshot.json")
-
-
-API_KEY_VARS = {"mistral": "MISTRAL_API_KEY", "opencode": "OPENCODE_API_KEY"}
-
-
-def api_key(provider: str = "mistral") -> str:
-    """Provider key from the environment. The UI adds an `st.secrets` fallback."""
-    return os.getenv(API_KEY_VARS.get(provider, "MISTRAL_API_KEY"), "")
+FEEDBACK_LOG = _env_text("SAGE_FEEDBACK_LOG", "")
+SNAPSHOT_FILE = _env_text("SAGE_SNAPSHOT_FILE", "./docs_snapshot.json")
 
 
 def snapshot() -> dict:

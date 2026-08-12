@@ -77,15 +77,19 @@ jobs:
           print("imports OK")
           PY
 
-      - name: Build the documentation index
+      # The composition root, not its pieces: this is the one check that the profile
+      # the repository ships still assembles into a working assistant — its source
+      # trees found, its reader and URL scheme registered, its engine built, its
+      # tools bound to that index.
+      - name: Assemble the assistant from the shipped profile
         run: |
           python - <<'PY'
           import logging
           logging.basicConfig(level=logging.INFO)
-          from sage import corpus, search
-          built = corpus.build()
-          index = search.Index(built)
-          assert built.chunks, "no chunks indexed"
-          assert index.search("storage quota"), "search returned nothing"
-          print("index:", corpus.summarize(built))
+          from sage import runtime
+          sage = runtime.build()
+          assert sage.corpus.chunks, "no chunks indexed"
+          assert sage.retriever.search("storage quota"), "search returned nothing"
+          assert len(sage.tool_schemas) == 2, sage.tool_schemas
+          print("profile:", sage.profile.origin, "->", sage.summary())
           PY

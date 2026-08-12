@@ -31,7 +31,8 @@ def _clear_app_env() -> None:
 _clear_app_env()
 
 from sage import corpus as corpus_mod  # noqa: E402
-from sage.search import Index  # noqa: E402
+from sage import profile as profile_mod  # noqa: E402
+from sage import retrieval  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
@@ -39,11 +40,32 @@ def neutral_environment():
     """Every test starts from the defaults, whatever the developer exports.
 
     Import-time settings are already handled above; this covers the ones read per
-    call — `config.api_key()` among them — and undoes anything a test leaves behind.
+    call — `providers.api_key()` among them — and undoes anything a test leaves behind.
     """
     _clear_app_env()
     yield
     _clear_app_env()
+
+
+@pytest.fixture(scope="session")
+def profile():
+    """The shipped deployment profile, which is what the suite asserts against.
+
+    Loaded through `active()` so the tests exercise the same path the app does — a
+    profile that failed to parse would leave every branded assertion here failing on
+    the generic defaults, which is exactly the signal wanted.
+    """
+    return profile_mod.active()
+
+
+@pytest.fixture(scope="session")
+def docs_source(profile):
+    return profile.source("docs")
+
+
+@pytest.fixture(scope="session")
+def web_source(profile):
+    return profile.source("web")
 
 
 @pytest.fixture(scope="session")
@@ -57,4 +79,4 @@ def real_corpus():
 
 @pytest.fixture(scope="session")
 def real_index(real_corpus):
-    return Index(real_corpus)
+    return retrieval.build(real_corpus)
