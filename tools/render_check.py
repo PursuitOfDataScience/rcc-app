@@ -1708,12 +1708,35 @@ SELECT_DRIVER = """
     }
   }
 
+  // Selecting, and selecting again if nothing came of it.
+  //
+  // Retrying the stimulus, not weakening the assertion: `settle` still has to see
+  // the button, and a page that never shows one still fails. What this absorbs is
+  // the harness racing the page — the driver picks text at machine speed on a shared
+  // runner, and a selection made while app.js is still rewriting the answer around
+  // it does not survive to the 10ms timer that reads it. A reader cannot select text
+  // in the first frames, so this is not a case the app has to handle.
+  //
+  // It went red on CI twice. The waits above (listeners installed, DOM gone quiet)
+  // fixed it on this machine — 0 in 60 — and did not on the runner, which is slower
+  // and busier; a wait long enough for the worst runner is a wait this check pays on
+  // every render. Repeating the pick costs nothing when the first one works.
+  async function selectAndSettle(selector, chars) {
+    for (var attempt = 0; attempt < 4; attempt++) {
+      if (!pick(selector, chars)) return false;
+      await settle(true);
+      var bubble = document.getElementById('ask-selection');
+      if (bubble && !bubble.hidden) return true;
+      await quiet(80, 500);
+    }
+    return false;
+  }
+
   if (rehooked) out.push({at: 'rehooked', rehooked: rehooked});
   report('idle');
 
   // A passage of an answer: the case the control exists for.
-  pick('[class*="st-key-answer-"] .stChatMessage p');
-  await settle(true);
+  await selectAndSettle('[class*="st-key-answer-"] .stChatMessage p');
   report('answer selected');
 
   // Clicking it drafts into the composer and stands down.
@@ -1739,8 +1762,7 @@ SELECT_DRIVER = """
   // And it does not ride the page: it is fixed, so it hides rather than drift.
   getSelection().removeAllRanges();
   await tick(60);
-  pick('[class*="st-key-answer-"] .stChatMessage p');
-  await settle(true);
+  await selectAndSettle('[class*="st-key-answer-"] .stChatMessage p');
   document.dispatchEvent(new Event('scroll', {bubbles: true}));
   await settle(false);
   report('after a scroll');
