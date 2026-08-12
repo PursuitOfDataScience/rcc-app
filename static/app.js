@@ -370,7 +370,10 @@
         // here had ever heard of it.
         var nodes = doc.querySelectorAll('[class*="st-key-answer-"], .user-message,' +
             '.stChatMessage, .notice, .error-card, [class*="st-key-error-actions"],' +
-            '[class*="st-key-upload-notes"], [class*="st-key-prompt-notes"]');
+            '[class*="st-key-upload-notes"], [class*="st-key-prompt-notes"],' +
+            // The editor stands where a question stood and is several times its
+            // height, so a tail measured without it stops at whatever preceded it.
+            '[class*="st-key-edit-box-"]');
         nodes.forEach(function (node) {
             var bottom = node.getBoundingClientRect().bottom;
             if (edge === null || bottom > edge) edge = bottom;
@@ -484,8 +487,40 @@
     // stylesheet whose padding something else is overriding — so it must still be
     // correct if it ever does fire.
     function settle(el) {
-        var messages = doc.querySelectorAll('.user-message');
-        var latest = messages[messages.length - 1];
+        // A question being edited is still a question, and counting only
+        // `.user-message` counted it out of both the stamp and `latest`.
+        //
+        // The stamp is what makes this run once per turn. Opening the editor takes a
+        // bubble off the page and closing it puts one back, so the count changed
+        // twice for something that is not a new turn, and each change re-armed a
+        // scroll whose whole job is to drag the conversation's tail up against the
+        // composer. On a conversation of two turns that lifted the question being
+        // edited 218px clean off the top of the window — the reader clicked a pencil
+        // and the thing they were editing left the screen. "it has to stay at where
+        // it is."
+        //
+        // `latest` matters for the same reason one line further down: the guard that
+        // refuses to buy space by pushing a still-visible question off the top could
+        // not see the editor, so on a single-turn conversation it found no question
+        // at all and returned early — which is why this only ever showed itself once
+        // a second turn existed.
+        var slots = doc.querySelectorAll(
+            '.user-message, [class*="st-key-edit-box-"]'
+        );
+        var latest = slots[slots.length - 1];
+
+        // Nothing at all while a question is open for editing.
+        //
+        // Everything below exists to drag the conversation's tail up against the
+        // composer, and a reader who has opened a question three turns back is not
+        // looking at the tail. Opening the editor makes the page taller by the
+        // difference between a bubble and a text box, which puts the tail under the
+        // composer and arms the follow — and the follow then scrolled the thing being
+        // edited 218px off the top of the window. Counting the editor as a question,
+        // above, was necessary and not sufficient: the follow is keyed on the page's
+        // height as well as the turn, and the editor changes that too.
+        if (doc.querySelector('[class*="st-key-edit-box-"]')) return;
+
         var end = tail();
         var bar = doc.querySelector('[data-testid="stBottomBlockContainer"]');
         // Measure before spending the once-per-turn stamp. Spending it up front
@@ -497,8 +532,9 @@
 
         // Counted on questions, not on answers. An errored turn appends no answer
         // message, so an answer count carries over from the previous turn and this
-        // reads as already done; every turn has exactly one question.
-        var stamp = String(messages.length);
+        // reads as already done; every turn has exactly one question — in one of two
+        // forms, which is what `slots` is counting.
+        var stamp = String(slots.length);
         var excess = composerTop(bar) - end - TAIL_GAP;
 
         // The tail is UNDER the composer, not above it, so there is no dead space to
