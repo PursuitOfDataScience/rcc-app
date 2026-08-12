@@ -952,6 +952,31 @@ class TestSwitchingWithinAProvider:
                            opencode=True)
         assert stub.button_labels.get("switch-model") == "→ Use nemotron-3-ultra"
 
+    def test_it_skips_a_sibling_that_shares_the_daily_bucket(self, monkeypatch):
+        """Zen keys its free-tier daily bucket on the first two characters of the
+        model id, so `nemotron-3.5-lightning-free` and `nemotron-3-ultra-free` share
+        one counter. Hopping from one to the other hands the turn a counter that is
+        already spent by definition — the failover has to leave the family."""
+        zen = ScriptedProvider(
+            [], name="opencode",
+            models=("nemotron-3.5-lightning-free", "nemotron-3-ultra-free",
+                    "deepseek-v4-flash-free"),
+        )
+        session = self.session() | {"model": "opencode:nemotron-3.5-lightning-free"}
+        stub, _m = run_app(monkeypatch, client=zen, session=session, opencode=True)
+        assert stub.button_labels.get("switch-model") == "→ Use deepseek-v4-flash"
+
+    def test_a_sibling_is_still_better_than_nothing(self, monkeypatch):
+        """Leaving the family is a preference, not a requirement: with only siblings
+        left, one of them is the last thing between the reader and a dead end."""
+        zen = ScriptedProvider(
+            [], name="opencode",
+            models=("nemotron-3.5-lightning-free", "nemotron-3-ultra-free"),
+        )
+        session = self.session() | {"model": "opencode:nemotron-3.5-lightning-free"}
+        stub, _m = run_app(monkeypatch, client=zen, session=session, opencode=True)
+        assert stub.button_labels.get("switch-model") == "→ Use nemotron-3-ultra"
+
     def test_another_provider_is_still_preferred_when_there_is_one(self, monkeypatch):
         """A spent *key* kills every model behind it, so a different key comes first."""
         zen = ScriptedProvider(
