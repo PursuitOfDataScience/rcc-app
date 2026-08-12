@@ -23,7 +23,9 @@ from .env import text as _env_text
 
 # Which provider/model a fresh session starts on, as "provider:model-id". The
 # provider half has to name an entry in the profile's provider list.
-DEFAULT_MODEL = _env_text("SAGE_DEFAULT_MODEL", "opencode:deepseek-v4-flash-free")
+DEFAULT_MODEL = _env_text(
+    "SAGE_DEFAULT_MODEL", "opencode:nemotron-3.5-lightning-free"
+)
 
 # Substrings marking models that cannot call tools. Those answer from a single
 # retrieval pass instead of the search/read loop. The app also falls back

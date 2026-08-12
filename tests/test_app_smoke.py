@@ -284,10 +284,11 @@ class TestModelPicker:
     def test_the_trigger_names_the_model_in_use(self, monkeypatch):
         """Otherwise the only way to see which model answers is to open the menu."""
         mistral = ScriptedProvider([], name="mistral", models=("mistral-small-latest",))
-        zen = ScriptedProvider([], name="opencode", models=("deepseek-v4-flash-free",))
+        zen = ScriptedProvider([], name="opencode",
+                               models=("nemotron-3.5-lightning-free",))
         stub, _m = run_app(monkeypatch, client=mistral, extra={"opencode": zen},
                            session=self.session(), opencode=True)
-        assert ("popover", "deepseek-v4-flash") in stub.events
+        assert ("popover", "nemotron-3.5-lightning") in stub.events
 
     def test_a_fresh_session_starts_on_the_configured_default(self, monkeypatch):
         """Not on whichever provider happens to be listed first. `configured_providers`
@@ -295,11 +296,12 @@ class TestModelPicker:
         that was quietly being ignored would look identical to one that was honoured.
         """
         mistral = ScriptedProvider([], name="mistral", models=("mistral-small-latest",))
-        zen = ScriptedProvider([], name="opencode", models=("deepseek-v4-flash-free",))
+        zen = ScriptedProvider([], name="opencode",
+                               models=("nemotron-3.5-lightning-free",))
         stub, _m = run_app(monkeypatch, client=mistral, extra={"opencode": zen},
                            session=self.session(), opencode=True)
         assert stub.session_state["model"] == config.DEFAULT_MODEL
-        assert stub.session_state["model"] == "opencode:deepseek-v4-flash-free"
+        assert stub.session_state["model"] == "opencode:nemotron-3.5-lightning-free"
 
     def test_it_is_not_a_selectbox(self, monkeypatch):
         """A selectbox kept its own value and clobbered an automatic failover on
@@ -377,8 +379,12 @@ class TestComposerStrip:
 
     def two_providers(self, monkeypatch, session, **kwargs):
         mistral = ScriptedProvider([], name="mistral", models=("mistral-small-latest",))
-        zen = ScriptedProvider([], name="opencode",
-                               models=("deepseek-v4-flash-free", "big-pickle"))
+        # Serving the model `SAGE_DEFAULT_MODEL` names, so the picker shows what a
+        # fresh session actually starts on rather than a fallback.
+        zen = ScriptedProvider(
+            [], name="opencode",
+            models=("nemotron-3.5-lightning-free", "deepseek-v4-flash-free"),
+        )
         return run_app(monkeypatch, client=mistral, extra={"opencode": zen},
                        session=session, opencode=True, **kwargs)
 
@@ -401,7 +407,7 @@ class TestComposerStrip:
         """Reported from the running app: the picker did not show up on the
         landing page at all — not until a prompt had been entered."""
         stub, _m = self.two_providers(monkeypatch, {"messages": [], "processing": False})
-        assert ("popover", "deepseek-v4-flash") in stub.events
+        assert ("popover", "nemotron-3.5-lightning") in stub.events
         assert [key for key in stub.button_labels if str(key).startswith("pick-")]
 
     def test_the_picker_is_still_there_mid_conversation(self, monkeypatch):
@@ -410,7 +416,7 @@ class TestComposerStrip:
             "processing": False,
         }
         stub, _m = self.two_providers(monkeypatch, session)
-        assert ("popover", "deepseek-v4-flash") in stub.events
+        assert ("popover", "nemotron-3.5-lightning") in stub.events
 
     def test_clear_appears_only_once_there_is_something_to_clear(self, monkeypatch):
         stub, _m = self.two_providers(monkeypatch, {"messages": [], "processing": False})

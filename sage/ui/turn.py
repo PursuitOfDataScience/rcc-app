@@ -69,22 +69,57 @@ def status_html(text: str) -> str:
     )
 
 
-def show_status(slot, text: str) -> None:
-    slot.empty()
-    with slot.container(), st.chat_message("assistant"):
-        st.markdown(status_html(text), unsafe_allow_html=True)
+class Status:
+    """The one status row, written in place.
+
+    Each change used to rebuild the row: `slot.empty()` threw the chat bubble away and
+    the next line was drawn into a fresh one. Streamlit reconciles that as a removal
+    and an insertion, and for exactly one frame the browser laid the page out with the
+    new row 32px lower — the row's own height — before it settled back. Measured at
+    16ms per hop, on every transition:
+
+        t=4496  top=682  'Searching the docs for “sbatch”'
+        t=4510  top=650  'Searching the docs for “sbatch”'     (+14ms)
+        t=4994  top=682  'Reading sbatch.md'
+        t=5010  gone                                            (+16ms)
+
+    A reader sees that as the line twitching downward each time it changes, which
+    reads as instability in the page rather than as progress.
+
+    So the bubble is created once and only the line inside it is replaced. A status
+    change is then a text swap in a node that never leaves the layout: nothing is
+    removed, nothing reflows, and the only thing that changes is the words.
+
+    Reopened lazily because the row is genuinely taken down twice — when the first
+    token of an answer arrives, and between rounds — and `st.empty()` cannot be
+    written into again once its parent has gone.
+    """
+
+    def __init__(self, slot) -> None:
+        self._slot = slot
+        self._line = None
+
+    def show(self, text: str) -> None:
+        if self._line is None:
+            with self._slot.container(), st.chat_message("assistant"):
+                self._line = st.empty()
+        self._line.markdown(status_html(text), unsafe_allow_html=True)
+
+    def clear(self) -> None:
+        self._slot.empty()
+        self._line = None
 
 
-def clearing(stream, slot):
-    """Yield deltas, dropping the status placeholder as soon as text arrives."""
+def clearing(stream, status: Status):
+    """Yield deltas, dropping the status row as soon as text arrives."""
     cleared = False
     for delta in stream:
         if not cleared:
-            slot.empty()
+            status.clear()
             cleared = True
         yield delta
     if not cleared:
-        slot.empty()
+        status.clear()
 
 
 def recording(stream):
@@ -176,8 +211,8 @@ def run(view: View) -> None:
     st.markdown('<div id="processing-signal" hidden></div>', unsafe_allow_html=True)
 
     render_user(st.session_state.messages[-1])
-    status = st.empty()
-    show_status(status, "Thinking")
+    status = Status(st.empty())
+    status.show("Thinking")
 
     answer = st.empty()
     runner = runtime.toolset.runner()
@@ -294,7 +329,7 @@ def run(view: View) -> None:
                 break
 
             answer.empty()
-            show_status(status, describe(view.corpus, turn.tool_calls))
+            status.show(describe(view.corpus, turn.tool_calls))
             messages.append(turn.as_message())
             for call in turn.tool_calls:
                 result = runner.run(call["name"], call["input"])
@@ -316,7 +351,7 @@ def run(view: View) -> None:
                 messages.append(llm.tool_result_message(call, result))
             turn = start(messages, runtime.tool_schemas)
 
-        status.empty()
+        status.clear()
 
         # An answer that is not there. The turn succeeded — no exception, maybe even a
         # search and a read — and the stream carried nothing but whitespace, which the
@@ -380,7 +415,7 @@ def run(view: View) -> None:
                            model.key, len(invented), ", ".join(invented[:5]))
 
     except llm.AssistantError as exc:
-        status.empty()
+        status.clear()
         answer.empty()
         tried = list(st.session_state.tried)
         alternative = view.alternative(exc.kind, skip=tried)
@@ -426,7 +461,7 @@ def run(view: View) -> None:
             # Exception; on 1.54 the handler below is the one that fires.
             interrupted = True
             raise
-        status.empty()
+        status.clear()
         answer.empty()
         logger.exception("Unexpected failure")
         fail(llm.classify(exc).user_message, detail(view, exc))
