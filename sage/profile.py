@@ -137,6 +137,24 @@ class Copy:
         "That account is outside the domains this deployment allows. "
         "Sign in with an allowed account."
     )
+    #: The progress line, one phrase per stage of a turn. Fixed phrases on purpose:
+    #: this row is progress, not a log, and it used to name the document being read
+    #: and quote the model's query back — neither of which a reader can place. A
+    #: deployment over something other than documentation says so here.
+    status_thinking: str = "Thinking"
+    status_searching: str = "Searching the documentation"
+    status_reading: str = "Reading the relevant sections"
+    status_working: str = "Working"
+
+    @property
+    def status_phrases(self) -> tuple[str, ...]:
+        """Every phrase the row can hold — what the layout check has to fit."""
+        return (
+            self.status_thinking,
+            self.status_searching,
+            self.status_reading,
+            self.status_working,
+        )
 
 
 @dataclass(frozen=True)

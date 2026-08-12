@@ -186,11 +186,13 @@ PICKER_LABEL = "mistral-medium-latest"
 PLACEHOLDERS = {True: "Ask any question about the RCC…",
                 False: "Ask a follow-up question…"}
 
-# The worst the status line gets: "Reading " and the longest document title in the
-# corpus, 60 characters of it. It said "Reading SSH (Secure Shell)" — 26 characters,
-# which fits anywhere and so measured nothing. `app.py` caps the variable half at 48,
-# and this is what that cap has to survive at 500px.
-STATUS_LABEL = "Reading Artificial Intelligence in the Spotlight…"
+# The worst the status line gets, read from the profile that supplies it rather than
+# written out here. It used to be `"Reading "` plus the longest document title in the
+# corpus, 49 characters of it — a fair worst case back when the line named what it was
+# reading, and pure fiction since it stopped: the app cannot produce that string any
+# more, so measuring it measured nothing that ships. The phrases are fixed now, so the
+# longest of them IS the worst case, exactly.
+STATUS_LABEL = max(PROFILE.copy.status_phrases, key=len)
 
 
 def base_css(scheme: str) -> str:
