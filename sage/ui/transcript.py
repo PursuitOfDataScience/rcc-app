@@ -340,6 +340,22 @@ def render_rating(position: int, message: dict) -> None:
                     st.rerun()
 
 
+def _evidence(view: View, sources: list[dict]) -> dict[str, str]:
+    """The text of each section the answer was built from, keyed by its chunk id.
+
+    What `links.mark_sources` attributes an unlinked paragraph with when the turn read
+    exactly one section — the case where there is nothing to get wrong. It is read
+    from the corpus rather than stored on the message because it is already there:
+    the strip carries the ids, and the ids resolve.
+    """
+    found = {}
+    for source in sources:
+        chunk = view.corpus.chunk(str(source.get("id", "")))
+        if chunk is not None:
+            found[chunk.id] = chunk.text
+    return found
+
+
 def render_assistant(view: View, position: int, message: dict) -> None:
     sources = message.get("sources", [])
     with st.container(key=f"answer-{position}"):
@@ -352,7 +368,9 @@ def render_assistant(view: View, position: int, message: dict) -> None:
                 # answer keeps its links, because that text goes back upstream as
                 # history.
                 st.markdown(
-                    links.mark_sources(links.fix_links(text, view.corpus), sources)
+                    links.mark_sources(
+                        links.fix_links(text, view.corpus), sources, _evidence(view, sources)
+                    )
                 )
             if message.get("stopped"):
                 # Said inside the bubble, under the text it belongs to. A stopped

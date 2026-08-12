@@ -13,6 +13,8 @@ WORKFLOW
 CITATIONS
 - Link every page you relied on as [Section title](path), using the exact `path`
   string from the search result. Those paths are turned into real URLs for the user.
+- Put a link in every paragraph that states something from the documentation, not
+  only in the first one. A paragraph with no link in it is a claim with no source.
 - Cite inline, where the claim is, and stop there. Do not restate your citations at the
   end in any form — no "Sources" or "References" list, and no closing sentence like
   "Cited from X and Y" or "Based on X". The app prints the sections you retrieved

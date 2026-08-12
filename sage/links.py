@@ -662,7 +662,120 @@ def _url_of(number: int, numbers: dict[str, int]) -> str:
     return max(found, key=len) if found else ""
 
 
-def mark_sources(text: str, sources: list[dict] | None) -> str:
+
+# --- attributing a sentence the model did not link -------------------------
+#
+# Markers built from the model's own links are exact, and they are also occasional:
+# asked the same question twice, `nemotron-3.5-lightning` linked two sections on one
+# run and none on the next. An answer's citations should not depend on which way a
+# free model felt on a Tuesday.
+#
+# So a sentence the model left unlinked is attributed from what the turn actually
+# read — but only when the turn read ONE section, and that restriction is the whole
+# of the design.
+#
+# With one section there is no wrong answer available: the answer was built from it
+# and nothing else, so a sentence that draws on the documentation draws on that. With
+# two, picking between them is a guess, and measured on the real corpus it is a
+# biased one — asked how to submit a batch job, the turn read a 422-character section
+# on submitting and a 4151-character section on script contents, and simple word
+# overlap handed almost every sentence to the longer one because a longer section
+# owns more words. That is a plausible wrong citation, which spends exactly the trust
+# the Sources strip exists to earn.
+#
+# For the multi-section case the citation has to come from the model, which knows
+# what it used. `prompts` asks for it; where it arrives, `_mark_line` above is exact.
+
+_WORD_TOKEN = re.compile(r"[a-z0-9][a-z0-9_.:/=+-]{2,}")
+# Words that discriminate nothing: they are in every section of any corpus.
+_STOPWORDS = frozenset({
+    "the", "and", "for", "you", "your", "with", "that", "this", "from", "are", "can",
+    "will", "not", "use", "used", "using", "run", "runs", "have", "has", "was", "all",
+    "any", "its", "it's", "each", "when", "then", "than", "how", "what", "which",
+    "want", "need", "must", "should", "also", "see", "one", "two", "more", "most",
+    "some", "our", "out", "get", "set", "add", "may", "but", "there", "their", "them",
+    "these", "those", "into", "onto", "over", "under", "before", "after", "here",
+})
+# How many distinctive words a sentence has to share with a section before it is
+# marked as resting on it. One is a coincidence — every answer about Slurm says
+# "sbatch" — and three is so strict that only a quotation clears it.
+_MIN_EVIDENCE = 2
+
+
+def _words(text: str) -> set[str]:
+    return {
+        word for word in _WORD_TOKEN.findall(text.lower())
+        if word not in _STOPWORDS
+    }
+
+
+def _distinctive(evidence: dict[str, str], sources: list[dict]) -> dict[int, set]:
+    """The words that belong to one read section and to none of the others.
+
+    Sections read in the same turn are about the same question and share most of
+    their vocabulary; what is left after the overlap is removed is the part that can
+    tell them apart. With only one section read there is nothing to be told apart
+    from, and every word of it counts — there is no wrong answer to pick.
+    """
+    # Keyed by the chunk id the strip carries, not by URL: two sections of one page
+    # share a URL and are one entry, and their text is the same entry's evidence.
+    of_id = {str(source.get("id", "")): index
+             for index, source in enumerate(sources, start=1)}
+    by_number: dict[int, set[str]] = {}
+    for identifier, body in evidence.items():
+        number = of_id.get(identifier)
+        if number is None:
+            continue
+        by_number.setdefault(number, set()).update(_words(body))
+    if len(by_number) < 2:
+        return by_number
+    return {
+        number: words - set().union(*(
+            other for key, other in by_number.items() if key != number
+        ))
+        for number, words in by_number.items()
+    }
+
+
+def _attribute(sentence: str, distinctive: dict[int, set]) -> int | None:
+    """The one section this sentence is about, or None if that is not clear."""
+    words = _words(sentence)
+    scores = sorted(
+        ((len(words & terms), number) for number, terms in distinctive.items()),
+        reverse=True,
+    )
+    return scores[0][1] if scores and scores[0][0] >= _MIN_EVIDENCE else None
+
+
+def _attribute_line(line: str, distinctive: dict[int, set],
+                    numbers: dict[str, int]) -> str:
+    """Mark the last sentence of a paragraph that rests on one section.
+
+    One marker per paragraph rather than per sentence: a paragraph drawn from a
+    single section would otherwise carry the same number on every line of it, which
+    is not attribution, it is decoration.
+    """
+    ends = [match.end() for match in _SENTENCE_END.finditer(line)]
+    if not ends:
+        return line
+    start = 0
+    best: tuple[int, int] | None = None
+    for end in ends:
+        number = _attribute(line[start:end], distinctive)
+        if number is not None:
+            best = (end, number)
+        start = end
+    if best is None:
+        return line
+    at, number = best
+    return line[:at] + _MARKER.format(number=number, url=_url_of(number, numbers)) + line[at:]
+
+
+def mark_sources(
+    text: str,
+    sources: list[dict] | None,
+    evidence: dict[str, str] | None = None,
+) -> str:
     """Put a small numbered marker at the end of every sentence that cites a source.
 
     The Sources strip under an answer says what the whole answer rests on. It cannot
@@ -670,12 +783,19 @@ def mark_sources(text: str, sources: list[dict] | None) -> str:
     particular claim. A marker where the claim is answers it, and clicking it opens
     the same page the strip's entry opens.
 
-    Built from the links the model already wrote — the system prompt asks for
-    `[Section title](path)` inline — so nothing new is asked of the model and every
-    model gets this, including the ones that cannot call tools. A link the strip does
-    not list is left exactly as it is: it resolved to something real, it is just not
-    one of the numbered sections, and inventing a number for it would make the strip
-    and the answer disagree.
+    Two ways a marker arrives, in that order of confidence.
+
+    **The model linked it.** The system prompt asks for `[Section title](path)`
+    inline; where one is there, the citation is the model's own and exact. A link the
+    strip does not list is left exactly as it is: it resolved to something real, it is
+    just not one of the numbered sections, and inventing a number for it would make
+    the strip and the answer disagree.
+
+    **The model did not, and `evidence` says what was read.** Asked the same question
+    twice, `nemotron-3.5-lightning` linked two sections on one run and none on the
+    next, so an answer's citations cannot depend on that. A paragraph with no link of
+    its own is attributed to the read section whose distinctive words it uses — and
+    to nothing at all when that does not discriminate. See `_attribute`.
 
     Render-time only. The stored answer keeps its links, because that text goes back
     upstream as history, and a transcript full of `:small[:gray[[1](…)]]` teaches the
@@ -687,6 +807,12 @@ def mark_sources(text: str, sources: list[dict] | None) -> str:
     if not numbers:
         return text
 
+    # What the one read section is made of, for the sentences the model left
+    # unlinked. Empty for a turn that read several: see the note above `_words`.
+    distinctive = _distinctive(evidence or {}, sources)
+    if len(distinctive) != 1:
+        distinctive = {}
+
     out: list[str] = []
     fenced = False
     for line in text.splitlines():
@@ -694,5 +820,20 @@ def mark_sources(text: str, sources: list[dict] | None) -> str:
             fenced = not fenced
             out.append(line)
             continue
-        out.append(line if fenced else _mark_line(line, numbers))
+        if fenced:
+            out.append(line)
+            continue
+        marked = _mark_line(line, numbers)
+        if distinctive and marked == line and not _skip(line):
+            marked = _attribute_line(line, distinctive, numbers)
+        out.append(marked)
     return "\n".join(out)
+
+
+# Lines that are not prose making a claim: a heading names a section, a list bullet
+# of one fragment is not a sentence, and a table row is a grid.
+_SKIP_LINE = re.compile(r"^\s{0,3}(?:#{1,6}\s|>|\||\s*$)")
+
+
+def _skip(line: str) -> bool:
+    return bool(_SKIP_LINE.match(line))
