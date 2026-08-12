@@ -211,6 +211,14 @@ models_env = "SAGE_OPENCODE_MODELS"
 # list only has to say which model a fresh session starts on and which one a failover
 # reaches for.
 models = [
+    # First, because this list decides two things and both now point here: which
+    # model a fresh session starts on when `SAGE_DEFAULT_MODEL` names it, and which
+    # one an automatic failover reaches for. The default moved to this model and the
+    # order did not follow, so a turn that lost its allowance failed over to
+    # `nemotron-3-ultra-free` — which answers a tool round in 23s when it answers at
+    # all, and was returning 503 from Zen's own upstream at the time. This one
+    # answers in 2.2s.
+    "nemotron-3.5-lightning-free",
     "deepseek-v4-flash-free",
     "big-pickle",
     "mimo-v2.5-free",
@@ -221,7 +229,6 @@ models = [
     "ling-3.0-tiny-free",
     "longcat-2.0-free",
     "ling-3.0-flash-free",
-    "nemotron-3.5-lightning-free",
 ]
 # Zen serves paid models from the same endpoint as the free ones — the discovery call
 # came back with the whole Claude and GPT lineup, none of which this deployment has a
