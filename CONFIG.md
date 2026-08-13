@@ -75,6 +75,18 @@ search/read loop — searched up front, matching sections in the prompt, still c
 Set `SAGE_TOOLLESS_MODELS`, or let the app detect it: a provider that rejects tools is
 retried that way.
 
+### A note on the free tier
+
+OpenCode Zen meters free models per **IP address**, per model, per UTC day, before
+authentication — your key is not what is counted, and on a shared network neither is
+your traffic. It also gives its own CLI a larger daily allowance than other clients,
+chosen by `User-Agent`. `profiles/README.md` has the measurements and the
+`user_agent` setting that exists because of them.
+
+The practical consequence: treat the free models as a fallback. A funded key (Zen's
+paid models are metered per key, per minute) or a provider that meters per account is
+what makes a shared deployment dependable.
+
 ## Server settings
 
 [`.streamlit/config.toml`](.streamlit/config.toml). The theme is stated **twice**,

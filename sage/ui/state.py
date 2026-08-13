@@ -8,6 +8,7 @@ suggestion.
 
 from __future__ import annotations
 
+import copy
 import logging
 import time
 
@@ -68,8 +69,29 @@ SESSION_DEFAULTS: tuple[tuple[str, object], ...] = (
 
 
 def initialise() -> None:
+    """Give this session its own copy of every default.
+
+    A copy, and the word is load-bearing. `SESSION_DEFAULTS` is built once, when this
+    module is imported — once per *process*, not once per session — so the `[]` beside
+    `messages` is a single list object. Handing it to `setdefault` gave every session
+    in the process the same list: one reader's question appended to it appeared in
+    another reader's transcript, and the app opened on somebody else's conversation
+    instead of the landing screen. On a public deployment that is other people's
+    questions, their attachments, and whatever they pasted into them.
+
+    This is a regression the refactor introduced and nothing caught. The list used to
+    be written inside `app.py`'s module body, which Streamlit re-executes on every
+    script run, so a fresh `[]` was built for each session by accident rather than on
+    purpose. Moving the declaration into a module that is imported once removed the
+    accident and left nothing in its place.
+
+    `deepcopy` rather than a table of factories: it cannot be got wrong later. A new
+    mutable default added to that tuple is safe the day it is written, with no one
+    having to notice that it needs to be.
+    """
     for key, default in SESSION_DEFAULTS:
-        st.session_state.setdefault(key, default)
+        if key not in st.session_state:
+            st.session_state[key] = copy.deepcopy(default)
 
 
 @st.cache_resource(show_spinner=False)

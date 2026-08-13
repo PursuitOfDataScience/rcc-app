@@ -221,6 +221,21 @@ class ProviderEntry:
     #: One sentence shown when no key is set anywhere — where to get one, what it
     #: looks like. The only screen a reader sees before the app stops.
     hint: str = ""
+    #: The `User-Agent` to send. Empty means the HTTP client's own, which is honest
+    #: and is the default.
+    #:
+    #: It is settable because at least one provider meters on it. Measured against
+    #: OpenCode Zen, same key, same model, same URL, seconds apart:
+    #:
+    #:     default python-httpx UA          -> 429 FreeUsageLimitError
+    #:     `user-agent: opencode/1.18.16 …` -> 200
+    #:
+    #: Their gateway picks a full `dailyRequests` allowance or a much smaller
+    #: `dailyRequestsFallback` by matching a substring of this header, so a
+    #: third-party client silently gets the small one. Setting this to another
+    #: product's string is claiming to BE that product to obtain its quota, so
+    #: nothing here does it for you: the shipped profile leaves it empty.
+    user_agent: str = ""
 
 
 @dataclass(frozen=True)
@@ -357,6 +372,7 @@ def _provider(raw: dict) -> ProviderEntry:
         free_marks=marks,
         free_only=free_only,
         hint=str(raw.get("hint", "")),
+        user_agent=str(raw.get("user_agent", "")),
     )
 
 

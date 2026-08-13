@@ -114,3 +114,38 @@ python -c "from sage import runtime; r = runtime.build(); print(r.summary())"
 python tools/metrics.py          # retrieval quality against tests/test_retrieval_eval.py
 python tools/anchor_check.py     # every citation anchor resolves on the live site
 ```
+
+## A provider that meters on your User-Agent
+
+Worth knowing before you trust a free tier, because it is invisible until it bites.
+
+OpenCode Zen limits its free models **per IP address, per model, per UTC day** — the
+limiter runs before authentication and never reads your API key, so a request with no
+`Authorization` header at all gets the same `FreeUsageLimitError` as one with a valid
+key. On a university cluster that counter is shared by everyone behind the same NAT.
+
+It also serves two different daily allowances, and picks between them by matching a
+substring of the `User-Agent`. Measured with one key, one model, one URL, seconds
+apart:
+
+    default python-httpx User-Agent    -> 429 FreeUsageLimitError
+    user-agent: opencode/1.18.16 …     -> 200
+
+So a third-party client silently gets the smaller tier. `user_agent` on a provider
+entry exists because of this:
+
+```toml
+[[providers]]
+name = "example"
+kind = "openai"
+user_agent = "sage/1.0 (+https://example.org/sage)"
+```
+
+Left empty — as the shipped profile leaves it — the HTTP client sends its own, which
+is the honest thing to do. Setting it to *another product's* string is claiming to be
+that product in order to draw its quota; that is your call to make and not one this
+repository makes for you.
+
+The general lesson for a profile: a free tier metered per IP is not a foundation for
+a shared deployment. Providers that meter per key or per account — most of them —
+degrade for you alone rather than for your whole institution.

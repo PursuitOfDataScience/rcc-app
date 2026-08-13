@@ -862,6 +862,33 @@ class TestASpentFreeAllowance:
         assert stub.session_state["error"] is None
         assert "free allowance" in stub.session_state["notice"]
 
+    def test_when_every_model_is_spent_it_stops_and_says_so(self, monkeypatch):
+        """The state a shared IP puts a deployment in near the end of a UTC day.
+
+        The hop limit is what makes this end: without it a turn would walk the whole
+        picker, one provider call per model, on a tier where every one of them is
+        going to refuse. It stops with an error card the reader can act on rather
+        than a spinner."""
+        zen = ScriptedProvider(
+            [], name="opencode", error=self._free_limit_429(),
+            models=("nemotron-3.5-lightning-free", "deepseek-v4-flash-free",
+                    "hy3-free", "mimo-v2.5-free", "big-pickle"),
+        )
+        session = {
+            "messages": [{"role": "user", "text": "hello", "attachments": []}],
+            "processing": True,
+            "model": "opencode:nemotron-3.5-lightning-free",
+            # Three models already refused this turn: the hop budget is spent.
+            "tried": ["opencode:deepseek-v4-flash-free", "opencode:hy3-free",
+                      "opencode:mimo-v2.5-free"],
+        }
+        stub, _m = run_app(monkeypatch, client=zen, session=session, opencode=True)
+        assert stub.session_state["processing"] is False, "it must not spin"
+        assert "free allowance" in stub.session_state["error"]
+        assert stub.session_state["notice"] == "", (
+            "no 'retrying with…' left over promising something that never happened"
+        )
+
     def test_an_ordinary_429_is_still_a_busy_signal(self):
         """The discriminator is the limit's *name*, not the status or the prose —
         both of which say "wait" in the message above too."""
@@ -950,6 +977,59 @@ class TestSwitchingWithinAProvider:
         )
         stub, _m = run_app(monkeypatch, client=zen, session=self.session(),
                            opencode=True)
+        assert stub.button_labels.get("switch-model") == "→ Use nemotron-3-ultra"
+
+    def test_it_skips_a_sibling_that_shares_the_daily_bucket(self, monkeypatch):
+        """Zen keys its free-tier daily bucket on the first two characters of the
+        model id, so `nemotron-3.5-lightning-free` and `nemotron-3-ultra-free` share
+        one counter. Hopping from one to the other hands the turn a counter that is
+        already spent by definition — the failover has to leave the family."""
+        zen = ScriptedProvider(
+            [], name="opencode",
+            models=("nemotron-3.5-lightning-free", "nemotron-3-ultra-free",
+                    "deepseek-v4-flash-free"),
+        )
+        session = self.session() | {"model": "opencode:nemotron-3.5-lightning-free"}
+        stub, _m = run_app(monkeypatch, client=zen, session=session, opencode=True)
+        assert stub.button_labels.get("switch-model") == "→ Use deepseek-v4-flash"
+
+    def test_a_chain_of_hops_never_returns_to_a_spent_family(self, monkeypatch):
+        """The hole a single-model check leaves, one hop wide.
+
+        Reading the excluded family from the CURRENT model only, a chain starting on
+        nemotron leaves for deepseek and then — deepseek being the current model by
+        then — happily takes the other nemotron, whose daily counter hop 0 exhausted.
+        Simulated against the live free catalogue that chain touched 3 buckets out of
+        4; excluding every family already tried touches all 4.
+        """
+        from sage.ui.view import View
+
+        live = ("nemotron-3.5-lightning-free", "nemotron-3-ultra-free",
+                "deepseek-v4-flash-free", "big-pickle", "mimo-v2.5-free")
+        models = tuple(providers.Model("opencode", name) for name in live)
+        current, tried, chain = models[0], [], [models[0].id]
+        for _hop in range(3):
+            nxt = View(runtime=None, models=models, model=current).alternative(
+                "allowance", skip=tried
+            )
+            assert nxt is not None
+            tried.append(current.key)
+            current = nxt
+            chain.append(nxt.id)
+        # Zen buckets on the first two characters of the id.
+        buckets = [name[:2] for name in chain]
+        assert len(set(buckets)) == len(buckets), f"revisited a spent bucket: {chain}"
+        assert "nemotron-3-ultra-free" not in chain, "the 23s model, and a spent bucket"
+
+    def test_a_sibling_is_still_better_than_nothing(self, monkeypatch):
+        """Leaving the family is a preference, not a requirement: with only siblings
+        left, one of them is the last thing between the reader and a dead end."""
+        zen = ScriptedProvider(
+            [], name="opencode",
+            models=("nemotron-3.5-lightning-free", "nemotron-3-ultra-free"),
+        )
+        session = self.session() | {"model": "opencode:nemotron-3.5-lightning-free"}
+        stub, _m = run_app(monkeypatch, client=zen, session=session, opencode=True)
         assert stub.button_labels.get("switch-model") == "→ Use nemotron-3-ultra"
 
     def test_another_provider_is_still_preferred_when_there_is_one(self, monkeypatch):
@@ -1816,3 +1896,84 @@ class TestAllowedDomains:
     def test_domains_are_matched_whole(self, monkeypatch, email, domains, allowed):
         monkeypatch.setattr(config, "ALLOWED_EMAIL_DOMAINS", domains)
         assert config.email_allowed(email) is allowed
+
+
+class TestSessionsAreNotShared:
+    """One reader's conversation must never appear in another's.
+
+    This shipped. `SESSION_DEFAULTS` is built when `sage.ui.state` is imported — once
+    per *process*, not once per session — so `setdefault` handed every session in the
+    process the SAME `[]`. A question appended by one reader was in the next reader's
+    transcript, and the app opened on somebody else's conversation instead of the
+    landing screen. On a public deployment that is other people's questions, their
+    attachments, and whatever they pasted into them.
+
+    It was an accident before the refactor too, in the other direction: the list was
+    written inside `app.py`'s module body, which Streamlit re-executes per script run,
+    so each session got a fresh one without anything saying it had to.
+    """
+
+    def sessions(self, count=3):
+        """`count` readers arriving in one process, sharing one imported module."""
+        stub = stub_streamlit.install()
+        from sage.ui import state  # noqa: PLC0415  (after the stub is in place)
+
+        seen = []
+        for _reader in range(count):
+            stub.session_state.clear()
+            state.initialise()
+            seen.append(stub.session_state)
+        return stub, state, seen
+
+    def test_a_second_reader_does_not_inherit_the_first_ones_questions(self):
+        stub, state, _ = self.sessions(1)
+        state.initialise()
+        stub.session_state["messages"].append(
+            {"role": "user", "text": "my CNetID is jsmith", "attachments": []}
+        )
+        stub.session_state.clear()
+        state.initialise()
+        assert stub.session_state["messages"] == [], (
+            "a new reader opened on someone else's conversation"
+        )
+
+    def test_no_mutable_default_is_shared_between_sessions(self):
+        """Every container, not just `messages` — attachments and the upload
+        bookkeeping carry filenames and refusal reasons."""
+        stub, state, _ = self.sessions(1)
+        first = {
+            key: stub.session_state[key]
+            for key, default in state.SESSION_DEFAULTS
+            if isinstance(default, list | dict)
+        }
+        assert first, "expected some mutable defaults to check"
+        stub.session_state.clear()
+        state.initialise()
+        for key, held in first.items():
+            assert stub.session_state[key] is not held, (
+                f"{key!r} is the same object in two sessions"
+            )
+
+    def test_writing_in_one_session_cannot_be_seen_in_another(self):
+        stub, state, _ = self.sessions(1)
+        stub.session_state["attachments"].append("private.pdf")
+        stub.session_state["dropped_uploads"]["k"] = 1
+        stub.session_state["tried"].append("opencode:m1")
+        stub.session_state.clear()
+        state.initialise()
+        assert stub.session_state["attachments"] == []
+        assert stub.session_state["dropped_uploads"] == {}
+        assert stub.session_state["tried"] == []
+
+    def test_the_landing_screen_is_what_a_new_reader_gets(self, monkeypatch):
+        """The visible symptom, end to end: a reader arriving after someone else has
+        asked something must still see the welcome screen."""
+        first, module = run_app(monkeypatch)
+        first.session_state["messages"].append(
+            {"role": "user", "text": "someone else's question", "attachments": []}
+        )
+        assert module is not None
+        second, module = run_app(monkeypatch)
+        html = " ".join("\n".join(second.markdown_html).split())
+        assert "What can I help you with?" in html
+        assert "someone else's question" not in html

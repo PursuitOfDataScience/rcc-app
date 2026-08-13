@@ -12,7 +12,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 from ..profile import Copy, Identity
-from ..providers import Model
+from ..providers import Model, family_of
 from ..runtime import Runtime
 
 
@@ -65,18 +65,37 @@ class View:
 
         `skip` is what the turn has already tried, so a second hop does not land back
         on a model that has just refused.
+
+        Within a provider, a **different family** first — and this is not tidiness, it
+        is the difference between a hop that works and one that cannot. OpenCode Zen
+        meters its free models in a daily bucket keyed on the first two characters of
+        the model id, so `nemotron-3.5-lightning-free` and `nemotron-3-ultra-free`
+        share one counter: a model out of allowance hands its sibling a counter that
+        is, by definition, already spent. `family_of` is the general form of that —
+        siblings share a maker, and a maker is what a tier meters — and it costs
+        nothing where a provider meters some other way.
+
+        Every family the turn has already burned, not merely the current one. Taking
+        it from `self.model` alone left a hole one hop wide: starting on
+        `nemotron-3.5-lightning-free`, hop 1 correctly leaves for `deepseek`, and then
+        hop 2 — with the current model now `deepseek` — finds `nemotron-3-ultra-free`
+        a perfectly good "different family" and jumps straight back into the counter
+        hop 0 exhausted. Simulated against the live catalogue, that chain touched 3
+        buckets out of 4; excluding every spent family touches all 4, and drops the
+        23-second model out of the chain as a bonus.
         """
         spent = set(skip) | {self.model.key}
-        same = [
-            option for option in self.models
-            if option.provider == self.model.provider and option.key not in spent
-        ]
-        elsewhere = [
-            option for option in self.models
-            if option.provider != self.model.provider and option.key not in spent
-        ]
-        order = (same, elsewhere) if kind in self.PER_MODEL else (elsewhere, same)
-        return next((group[0] for group in order if group), None)
+        burned = {family_of(key.split(":", 1)[-1]) for key in spent}
+        available = [option for option in self.models if option.key not in spent]
+        same = [item for item in available if item.provider == self.model.provider]
+        elsewhere = [item for item in available if item.provider != self.model.provider]
+        fresh = [item for item in same if family_of(item.id) not in burned]
+        # Each group tried by a fresh family first, then anything left in it.
+        ordered = (
+            [fresh, same, elsewhere] if kind in self.PER_MODEL
+            else [elsewhere, fresh, same]
+        )
+        return next((group[0] for group in ordered if group), None)
 
     @property
     def fallback(self) -> Model | None:
