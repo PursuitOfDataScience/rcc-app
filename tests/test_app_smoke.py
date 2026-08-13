@@ -1896,3 +1896,84 @@ class TestAllowedDomains:
     def test_domains_are_matched_whole(self, monkeypatch, email, domains, allowed):
         monkeypatch.setattr(config, "ALLOWED_EMAIL_DOMAINS", domains)
         assert config.email_allowed(email) is allowed
+
+
+class TestSessionsAreNotShared:
+    """One reader's conversation must never appear in another's.
+
+    This shipped. `SESSION_DEFAULTS` is built when `sage.ui.state` is imported — once
+    per *process*, not once per session — so `setdefault` handed every session in the
+    process the SAME `[]`. A question appended by one reader was in the next reader's
+    transcript, and the app opened on somebody else's conversation instead of the
+    landing screen. On a public deployment that is other people's questions, their
+    attachments, and whatever they pasted into them.
+
+    It was an accident before the refactor too, in the other direction: the list was
+    written inside `app.py`'s module body, which Streamlit re-executes per script run,
+    so each session got a fresh one without anything saying it had to.
+    """
+
+    def sessions(self, count=3):
+        """`count` readers arriving in one process, sharing one imported module."""
+        stub = stub_streamlit.install()
+        from sage.ui import state  # noqa: PLC0415  (after the stub is in place)
+
+        seen = []
+        for _reader in range(count):
+            stub.session_state.clear()
+            state.initialise()
+            seen.append(stub.session_state)
+        return stub, state, seen
+
+    def test_a_second_reader_does_not_inherit_the_first_ones_questions(self):
+        stub, state, _ = self.sessions(1)
+        state.initialise()
+        stub.session_state["messages"].append(
+            {"role": "user", "text": "my CNetID is jsmith", "attachments": []}
+        )
+        stub.session_state.clear()
+        state.initialise()
+        assert stub.session_state["messages"] == [], (
+            "a new reader opened on someone else's conversation"
+        )
+
+    def test_no_mutable_default_is_shared_between_sessions(self):
+        """Every container, not just `messages` — attachments and the upload
+        bookkeeping carry filenames and refusal reasons."""
+        stub, state, _ = self.sessions(1)
+        first = {
+            key: stub.session_state[key]
+            for key, default in state.SESSION_DEFAULTS
+            if isinstance(default, list | dict)
+        }
+        assert first, "expected some mutable defaults to check"
+        stub.session_state.clear()
+        state.initialise()
+        for key, held in first.items():
+            assert stub.session_state[key] is not held, (
+                f"{key!r} is the same object in two sessions"
+            )
+
+    def test_writing_in_one_session_cannot_be_seen_in_another(self):
+        stub, state, _ = self.sessions(1)
+        stub.session_state["attachments"].append("private.pdf")
+        stub.session_state["dropped_uploads"]["k"] = 1
+        stub.session_state["tried"].append("opencode:m1")
+        stub.session_state.clear()
+        state.initialise()
+        assert stub.session_state["attachments"] == []
+        assert stub.session_state["dropped_uploads"] == {}
+        assert stub.session_state["tried"] == []
+
+    def test_the_landing_screen_is_what_a_new_reader_gets(self, monkeypatch):
+        """The visible symptom, end to end: a reader arriving after someone else has
+        asked something must still see the welcome screen."""
+        first, module = run_app(monkeypatch)
+        first.session_state["messages"].append(
+            {"role": "user", "text": "someone else's question", "attachments": []}
+        )
+        assert module is not None
+        second, module = run_app(monkeypatch)
+        html = " ".join("\n".join(second.markdown_html).split())
+        assert "What can I help you with?" in html
+        assert "someone else's question" not in html
