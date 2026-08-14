@@ -1,0 +1,1517 @@
+{
+ "n_negatives": 38,
+ "n_positives": 69,
+ "n_identifiers": 8,
+ "n_suspect": 0,
+ "caveat_recall": 0.3684210526315789,
+ "over_refusal": 0.025974025974025976,
+ "recall@5": 0.9846153846153847,
+ "by_kind": {
+  "other-site": {
+   "n": 8,
+   "leaked": 6
+  },
+  "nonexistent-resource": {
+   "n": 6,
+   "leaked": 6
+  },
+  "wrong-scheduler": {
+   "n": 4,
+   "leaked": 4
+  },
+  "software-absent": {
+   "n": 4,
+   "leaked": 2
+  },
+  "unoffered-service": {
+   "n": 4,
+   "leaked": 1
+  },
+  "policy-absent": {
+   "n": 3,
+   "leaked": 2
+  },
+  "excluded-host": {
+   "n": 2,
+   "leaked": 0
+  },
+  "out-of-domain": {
+   "n": 7,
+   "leaked": 3
+  }
+ },
+ "rows": {
+  "negatives": [
+   {
+    "question": "how do I submit a job on Frontera",
+    "kind": "other-site",
+    "score": 42.2,
+    "unseen": [
+     "frontera"
+    ],
+    "leaked": true,
+    "top_page": "slurm/sbatch.md"
+   },
+   {
+    "question": "how do I run Jupyter on the Delta cluster",
+    "kind": "other-site",
+    "score": 28.2,
+    "unseen": [
+     "delta"
+    ],
+    "leaked": true,
+    "top_page": "slurm/faq.md"
+   },
+   {
+    "question": "what is the queue structure on Stampede3",
+    "kind": "other-site",
+    "score": 34.7,
+    "unseen": [
+     "stamped"
+    ],
+    "leaked": true,
+    "top_page": "slurm/sbatch.md"
+   },
+   {
+    "question": "how do I get an allocation on Bridges-2",
+    "kind": "other-site",
+    "score": 48.1,
+    "unseen": [],
+    "leaked": true,
+    "top_page": "allocations.md"
+   },
+   {
+    "question": "how do I load modules on Perlmutter",
+    "kind": "other-site",
+    "score": 35.9,
+    "unseen": [
+     "perlmutter"
+    ],
+    "leaked": true,
+    "top_page": "software/faq.md"
+   },
+   {
+    "question": "is there a scratch purge policy on Expanse",
+    "kind": "other-site",
+    "score": 26.2,
+    "unseen": [
+     "expanse"
+    ],
+    "leaked": true,
+    "top_page": "storage/main.md"
+   },
+   {
+    "question": "how do I use the Polaris supercomputer",
+    "kind": "other-site",
+    "score": 24.2,
+    "unseen": [
+     "polaris"
+    ],
+    "leaked": false,
+    "top_page": "slurm/partitions.md"
+   },
+   {
+    "question": "what is the node count on Anvil",
+    "kind": "other-site",
+    "score": 16.2,
+    "unseen": [
+     "anvil"
+    ],
+    "leaked": false,
+    "top_page": "allocations.md"
+   },
+   {
+    "question": "how many GPUs per node does Midway4 have",
+    "kind": "nonexistent-resource",
+    "score": 39.8,
+    "unseen": [],
+    "leaked": true,
+    "top_page": "software/compilers.md"
+   },
+   {
+    "question": "how do I connect to Midway5",
+    "kind": "nonexistent-resource",
+    "score": 34.9,
+    "unseen": [],
+    "leaked": true,
+    "top_page": "connection/ssh/main.md"
+   },
+   {
+    "question": "what is the memory limit on the bigmem3 partition",
+    "kind": "nonexistent-resource",
+    "score": 40.3,
+    "unseen": [],
+    "leaked": true,
+    "top_page": "slurm/partitions.md"
+   },
+   {
+    "question": "what is the quota on scratch2",
+    "kind": "nonexistent-resource",
+    "score": 37.3,
+    "unseen": [],
+    "leaked": true,
+    "top_page": "storage/main.md"
+   },
+   {
+    "question": "how many nodes does Beagle4 have",
+    "kind": "nonexistent-resource",
+    "score": 26.3,
+    "unseen": [],
+    "leaked": true,
+    "top_page": "allocations.md"
+   },
+   {
+    "question": "how do I submit to the turbo partition",
+    "kind": "nonexistent-resource",
+    "score": 39.6,
+    "unseen": [
+     "turbo"
+    ],
+    "leaked": true,
+    "top_page": "slurm/partitions.md"
+   },
+   {
+    "question": "how do I submit a job with qsub",
+    "kind": "wrong-scheduler",
+    "score": 42.2,
+    "unseen": [
+     "qsub"
+    ],
+    "leaked": true,
+    "top_page": "slurm/sbatch.md"
+   },
+   {
+    "question": "how do I check the queue with bjobs",
+    "kind": "wrong-scheduler",
+    "score": 38.0,
+    "unseen": [
+     "bjobs"
+    ],
+    "leaked": true,
+    "top_page": "slurm/sbatch.md"
+   },
+   {
+    "question": "how do I write PBS directives in my job script",
+    "kind": "wrong-scheduler",
+    "score": 42.0,
+    "unseen": [],
+    "leaked": true,
+    "top_page": "slurm/sbatch.md"
+   },
+   {
+    "question": "how do I submit with condor_submit",
+    "kind": "wrong-scheduler",
+    "score": 34.0,
+    "unseen": [
+     "condor"
+    ],
+    "leaked": true,
+    "top_page": "slurm/sbatch.md"
+   },
+   {
+    "question": "how do I install OpenFOAM",
+    "kind": "software-absent",
+    "score": 23.9,
+    "unseen": [
+     "openfoam"
+    ],
+    "leaked": false,
+    "top_page": "slurm/partitions.md"
+   },
+   {
+    "question": "how do I load the ANSYS Fluent module",
+    "kind": "software-absent",
+    "score": 36.2,
+    "unseen": [
+     "ansys"
+    ],
+    "leaked": true,
+    "top_page": "software/faq.md"
+   },
+   {
+    "question": "is Abaqus available on Midway",
+    "kind": "software-absent",
+    "score": 13.5,
+    "unseen": [
+     "abaqus"
+    ],
+    "leaked": false,
+    "top_page": "ecosystems.md"
+   },
+   {
+    "question": "how do I run VASP on Beagle3",
+    "kind": "software-absent",
+    "score": 34.5,
+    "unseen": [
+     "vasp"
+    ],
+    "leaked": true,
+    "top_page": "allocations.md"
+   },
+   {
+    "question": "does RCC run a managed Kubernetes cluster",
+    "kind": "unoffered-service",
+    "score": 21.8,
+    "unseen": [
+     "kubernetes"
+    ],
+    "leaked": false,
+    "top_page": "ecosystems.md"
+   },
+   {
+    "question": "can I mine cryptocurrency on Midway",
+    "kind": "unoffered-service",
+    "score": 18.6,
+    "unseen": [
+     "cryptocurrency"
+    ],
+    "leaked": false,
+    "top_page": "tutorials/gis/MidwayGeoSpatial.md"
+   },
+   {
+    "question": "can I get a static public IP for my desktop from RCC",
+    "kind": "unoffered-service",
+    "score": 38.7,
+    "unseen": [
+     "static"
+    ],
+    "leaked": true,
+    "top_page": "connection/thinlinc/main.md"
+   },
+   {
+    "question": "does RCC provide WordPress hosting for my lab site",
+    "kind": "unoffered-service",
+    "score": 22.5,
+    "unseen": [
+     "wordpress"
+    ],
+    "leaked": false,
+    "top_page": "slurm/faq.md"
+   },
+   {
+    "question": "what does a service unit cost for an external collaborator",
+    "kind": "policy-absent",
+    "score": 46.4,
+    "unseen": [],
+    "leaked": true,
+    "top_page": "allocations.md"
+   },
+   {
+    "question": "what is RCC's uptime SLA",
+    "kind": "policy-absent",
+    "score": 18.1,
+    "unseen": [
+     "uptime",
+     "sla"
+    ],
+    "leaked": false,
+    "top_page": "allocations.md"
+   },
+   {
+    "question": "what is the penalty for sharing my CNetID password",
+    "kind": "policy-absent",
+    "score": 63.7,
+    "unseen": [
+     "penalty"
+    ],
+    "leaked": true,
+    "top_page": "accounts.md"
+   },
+   {
+    "question": "what is PI-RADS prostate MRI scoring",
+    "kind": "excluded-host",
+    "score": 19.6,
+    "unseen": [
+     "rads",
+     "prostate",
+     "scoring"
+    ],
+    "leaked": false,
+    "top_page": "allocations.md"
+   },
+   {
+    "question": "describe the mpMRI prostate imaging protocol",
+    "kind": "excluded-host",
+    "score": 12.7,
+    "unseen": [
+     "mpmri",
+     "prostate"
+    ],
+    "leaked": false,
+    "top_page": "connection/main.md"
+   },
+   {
+    "question": "how do I renew my parking permit",
+    "kind": "out-of-domain",
+    "score": 35.8,
+    "unseen": [
+     "renew",
+     "parking"
+    ],
+    "leaked": true,
+    "top_page": "allocations.md"
+   },
+   {
+    "question": "how do I book a study room in the library",
+    "kind": "out-of-domain",
+    "score": 27.6,
+    "unseen": [
+     "book"
+    ],
+    "leaked": true,
+    "top_page": "slurm/partitions.md"
+   },
+   {
+    "question": "where can I get a flu shot on campus",
+    "kind": "out-of-domain",
+    "score": 23.8,
+    "unseen": [
+     "flu"
+    ],
+    "leaked": false,
+    "top_page": "slurm/partitions.md"
+   },
+   {
+    "question": "how do I enrol in a computer science course",
+    "kind": "out-of-domain",
+    "score": 27.2,
+    "unseen": [],
+    "leaked": true,
+    "top_page": "slurm/partitions.md"
+   },
+   {
+    "question": "what time does the Ratner gym close",
+    "kind": "out-of-domain",
+    "score": 25.7,
+    "unseen": [
+     "ratner",
+     "gym"
+    ],
+    "leaked": false,
+    "top_page": "slurm/faq.md"
+   },
+   {
+    "question": "how do I bake sourdough bread",
+    "kind": "out-of-domain",
+    "score": 23.9,
+    "unseen": [
+     "bake",
+     "sourdough",
+     "bread"
+    ],
+    "leaked": false,
+    "top_page": "slurm/partitions.md"
+   },
+   {
+    "question": "who won the world cup",
+    "kind": "out-of-domain",
+    "score": 8.7,
+    "unseen": [
+     "cup"
+    ],
+    "leaked": false,
+    "top_page": "tutorials/gis/geocoding.md"
+   }
+  ],
+  "positives": [
+   {
+    "question": "how do I submit a batch job",
+    "kind": "asked",
+    "score": 43.7,
+    "refused": false,
+    "hit": true,
+    "known_gap": false,
+    "got": [
+     "slurm/sbatch.md",
+     "slurm/faq.md",
+     "slurm/faq.md",
+     "slurm/sbatch.md",
+     "tutorials/kicp.md"
+    ]
+   },
+   {
+    "question": "how do I submit a job to Midway",
+    "kind": "faq",
+    "score": 44.5,
+    "refused": false,
+    "hit": true,
+    "known_gap": false,
+    "got": [
+     "slurm/sbatch.md",
+     "slurm/faq.md",
+     "slurm/faq.md",
+     "slurm/sbatch.md",
+     "tutorials/kicp.md"
+    ]
+   },
+   {
+    "question": "how do I cancel a job I already submitted",
+    "kind": "asked",
+    "score": 50.6,
+    "refused": false,
+    "hit": true,
+    "known_gap": false,
+    "got": [
+     "slurm/sbatch.md",
+     "slurm/sbatch.md",
+     "slurm/faq.md",
+     "slurm/faq.md",
+     "tutorials/kicp.md"
+    ]
+   },
+   {
+    "question": "how do I see whether my job is running",
+    "kind": "asked",
+    "score": 39.6,
+    "refused": false,
+    "hit": true,
+    "known_gap": false,
+    "got": [
+     "slurm/faq.md",
+     "slurm/faq.md",
+     "allocations.md",
+     "allocations.md",
+     "accounts.md"
+    ]
+   },
+   {
+    "question": "can I log in directly to a compute node",
+    "kind": "faq",
+    "score": 37.2,
+    "refused": false,
+    "hit": true,
+    "known_gap": false,
+    "got": [
+     "slurm/faq.md",
+     "slurm/partitions.md",
+     "connection/ssh/main.md",
+     "connection/ssh/main.md",
+     "slurm/faq.md"
+    ]
+   },
+   {
+    "question": "can I create a cron job",
+    "kind": "faq",
+    "score": 56.5,
+    "refused": false,
+    "hit": true,
+    "known_gap": false,
+    "got": [
+     "slurm/faq.md",
+     "slurm/sbatch.md",
+     "slurm/faq.md",
+     "slurm/partitions.md",
+     "tutorials/sde3/compute.md"
+    ]
+   },
+   {
+    "question": "how can I get emails when my job starts and when it finishes",
+    "kind": "faq",
+    "score": 81.3,
+    "refused": false,
+    "hit": true,
+    "known_gap": false,
+    "got": [
+     "slurm/faq.md",
+     "slurm/faq.md",
+     "allocations.md",
+     "slurm/partitions.md",
+     "allocations.md"
+    ]
+   },
+   {
+    "question": "how do I run jobs that need longer than the maximum wall time",
+    "kind": "faq",
+    "score": 105.9,
+    "refused": false,
+    "hit": true,
+    "known_gap": false,
+    "got": [
+     "slurm/faq.md",
+     "slurm/faq.md",
+     "allocations.md",
+     "slurm/partitions.md",
+     "storage/faq.md"
+    ]
+   },
+   {
+    "question": "why is my job not starting",
+    "kind": "faq",
+    "score": 43.1,
+    "refused": false,
+    "hit": true,
+    "known_gap": false,
+    "got": [
+     "slurm/faq.md",
+     "software/faq.md",
+     "slurm/faq.md",
+     "storage/faq.md",
+     "software/apps-and-envs/scode/main.md"
+    ]
+   },
+   {
+    "question": "why does my job fail after a few seconds",
+    "kind": "faq",
+    "score": 78.1,
+    "refused": false,
+    "hit": true,
+    "known_gap": false,
+    "got": [
+     "slurm/faq.md",
+     "slurm/faq.md",
+     "accounts.md",
+     "software/faq.md",
+     "storage/faq.md"
+    ]
+   },
+   {
+    "question": "my job was killed for exceeding the memory limit",
+    "kind": "asked",
+    "score": 65.1,
+    "refused": false,
+    "hit": true,
+    "known_gap": false,
+    "got": [
+     "slurm/faq.md",
+     "slurm/faq.md",
+     "storage/main.md",
+     "allocations.md",
+     "storage/faq.md"
+    ]
+   },
+   {
+    "question": "I am a member of multiple accounts, how do I choose which allocation is charged",
+    "kind": "faq",
+    "score": 114.8,
+    "refused": false,
+    "hit": true,
+    "known_gap": false,
+    "got": [
+     "slurm/faq.md",
+     "allocations.md",
+     "allocations.md",
+     "accounts.md",
+     "accounts.md"
+    ]
+   },
+   {
+    "question": "are there limits to how many jobs I can run",
+    "kind": "faq",
+    "score": 35.4,
+    "refused": false,
+    "hit": true,
+    "known_gap": false,
+    "got": [
+     "slurm/faq.md",
+     "allocations.md",
+     "storage/faq.md",
+     "storage/main.md",
+     "connection/thinlinc/troubleshooting.md"
+    ]
+   },
+   {
+    "question": "how do I run jobs in parallel",
+    "kind": "faq",
+    "score": 46.9,
+    "refused": false,
+    "hit": true,
+    "known_gap": false,
+    "got": [
+     "slurm/faq.md",
+     "slurm/faq.md",
+     "slurm/partitions.md",
+     "software/apps-and-envs/stata.md",
+     "slurm/sbatch.md"
+    ]
+   },
+   {
+    "question": "which partition should I use for a GPU job",
+    "kind": "asked",
+    "score": 38.6,
+    "refused": false,
+    "hit": true,
+    "known_gap": false,
+    "got": [
+     "slurm/sbatch.md",
+     "slurm/partitions.md",
+     "tutorials/kicp.md",
+     "slurm/partitions.md",
+     "software/compilers.md"
+    ]
+   },
+   {
+    "question": "how do I ask for more memory for my job",
+    "kind": "asked",
+    "score": 45.3,
+    "refused": false,
+    "hit": false,
+    "known_gap": true,
+    "got": [
+     "slurm/faq.md",
+     "allocations.md",
+     "allocations.md",
+     "accounts.md",
+     "slurm/faq.md"
+    ]
+   },
+   {
+    "question": "how do I start an interactive session on a compute node",
+    "kind": "asked",
+    "score": 44.4,
+    "refused": false,
+    "hit": true,
+    "known_gap": false,
+    "got": [
+     "slurm/faq.md",
+     "slurm/partitions.md",
+     "accounts.md",
+     "slurm/sinteractive.md",
+     "accounts.md"
+    ]
+   },
+   {
+    "question": "why does my sinteractive job fail with connection closed",
+    "kind": "faq",
+    "score": 85.7,
+    "refused": false,
+    "hit": true,
+    "known_gap": false,
+    "got": [
+     "slurm/faq.md",
+     "slurm/faq.md",
+     "connection/ssh/main.md",
+     "slurm/sinteractive.md",
+     "connection/open_ondemand/open_ondemand.md"
+    ]
+   },
+   {
+    "question": "what does the scavenge partition do",
+    "kind": "asked",
+    "score": 28.5,
+    "refused": false,
+    "hit": true,
+    "known_gap": false,
+    "got": [
+     "slurm/partitions.md",
+     "slurm/partitions.md",
+     "slurm/main.md",
+     "slurm/faq.md",
+     "tutorials/sde3/compute.md"
+    ]
+   },
+   {
+    "question": "what is the walltime limit on the gpu2 partition",
+    "kind": "asked",
+    "score": 42.6,
+    "refused": false,
+    "hit": true,
+    "known_gap": false,
+    "got": [
+     "slurm/partitions.md",
+     "software/compilers.md",
+     "slurm/sbatch.md",
+     "slurm/main.md",
+     "slurm/sbatch.md"
+    ]
+   },
+   {
+    "question": "how many cores can one job use",
+    "kind": "asked",
+    "score": 18.1,
+    "refused": true,
+    "hit": true,
+    "known_gap": false,
+    "got": [
+     "slurm/sbatch.md",
+     "slurm/faq.md",
+     "allocations.md",
+     "software/apps-and-envs/matlab.md",
+     "allocations.md"
+    ]
+   },
+   {
+    "question": "how do I get an RCC account",
+    "kind": "asked",
+    "score": 53.0,
+    "refused": false,
+    "hit": true,
+    "known_gap": false,
+    "got": [
+     "accounts.md",
+     "accounts.md",
+     "allocations.md",
+     "allocations.md",
+     "slurm/faq.md"
+    ]
+   },
+   {
+    "question": "how do I check how many service units I have left",
+    "kind": "asked",
+    "score": 67.6,
+    "refused": false,
+    "hit": true,
+    "known_gap": false,
+    "got": [
+     "allocations.md",
+     "allocations.md",
+     "storage/faq.md",
+     "software/faq.md",
+     "slurm/faq.md"
+    ]
+   },
+   {
+    "question": "what is a service unit",
+    "kind": "asked",
+    "score": 41.8,
+    "refused": false,
+    "hit": true,
+    "known_gap": false,
+    "got": [
+     "allocations.md",
+     "allocations.md",
+     "slurm/main.md",
+     "software/apps-and-envs/scode/environments.md",
+     "storage/faq.md"
+    ]
+   },
+   {
+    "question": "how do I request a new allocation",
+    "kind": "asked",
+    "score": 53.2,
+    "refused": false,
+    "hit": true,
+    "known_gap": false,
+    "got": [
+     "accounts.md",
+     "accounts.md",
+     "allocations.md",
+     "allocations.md",
+     "slurm/faq.md"
+    ]
+   },
+   {
+    "question": "how do I add a member to my PI account",
+    "kind": "asked",
+    "score": 63.1,
+    "refused": false,
+    "hit": true,
+    "known_gap": false,
+    "got": [
+     "allocations.md",
+     "allocations.md",
+     "accounts.md",
+     "slurm/faq.md",
+     "accounts.md"
+    ]
+   },
+   {
+    "question": "what happens when my allocation runs out",
+    "kind": "asked",
+    "score": 37.4,
+    "refused": false,
+    "hit": true,
+    "known_gap": false,
+    "got": [
+     "allocations.md",
+     "allocations.md",
+     "slurm/main.md",
+     "accounts.md",
+     "accounts.md"
+    ]
+   },
+   {
+    "question": "how do I connect to Midway with SSH",
+    "kind": "asked",
+    "score": 37.1,
+    "refused": false,
+    "hit": true,
+    "known_gap": false,
+    "got": [
+     "connection/ssh/main.md",
+     "tutorials/gis/MidwayGeoSpatial.md",
+     "connection/ssh/main.md",
+     "allocations.md",
+     "accounts.md"
+    ]
+   },
+   {
+    "question": "how do I set up a remote desktop session",
+    "kind": "asked",
+    "score": 52.8,
+    "refused": false,
+    "hit": true,
+    "known_gap": false,
+    "got": [
+     "connection/thinlinc/main.md",
+     "connection/thinlinc/main.md",
+     "accounts.md",
+     "tutorials/sde3/connection.md",
+     "slurm/faq.md"
+    ]
+   },
+   {
+    "question": "ThinLinc will not connect, what do I check",
+    "kind": "asked",
+    "score": 49.8,
+    "refused": false,
+    "hit": true,
+    "known_gap": false,
+    "got": [
+     "connection/thinlinc/main.md",
+     "connection/ssh/main.md",
+     "connection/thinlinc/main.md",
+     "tutorials/sde3/connection.md",
+     "tutorials/gis/MidwayGeoSpatial.md"
+    ]
+   },
+   {
+    "question": "how do I use Open OnDemand",
+    "kind": "asked",
+    "score": 41.4,
+    "refused": false,
+    "hit": true,
+    "known_gap": false,
+    "got": [
+     "connection/open_ondemand/open_ondemand.md",
+     "connection/open_ondemand/open_ondemand.md",
+     "slurm/partitions.md",
+     "slurm/faq.md",
+     "accounts.md"
+    ]
+   },
+   {
+    "question": "do I need two-factor authentication to log in",
+    "kind": "asked",
+    "score": 34.7,
+    "refused": false,
+    "hit": true,
+    "known_gap": false,
+    "got": [
+     "connection/ssh/main.md",
+     "slurm/partitions.md",
+     "tutorials/sde3/overview.md",
+     "slurm/faq.md",
+     "allocations.md"
+    ]
+   },
+   {
+    "question": "how do I set up SSH keys so I am not asked for a password",
+    "kind": "asked",
+    "score": 54.0,
+    "refused": false,
+    "hit": true,
+    "known_gap": false,
+    "got": [
+     "connection/ssh/main.md",
+     "slurm/faq.md",
+     "connection/ssh/main.md",
+     "accounts.md",
+     "accounts.md"
+    ]
+   },
+   {
+    "question": "how much storage space do I have left",
+    "kind": "faq",
+    "score": 77.5,
+    "refused": false,
+    "hit": true,
+    "known_gap": false,
+    "got": [
+     "storage/faq.md",
+     "storage/faq.md",
+     "allocations.md",
+     "storage/main.md",
+     "storage/main.md"
+    ]
+   },
+   {
+    "question": "I am over quota, what do I do",
+    "kind": "faq",
+    "score": 50.2,
+    "refused": false,
+    "hit": true,
+    "known_gap": false,
+    "got": [
+     "storage/faq.md",
+     "accounts.md",
+     "storage/faq.md",
+     "slurm/faq.md",
+     "allocations.md"
+    ]
+   },
+   {
+    "question": "why can't I write files into my home directory",
+    "kind": "faq",
+    "score": 72.7,
+    "refused": false,
+    "hit": true,
+    "known_gap": false,
+    "got": [
+     "storage/faq.md",
+     "allocations.md",
+     "slurm/faq.md",
+     "accounts.md",
+     "slurm/faq.md"
+    ]
+   },
+   {
+    "question": "how do I increase my storage quota",
+    "kind": "faq",
+    "score": 65.1,
+    "refused": false,
+    "hit": true,
+    "known_gap": false,
+    "got": [
+     "storage/faq.md",
+     "storage/faq.md",
+     "allocations.md",
+     "allocations.md",
+     "storage/main.md"
+    ]
+   },
+   {
+    "question": "I accidentally deleted a file, how do I restore it",
+    "kind": "faq",
+    "score": 81.6,
+    "refused": false,
+    "hit": true,
+    "known_gap": false,
+    "got": [
+     "storage/faq.md",
+     "tutorials/kicp.md",
+     "storage/main.md",
+     "storage/faq.md",
+     "software/apps-and-envs/r.md"
+    ]
+   },
+   {
+    "question": "what is the difference between home, project and scratch",
+    "kind": "asked",
+    "score": 23.2,
+    "refused": false,
+    "hit": true,
+    "known_gap": false,
+    "got": [
+     "accounts.md",
+     "allocations.md",
+     "software/apps-and-envs/alphafold.md",
+     "storage/main.md",
+     "software/apps-and-envs/charliecloud.md"
+    ]
+   },
+   {
+    "question": "is scratch backed up",
+    "kind": "asked",
+    "score": 27.1,
+    "refused": false,
+    "hit": true,
+    "known_gap": false,
+    "got": [
+     "storage/main.md",
+     "storage/main.md",
+     "software/apps-and-envs/charliecloud.md",
+     "software/apps-and-envs/charliecloud.md",
+     "tutorials/kicp.md"
+    ]
+   },
+   {
+    "question": "how long do files stay on scratch before they are purged",
+    "kind": "asked",
+    "score": 31.4,
+    "refused": false,
+    "hit": true,
+    "known_gap": false,
+    "got": [
+     "storage/main.md",
+     "software/apps-and-envs/charliecloud.md",
+     "storage/faq.md",
+     "allocations.md",
+     "storage/faq.md"
+    ]
+   },
+   {
+    "question": "how do I share files with others in my group",
+    "kind": "faq",
+    "score": 49.3,
+    "refused": false,
+    "hit": true,
+    "known_gap": false,
+    "got": [
+     "storage/faq.md",
+     "allocations.md",
+     "allocations.md",
+     "data_sharing/globus_sharing.md",
+     "accounts.md"
+    ]
+   },
+   {
+    "question": "how do I transfer files with Globus",
+    "kind": "asked",
+    "score": 56.0,
+    "refused": false,
+    "hit": true,
+    "known_gap": false,
+    "got": [
+     "data_transfer/globus/transfer-files.md",
+     "data_transfer/globus/transfer-files.md",
+     "connection/globus/access-files.md",
+     "data_sharing/globus_sharing.md",
+     "data_transfer/cli/cli.md"
+    ]
+   },
+   {
+    "question": "how do I copy a file from my laptop to Midway from the command line",
+    "kind": "asked",
+    "score": 41.7,
+    "refused": false,
+    "hit": false,
+    "known_gap": true,
+    "got": [
+     "allocations.md",
+     "tutorials/gis/MidwayGeoSpatial.md",
+     "allocations.md",
+     "storage/faq.md",
+     "connection/ssh/main.md"
+    ]
+   },
+   {
+    "question": "how do I mount my project directory as a network drive",
+    "kind": "asked",
+    "score": 36.8,
+    "refused": false,
+    "hit": true,
+    "known_gap": false,
+    "got": [
+     "allocations.md",
+     "data_transfer/persistent_mapping/samba.md",
+     "data_transfer/persistent_mapping/samba.md",
+     "storage/faq.md",
+     "allocations.md"
+    ]
+   },
+   {
+    "question": "how do I sync data to cloud storage",
+    "kind": "asked",
+    "score": 43.3,
+    "refused": false,
+    "hit": true,
+    "known_gap": false,
+    "got": [
+     "data_transfer/cloud/cloud-sync.md",
+     "storage/faq.md",
+     "storage/faq.md",
+     "slurm/partitions.md",
+     "slurm/faq.md"
+    ]
+   },
+   {
+    "question": "how do I share files with a collaborator outside the university",
+    "kind": "asked",
+    "score": 42.0,
+    "refused": false,
+    "hit": true,
+    "known_gap": false,
+    "got": [
+     "storage/faq.md",
+     "data_sharing/globus_sharing.md",
+     "data_sharing/globus_sharing.md",
+     "accounts.md",
+     "storage/faq.md"
+    ]
+   },
+   {
+    "question": "how do I publish a file on the web from my project directory",
+    "kind": "asked",
+    "score": 42.5,
+    "refused": false,
+    "hit": false,
+    "known_gap": true,
+    "got": [
+     "allocations.md",
+     "storage/faq.md",
+     "allocations.md",
+     "storage/faq.md",
+     "accounts.md"
+    ]
+   },
+   {
+    "question": "how do I control who can read a directory",
+    "kind": "asked",
+    "score": 29.5,
+    "refused": false,
+    "hit": true,
+    "known_gap": false,
+    "got": [
+     "data_sharing/access_control.md",
+     "data_sharing/access_control.md",
+     "storage/faq.md",
+     "slurm/partitions.md",
+     "allocations.md"
+    ]
+   },
+   {
+    "question": "what software does RCC offer",
+    "kind": "faq",
+    "score": 47.5,
+    "refused": false,
+    "hit": true,
+    "known_gap": false,
+    "got": [
+     "software/faq.md",
+     "slurm/faq.md",
+     "software/index.md",
+     "allocations.md",
+     "software/index.md"
+    ]
+   },
+   {
+    "question": "why is my favourite command not available",
+    "kind": "faq",
+    "score": 41.6,
+    "refused": false,
+    "hit": true,
+    "known_gap": false,
+    "got": [
+     "software/faq.md",
+     "slurm/faq.md",
+     "storage/faq.md",
+     "slurm/faq.md",
+     "allocations.md"
+    ]
+   },
+   {
+    "question": "why do I get an error that a module cannot be loaded due to a conflict",
+    "kind": "faq",
+    "score": 125.7,
+    "refused": false,
+    "hit": true,
+    "known_gap": false,
+    "got": [
+     "software/faq.md",
+     "software/index.md",
+     "software/faq.md",
+     "connection/ssh/main.md",
+     "slurm/partitions.md"
+    ]
+   },
+   {
+    "question": "how do I request installation of a new software package",
+    "kind": "faq",
+    "score": 64.3,
+    "refused": false,
+    "hit": true,
+    "known_gap": false,
+    "got": [
+     "software/faq.md",
+     "software/index.md",
+     "accounts.md",
+     "software/faq.md",
+     "accounts.md"
+    ]
+   },
+   {
+    "question": "how do I load a specific version of a module",
+    "kind": "asked",
+    "score": 37.8,
+    "refused": false,
+    "hit": true,
+    "known_gap": false,
+    "got": [
+     "software/faq.md",
+     "software/faq.md",
+     "slurm/partitions.md",
+     "software/index.md",
+     "slurm/faq.md"
+    ]
+   },
+   {
+    "question": "how do I set up a Python environment",
+    "kind": "asked",
+    "score": 54.2,
+    "refused": false,
+    "hit": true,
+    "known_gap": false,
+    "got": [
+     "software/apps-and-envs/python.md",
+     "software/apps-and-envs/python.md",
+     "software/apps-and-envs/scode/python.md",
+     "software/apps-and-envs/scode/python.md",
+     "slurm/faq.md"
+    ]
+   },
+   {
+    "question": "how do I install a package with conda",
+    "kind": "asked",
+    "score": 49.6,
+    "refused": false,
+    "hit": true,
+    "known_gap": false,
+    "got": [
+     "software/apps-and-envs/python.md",
+     "software/faq.md",
+     "software/apps-and-envs/python.md",
+     "software/faq.md",
+     "software/apps-and-envs/r.md"
+    ]
+   },
+   {
+    "question": "how do I run PyTorch on a GPU",
+    "kind": "asked",
+    "score": 38.7,
+    "refused": false,
+    "hit": true,
+    "known_gap": false,
+    "got": [
+     "software/apps-and-envs/tf-and-torch.md",
+     "software/compilers.md",
+     "slurm/partitions.md",
+     "software/apps-and-envs/tf-and-torch.md",
+     "allocations.md"
+    ]
+   },
+   {
+    "question": "how do I use R on Midway",
+    "kind": "asked",
+    "score": 32.7,
+    "refused": false,
+    "hit": true,
+    "known_gap": false,
+    "got": [
+     "software/apps-and-envs/r.md",
+     "slurm/faq.md",
+     "software/apps-and-envs/r.md",
+     "storage/faq.md",
+     "allocations.md"
+    ]
+   },
+   {
+    "question": "how do I run MATLAB on the cluster",
+    "kind": "asked",
+    "score": 33.8,
+    "refused": false,
+    "hit": true,
+    "known_gap": false,
+    "got": [
+     "software/apps-and-envs/matlab.md",
+     "software/apps-and-envs/matlab.md",
+     "slurm/faq.md",
+     "slurm/faq.md",
+     "storage/faq.md"
+    ]
+   },
+   {
+    "question": "how do I run Stata",
+    "kind": "asked",
+    "score": 34.8,
+    "refused": false,
+    "hit": true,
+    "known_gap": false,
+    "got": [
+     "software/apps-and-envs/stata.md",
+     "software/apps-and-envs/stata.md",
+     "slurm/faq.md",
+     "slurm/faq.md",
+     "slurm/partitions.md"
+    ]
+   },
+   {
+    "question": "how do I use a container image",
+    "kind": "asked",
+    "score": 25.9,
+    "refused": false,
+    "hit": false,
+    "known_gap": true,
+    "got": [
+     "slurm/partitions.md",
+     "tutorials/gis/MidwayGeoSpatial.md",
+     "slurm/faq.md",
+     "accounts.md",
+     "allocations.md"
+    ]
+   },
+   {
+    "question": "how do I run GROMACS simulations",
+    "kind": "asked",
+    "score": 30.5,
+    "refused": false,
+    "hit": true,
+    "known_gap": false,
+    "got": [
+     "software/apps-and-envs/gromacs.md",
+     "software/apps-and-envs/gromacs.md",
+     "slurm/faq.md",
+     "slurm/faq.md",
+     "slurm/partitions.md"
+    ]
+   },
+   {
+    "question": "what compilers are available",
+    "kind": "faq",
+    "score": 24.2,
+    "refused": false,
+    "hit": true,
+    "known_gap": false,
+    "got": [
+     "software/compilers.md",
+     "slurm/faq.md",
+     "software/compilers.md",
+     "allocations.md",
+     "software/apps-and-envs/r.md"
+    ]
+   },
+   {
+    "question": "which MPI versions does RCC support",
+    "kind": "faq",
+    "score": 45.6,
+    "refused": false,
+    "hit": true,
+    "known_gap": false,
+    "got": [
+     "slurm/faq.md",
+     "slurm/faq.md",
+     "slurm/sbatch.md",
+     "software/faq.md",
+     "tutorials/kicp.md"
+    ]
+   },
+   {
+    "question": "how do I use VS Code on the cluster",
+    "kind": "asked",
+    "score": 29.1,
+    "refused": false,
+    "hit": true,
+    "known_gap": false,
+    "got": [
+     "slurm/faq.md",
+     "software/apps-and-envs/scode/python.md",
+     "software/apps-and-envs/scode/python.md",
+     "storage/faq.md",
+     "software/apps-and-envs/scode/environments.md"
+    ]
+   },
+   {
+    "question": "what clusters does RCC run",
+    "kind": "asked",
+    "score": 27.4,
+    "refused": false,
+    "hit": true,
+    "known_gap": false,
+    "got": [
+     "software/faq.md",
+     "slurm/faq.md",
+     "ecosystems.md",
+     "allocations.md",
+     "ecosystems.md"
+    ]
+   },
+   {
+    "question": "does RCC provide GPU computing resources",
+    "kind": "faq",
+    "score": 44.3,
+    "refused": false,
+    "hit": true,
+    "known_gap": false,
+    "got": [
+     "slurm/faq.md",
+     "software/compilers.md",
+     "software/compilers.md",
+     "slurm/faq.md",
+     "slurm/sbatch.md"
+    ]
+   },
+   {
+    "question": "what are the most common mistakes new users make",
+    "kind": "asked",
+    "score": 38.1,
+    "refused": false,
+    "hit": true,
+    "known_gap": false,
+    "got": [
+     "mistakes.md",
+     "connection/thinlinc/main.md",
+     "mistakes.md",
+     "accounts.md",
+     "support-and-services_new-faculty-program.txt"
+    ]
+   },
+   {
+    "question": "what is a compute node",
+    "kind": "asked",
+    "score": 17.4,
+    "refused": true,
+    "hit": false,
+    "known_gap": false,
+    "got": [
+     "allocations.md",
+     "allocations.md",
+     "slurm/faq.md",
+     "connection/ssh/main.md",
+     "software/faq.md"
+    ]
+   }
+  ],
+  "identifiers": [
+   {
+    "question": "my job was killed by slurmstepd oom-kill event",
+    "score": 44.8,
+    "unseen": [
+     "slurmstepd",
+     "oom"
+    ],
+    "refused": false
+   },
+   {
+    "question": "why did job 41235567 fail",
+    "score": 28.3,
+    "unseen": [],
+    "refused": false
+   },
+   {
+    "question": "my CNetID is jsmith and I cannot log in",
+    "score": 40.0,
+    "unseen": [
+     "jsmith"
+    ],
+    "refused": false
+   },
+   {
+    "question": "srun: error: task 0 launch failed: Unspecified error",
+    "score": 38.5,
+    "unseen": [
+     "unspecified"
+    ],
+    "refused": false
+   },
+   {
+    "question": "sbatch: error: Batch job submission failed: Invalid account or account/partition combination specified",
+    "score": 56.8,
+    "unseen": [],
+    "refused": false
+   },
+   {
+    "question": "I get Permission denied (publickey) connecting to midway3",
+    "score": 37.1,
+    "unseen": [
+     "denied",
+     "publickey"
+    ],
+    "refused": false
+   },
+   {
+    "question": "my transfer says Globus endpoint 4bd2c1a8 is not activated",
+    "score": 52.9,
+    "unseen": [],
+    "refused": false
+   },
+   {
+    "question": "quota exceeded writing to /project2/pi-jsmith",
+    "score": 47.4,
+    "unseen": [
+     "jsmith"
+    ],
+    "refused": false
+   }
+  ],
+  "suspect": []
+ }
+}

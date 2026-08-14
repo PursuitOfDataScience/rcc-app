@@ -1,0 +1,410 @@
+# Answerable questions, with the page(s) a correct answer rests on.
+#
+# `pages` — any one of them counts as a hit, because several questions have more than
+#   one defensible answer page and picking a favourite would fail a good retrieval.
+# `must_mention` — a token a correct ANSWER has to contain, where there is an obvious
+#   one. This is the cheapest real answer-correctness signal available: "how do I
+#   cancel a job" without the word `scancel` anywhere in it did not answer the
+#   question, whatever else it said, and no judge is needed to see that.
+# `kind` — `faq` marks a question lifted from a question-shaped heading already in the
+#   corpus. Those are free gold labels and they are also LEXICALLY EASY, because the
+#   question's own words are on the page it points at: they score near 100% and are a
+#   ceiling check, not a discriminating benchmark. `asked` marks a question written the
+#   way a reader would put it, which is the set worth watching.
+
+# --- Slurm ------------------------------------------------------------------
+
+[[question]]
+text = "how do I submit a batch job"
+pages = ["slurm/sbatch.md"]
+must_mention = ["sbatch"]
+kind = "asked"
+
+[[question]]
+text = "how do I submit a job to Midway"
+pages = ["slurm/faq.md", "slurm/sbatch.md"]
+must_mention = ["sbatch"]
+kind = "faq"
+
+[[question]]
+text = "how do I cancel a job I already submitted"
+pages = ["slurm/sbatch.md", "slurm/main.md"]
+must_mention = ["scancel"]
+kind = "asked"
+
+[[question]]
+text = "how do I see whether my job is running"
+pages = ["slurm/sbatch.md", "slurm/main.md", "slurm/faq.md"]
+must_mention = ["squeue"]
+kind = "asked"
+
+[[question]]
+text = "can I log in directly to a compute node"
+pages = ["slurm/faq.md"]
+kind = "faq"
+
+[[question]]
+text = "can I create a cron job"
+pages = ["slurm/faq.md"]
+kind = "faq"
+
+[[question]]
+text = "how can I get emails when my job starts and when it finishes"
+pages = ["slurm/faq.md"]
+must_mention = ["mail"]
+kind = "faq"
+
+[[question]]
+text = "how do I run jobs that need longer than the maximum wall time"
+pages = ["slurm/faq.md"]
+kind = "faq"
+
+[[question]]
+text = "why is my job not starting"
+pages = ["slurm/faq.md", "slurm/sbatch.md"]
+kind = "faq"
+
+[[question]]
+text = "why does my job fail after a few seconds"
+pages = ["slurm/faq.md"]
+kind = "faq"
+
+[[question]]
+text = "my job was killed for exceeding the memory limit"
+pages = ["slurm/faq.md"]
+kind = "asked"
+
+[[question]]
+text = "I am a member of multiple accounts, how do I choose which allocation is charged"
+pages = ["slurm/faq.md"]
+must_mention = ["account"]
+kind = "faq"
+
+[[question]]
+text = "are there limits to how many jobs I can run"
+pages = ["slurm/faq.md", "slurm/partitions.md"]
+kind = "faq"
+
+[[question]]
+text = "how do I run jobs in parallel"
+pages = ["slurm/faq.md", "slurm/sbatch.md"]
+kind = "faq"
+
+[[question]]
+text = "which partition should I use for a GPU job"
+pages = ["slurm/partitions.md", "slurm/sbatch.md"]
+must_mention = ["gpu"]
+kind = "asked"
+
+[[question]]
+text = "how do I ask for more memory for my job"
+pages = ["slurm/sbatch.md"]
+must_mention = ["mem"]
+kind = "asked"
+# The exceeded-memory FAQ outranks the page documenting `--mem`. Symptom beats
+# mechanism here, which is the opposite of what the synonym groups are meant to do.
+known_gap = true
+
+[[question]]
+text = "how do I start an interactive session on a compute node"
+pages = ["slurm/sinteractive.md"]
+must_mention = ["sinteractive"]
+kind = "asked"
+
+[[question]]
+text = "why does my sinteractive job fail with connection closed"
+pages = ["slurm/faq.md", "slurm/sinteractive.md"]
+kind = "faq"
+
+[[question]]
+text = "what does the scavenge partition do"
+pages = ["slurm/partitions.md"]
+kind = "asked"
+
+# Arrived here from negatives.toml, where it was written as a partition that does not
+# exist. It does: six Midway2 nodes with K80s. The label audit caught it.
+[[question]]
+text = "what is the walltime limit on the gpu2 partition"
+pages = ["slurm/partitions.md", "slurm/sbatch.md"]
+kind = "asked"
+
+[[question]]
+text = "how many cores can one job use"
+pages = ["slurm/partitions.md", "slurm/sbatch.md"]
+kind = "asked"
+
+# --- accounts and allocations ----------------------------------------------
+
+[[question]]
+text = "how do I get an RCC account"
+pages = ["accounts.md"]
+kind = "asked"
+
+[[question]]
+text = "how do I check how many service units I have left"
+pages = ["allocations.md"]
+must_mention = ["accounts"]
+kind = "asked"
+
+[[question]]
+text = "what is a service unit"
+pages = ["allocations.md", "glossary.md"]
+kind = "asked"
+
+[[question]]
+text = "how do I request a new allocation"
+pages = ["allocations.md", "accounts.md"]
+kind = "asked"
+
+[[question]]
+text = "how do I add a member to my PI account"
+pages = ["accounts.md", "allocations.md"]
+kind = "asked"
+
+[[question]]
+text = "what happens when my allocation runs out"
+pages = ["allocations.md"]
+kind = "asked"
+
+# --- connecting ------------------------------------------------------------
+
+[[question]]
+text = "how do I connect to Midway with SSH"
+pages = ["connection/ssh/main.md", "connection/main.md"]
+must_mention = ["ssh"]
+kind = "asked"
+
+[[question]]
+text = "how do I set up a remote desktop session"
+pages = ["connection/thinlinc/main.md"]
+must_mention = ["thinlinc"]
+kind = "asked"
+
+[[question]]
+text = "ThinLinc will not connect, what do I check"
+pages = ["connection/thinlinc/troubleshooting.md", "connection/thinlinc/main.md"]
+kind = "asked"
+
+[[question]]
+text = "how do I use Open OnDemand"
+pages = ["connection/open_ondemand/open_ondemand.md"]
+kind = "asked"
+
+[[question]]
+text = "do I need two-factor authentication to log in"
+pages = ["connection/ssh/main.md", "connection/main.md", "accounts.md"]
+kind = "asked"
+
+[[question]]
+text = "how do I set up SSH keys so I am not asked for a password"
+pages = ["connection/ssh/main.md"]
+must_mention = ["ssh"]
+kind = "asked"
+
+# --- storage ---------------------------------------------------------------
+
+[[question]]
+text = "how much storage space do I have left"
+pages = ["storage/faq.md"]
+kind = "faq"
+
+[[question]]
+text = "I am over quota, what do I do"
+pages = ["storage/faq.md", "storage/main.md"]
+kind = "faq"
+
+[[question]]
+text = "why can't I write files into my home directory"
+pages = ["storage/faq.md"]
+kind = "faq"
+
+[[question]]
+text = "how do I increase my storage quota"
+pages = ["storage/faq.md"]
+kind = "faq"
+
+[[question]]
+text = "I accidentally deleted a file, how do I restore it"
+pages = ["storage/faq.md"]
+kind = "faq"
+
+[[question]]
+text = "what is the difference between home, project and scratch"
+pages = ["storage/main.md"]
+must_mention = ["scratch"]
+kind = "asked"
+
+[[question]]
+text = "is scratch backed up"
+pages = ["storage/main.md", "storage/faq.md"]
+must_mention = ["scratch"]
+kind = "asked"
+
+[[question]]
+text = "how long do files stay on scratch before they are purged"
+pages = ["storage/main.md", "storage/faq.md"]
+kind = "asked"
+
+[[question]]
+text = "how do I share files with others in my group"
+pages = ["storage/faq.md", "data_sharing/access_control.md"]
+kind = "faq"
+
+# --- data transfer and sharing --------------------------------------------
+
+[[question]]
+text = "how do I transfer files with Globus"
+pages = ["data_transfer/globus/transfer-files.md"]
+must_mention = ["globus"]
+kind = "asked"
+
+[[question]]
+text = "how do I copy a file from my laptop to Midway from the command line"
+pages = ["data_transfer/cli/cli.md"]
+kind = "asked"
+# Retrieves allocations.md. "command line" matches everywhere and the CLI transfer
+# page is short, so BM25 length normalisation works against it.
+known_gap = true
+
+[[question]]
+text = "how do I mount my project directory as a network drive"
+pages = ["data_transfer/persistent_mapping/samba.md"]
+kind = "asked"
+
+[[question]]
+text = "how do I sync data to cloud storage"
+pages = ["data_transfer/cloud/cloud-sync.md"]
+kind = "asked"
+
+[[question]]
+text = "how do I share files with a collaborator outside the university"
+pages = ["data_sharing/globus_sharing.md", "data_sharing/access_control.md"]
+kind = "asked"
+
+[[question]]
+text = "how do I publish a file on the web from my project directory"
+pages = ["data_sharing/http_sharing.md"]
+kind = "asked"
+# "project directory" pulls storage and allocation pages ahead of the one page about
+# HTTP sharing.
+known_gap = true
+
+[[question]]
+text = "how do I control who can read a directory"
+pages = ["data_sharing/access_control.md"]
+kind = "asked"
+
+# --- software --------------------------------------------------------------
+
+[[question]]
+text = "what software does RCC offer"
+pages = ["software/index.md", "software/faq.md"]
+must_mention = ["module"]
+kind = "faq"
+
+[[question]]
+text = "why is my favourite command not available"
+pages = ["software/faq.md"]
+must_mention = ["module"]
+kind = "faq"
+
+[[question]]
+text = "why do I get an error that a module cannot be loaded due to a conflict"
+pages = ["software/faq.md"]
+kind = "faq"
+
+[[question]]
+text = "how do I request installation of a new software package"
+pages = ["software/faq.md"]
+kind = "faq"
+
+[[question]]
+text = "how do I load a specific version of a module"
+pages = ["software/index.md", "software/faq.md"]
+must_mention = ["module load"]
+kind = "asked"
+
+[[question]]
+text = "how do I set up a Python environment"
+pages = ["software/apps-and-envs/python.md"]
+must_mention = ["conda"]
+kind = "asked"
+
+[[question]]
+text = "how do I install a package with conda"
+pages = ["software/apps-and-envs/python.md"]
+must_mention = ["conda"]
+kind = "asked"
+
+[[question]]
+text = "how do I run PyTorch on a GPU"
+pages = ["software/apps-and-envs/tf-and-torch.md"]
+kind = "asked"
+
+[[question]]
+text = "how do I use R on Midway"
+pages = ["software/apps-and-envs/r.md"]
+kind = "asked"
+
+[[question]]
+text = "how do I run MATLAB on the cluster"
+pages = ["software/apps-and-envs/matlab.md"]
+must_mention = ["matlab"]
+kind = "asked"
+
+[[question]]
+text = "how do I run Stata"
+pages = ["software/apps-and-envs/stata.md"]
+kind = "asked"
+
+[[question]]
+text = "how do I use a container image"
+pages = ["software/apps-and-envs/singularity.md", "software/apps-and-envs/charliecloud.md"]
+kind = "asked"
+# The golden set's barer phrasing ("use a container image") passes; adding "how do I"
+# dilutes the two words that carry the meaning enough to lose both pages. Worth
+# keeping visible: real questions are phrased the long way.
+known_gap = true
+
+[[question]]
+text = "how do I run GROMACS simulations"
+pages = ["software/apps-and-envs/gromacs.md"]
+kind = "asked"
+
+[[question]]
+text = "what compilers are available"
+pages = ["software/compilers.md", "slurm/faq.md"]
+kind = "faq"
+
+[[question]]
+text = "which MPI versions does RCC support"
+pages = ["software/compilers.md", "software/libraries.md", "slurm/faq.md"]
+kind = "faq"
+
+[[question]]
+text = "how do I use VS Code on the cluster"
+pages = ["software/apps-and-envs/scode/main.md", "software/apps-and-envs/scode/python.md"]
+kind = "asked"
+
+# --- systems and policy ---------------------------------------------------
+
+[[question]]
+text = "what clusters does RCC run"
+pages = ["ecosystems.md"]
+kind = "asked"
+
+[[question]]
+text = "does RCC provide GPU computing resources"
+pages = ["slurm/faq.md", "ecosystems.md", "slurm/partitions.md"]
+must_mention = ["gpu"]
+kind = "faq"
+
+[[question]]
+text = "what are the most common mistakes new users make"
+pages = ["mistakes.md"]
+kind = "asked"
+
+[[question]]
+text = "what is a compute node"
+pages = ["glossary.md", "ecosystems.md", "slurm/main.md"]
+kind = "asked"

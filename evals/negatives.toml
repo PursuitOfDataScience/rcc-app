@@ -1,0 +1,336 @@
+# Questions the documentation cannot answer. Every one must come back caveated.
+#
+# `absent` names the words that must appear nowhere in the corpus for the label to
+# hold; `tools/gate_check.py --audit` checks them and excludes any case whose token
+# turns out to be in the documentation after all. See README.md.
+#
+# Grouped by WHY it is unanswerable, because the classes fail through different
+# mechanisms and reporting one number over all of them hides which mechanism broke.
+
+# --- another site's machine -------------------------------------------------
+#
+# The most plausible wrong question this app will ever be asked. A UChicago
+# researcher with an allocation at TACC, NCSA or ALCF asks in fluent HPC dialect
+# about a cluster the RCC does not run, and every word except the machine's name
+# matches the User Guide richly.
+
+[[negative]]
+text = "how do I submit a job on Frontera"
+absent = ["frontera"]
+why = "TACC's machine, not RCC's"
+kind = "other-site"
+
+[[negative]]
+text = "how do I run Jupyter on the Delta cluster"
+absent = ["delta"]
+why = "NCSA's machine"
+kind = "other-site"
+
+[[negative]]
+text = "what is the queue structure on Stampede3"
+absent = ["stampede"]
+why = "TACC's machine"
+kind = "other-site"
+
+[[negative]]
+text = "how do I get an allocation on Bridges-2"
+# Not `bridges`: the scraped publication titles use the English word, so the bare
+# noun is in the corpus and the audit rightly rejected it. The machine's name is not.
+absent = ["bridges-2"]
+why = "PSC's machine"
+kind = "other-site"
+
+[[negative]]
+text = "how do I load modules on Perlmutter"
+absent = ["perlmutter"]
+why = "NERSC's machine"
+kind = "other-site"
+
+[[negative]]
+text = "is there a scratch purge policy on Expanse"
+absent = ["expanse"]
+why = "SDSC's machine"
+kind = "other-site"
+
+[[negative]]
+text = "how do I use the Polaris supercomputer"
+absent = ["polaris"]
+why = "ALCF's machine"
+kind = "other-site"
+
+[[negative]]
+text = "what is the node count on Anvil"
+absent = ["anvil"]
+why = "Purdue's machine"
+kind = "other-site"
+
+# --- a resource that does not exist ----------------------------------------
+#
+# RCC-shaped names for things the RCC does not have. These are version-numbered
+# tokens, which the unseen-word rule skips by design (`bm25.py`, the digit branch)
+# because a job ID is not a topic — so nothing at all flags them.
+
+# `gpu2` was here as a partition that does not exist. It does — six Midway2 nodes with
+# K80s, in the table in slurm/partitions.md, and `#SBATCH --partition=gpu2` is in
+# sbatch.md. The audit caught the mislabel and the case is now an answerable question in
+# questions.toml. Left as a comment because it is the best example in the set of why
+# `absent` is checked: written from memory, this looked exactly like the other three.
+
+[[negative]]
+text = "how many GPUs per node does Midway4 have"
+absent = ["midway4"]
+why = "no such cluster"
+kind = "nonexistent-resource"
+
+[[negative]]
+text = "how do I connect to Midway5"
+absent = ["midway5"]
+why = "no such cluster"
+kind = "nonexistent-resource"
+
+[[negative]]
+text = "what is the memory limit on the bigmem3 partition"
+absent = ["bigmem3"]
+why = "no such partition"
+kind = "nonexistent-resource"
+
+[[negative]]
+text = "what is the quota on scratch2"
+absent = ["scratch2"]
+why = "no such filesystem"
+kind = "nonexistent-resource"
+
+[[negative]]
+text = "how many nodes does Beagle4 have"
+absent = ["beagle4"]
+why = "no such cluster"
+kind = "nonexistent-resource"
+
+[[negative]]
+text = "how do I submit to the turbo partition"
+absent = ["turbo"]
+why = "no such partition"
+kind = "nonexistent-resource"
+
+# --- the wrong scheduler ---------------------------------------------------
+#
+# Users arrive with habits from PBS, LSF and HTCondor sites. The RCC runs Slurm, so
+# the honest answer names Slurm's equivalent and says the rest is not documented —
+# not a confident walkthrough of a command that does not exist here.
+
+[[negative]]
+text = "how do I submit a job with qsub"
+absent = ["qsub"]
+why = "PBS/Torque, not Slurm"
+kind = "wrong-scheduler"
+
+[[negative]]
+text = "how do I check the queue with bjobs"
+absent = ["bjobs"]
+why = "LSF, not Slurm"
+kind = "wrong-scheduler"
+
+[[negative]]
+text = "how do I write PBS directives in my job script"
+# `pbs` alone is in the corpus — one sentence calls Slurm's syntax familiar to PBS
+# users. Naming the directive itself is the precise claim: no page shows a `#PBS` line.
+absent = ["#PBS"]
+why = "PBS, not Slurm; the docs name PBS once and document none of it"
+kind = "wrong-scheduler"
+
+[[negative]]
+text = "how do I submit with condor_submit"
+absent = ["condor_submit", "condor"]
+why = "HTCondor, not Slurm"
+kind = "wrong-scheduler"
+
+# --- software that is not installed ---------------------------------------
+
+[[negative]]
+text = "how do I install OpenFOAM"
+absent = ["openfoam"]
+why = "not in the module list; the docs cannot say how"
+kind = "software-absent"
+
+[[negative]]
+text = "how do I load the ANSYS Fluent module"
+# Not `fluent`: a workshop description calls its audience fluent with the tools.
+absent = ["ansys"]
+why = "not in the module list"
+kind = "software-absent"
+
+[[negative]]
+text = "is Abaqus available on Midway"
+absent = ["abaqus"]
+why = "not in the module list"
+kind = "software-absent"
+
+[[negative]]
+text = "how do I run VASP on Beagle3"
+absent = ["vasp"]
+why = "not in the module list"
+kind = "software-absent"
+
+# Julia was here. It is named in the corpus — the compilers page lists it among the
+# languages the RCC does *not* maintain — so the documentation answers the question,
+# with a no. Removed rather than kept: a question the docs address is not a negative,
+# whichever way the answer goes.
+
+# --- a service the RCC does not offer -------------------------------------
+
+# AWS EC2 was here, as a service the RCC does not offer. It does: Skyway bursts to
+# AWS, and the scraped user guide names EC2 instance types outright. Removed for the
+# same reason as Julia — the corpus covers it, so answering is correct.
+
+[[negative]]
+text = "does RCC run a managed Kubernetes cluster"
+absent = ["kubernetes", "kubectl"]
+why = "not an RCC service"
+kind = "unoffered-service"
+
+[[negative]]
+text = "can I mine cryptocurrency on Midway"
+absent = ["cryptocurrency", "bitcoin"]
+why = "not a documented use, and policy does not discuss it"
+kind = "unoffered-service"
+
+[[negative]]
+text = "can I get a static public IP for my desktop from RCC"
+absent = ["static ip"]
+why = "not a documented service"
+kind = "unoffered-service"
+
+[[negative]]
+text = "does RCC provide WordPress hosting for my lab site"
+absent = ["wordpress"]
+why = "not an RCC service"
+kind = "unoffered-service"
+
+# --- policy or price the documentation does not state --------------------
+
+[[negative]]
+text = "what does a service unit cost for an external collaborator"
+absent = ["per-su", "usd"]
+why = "no price list in the documentation"
+kind = "policy-absent"
+
+[[negative]]
+text = "what is RCC's uptime SLA"
+absent = ["sla"]
+why = "no service-level agreement is published here"
+kind = "policy-absent"
+
+[[negative]]
+text = "what is the penalty for sharing my CNetID password"
+absent = ["penalty"]
+why = "no disciplinary policy in these documents"
+kind = "policy-absent"
+
+# --- content deliberately kept out of the index -------------------------
+#
+# Indexed hosts that were excluded (`profiles/rcc.toml`, `exclude_hosts`). These must
+# stay weak rather than merely absent: the scrape is on disk, and a change to the
+# exclusion would silently make them answerable.
+
+[[negative]]
+text = "what is PI-RADS prostate MRI scoring"
+absent = ["pi-rads"]
+why = "radiology teaching material, excluded from the index"
+kind = "excluded-host"
+
+[[negative]]
+text = "describe the mpMRI prostate imaging protocol"
+absent = ["mpmri"]
+why = "radiology teaching material, excluded from the index"
+kind = "excluded-host"
+
+# --- not about computing at all -----------------------------------------
+#
+# The easy class, and the only one that was tested before this file existed. Kept
+# because a gate that fails these is broken in a way worth knowing about immediately.
+
+[[negative]]
+text = "how do I renew my parking permit"
+absent = ["parking"]
+why = "not a computing question"
+kind = "out-of-domain"
+
+[[negative]]
+text = "how do I book a study room in the library"
+# Regenstein itself is in the corpus: the walk-in lab is in room 216 of it, and a
+# question about the library's own hours sits close enough to that to be a poor test.
+absent = ["study room"]
+why = "not a computing question"
+kind = "out-of-domain"
+
+[[negative]]
+text = "where can I get a flu shot on campus"
+absent = ["flu"]
+why = "not a computing question"
+kind = "out-of-domain"
+
+[[negative]]
+text = "how do I enrol in a computer science course"
+absent = ["enrol", "syllabus"]
+why = "not a computing question"
+kind = "out-of-domain"
+
+[[negative]]
+text = "what time does the Ratner gym close"
+# Not the weather: half a dozen scraped faculty profiles study extreme weather, so the
+# word is in the corpus even though no page forecasts anything.
+absent = ["ratner"]
+why = "not a computing question"
+kind = "out-of-domain"
+
+[[negative]]
+text = "how do I bake sourdough bread"
+absent = ["sourdough"]
+why = "not a computing question"
+kind = "out-of-domain"
+
+[[negative]]
+text = "who won the world cup"
+absent = ["world cup"]
+why = "not a computing question"
+kind = "out-of-domain"
+
+# --- the trap on the other side -----------------------------------------
+#
+# NOT negatives. Answerable questions that each carry a word the documentation has
+# never seen — a job number, a CNetID, a daemon named in an error message. Every one
+# of these was refused by the first version of the weak-retrieval idea, which is what
+# made it unusable, and they are here so that a fix aimed at the leaks above cannot
+# quietly reintroduce that. Scored as over-refusals when they are caveated.
+
+[[identifier]]
+text = "my job was killed by slurmstepd oom-kill event"
+why = "an OOM kill is documented; slurmstepd is just the daemon's name"
+
+[[identifier]]
+text = "why did job 41235567 fail"
+why = "a job number is not a topic"
+
+[[identifier]]
+text = "my CNetID is jsmith and I cannot log in"
+why = "logging in is documented; the CNetID is an identifier"
+
+[[identifier]]
+text = "srun: error: task 0 launch failed: Unspecified error"
+why = "an srun failure is documented; the error string is not a topic"
+
+[[identifier]]
+text = "sbatch: error: Batch job submission failed: Invalid account or account/partition combination specified"
+why = "account/partition mismatch is documented"
+
+[[identifier]]
+text = "I get Permission denied (publickey) connecting to midway3"
+why = "SSH key setup is documented; the error text is not a topic"
+
+[[identifier]]
+text = "my transfer says Globus endpoint 4bd2c1a8 is not activated"
+why = "endpoint activation is documented; the UUID is an identifier"
+
+[[identifier]]
+text = "quota exceeded writing to /project2/pi-jsmith"
+why = "quotas are documented; the path names a person"

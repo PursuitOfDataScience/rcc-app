@@ -1,0 +1,82 @@
+# Multi-turn cases: the axis a single-question benchmark structurally cannot see.
+#
+# A follow-up is where a retrieval agent rots. "And how do I ask for a GPU?" carries no
+# subject of its own, so the model has to search for something the reader never typed —
+# and whatever it searches for is what retrieval is handed. The failure is quiet: a
+# plausible answer to a question nobody asked, cited to a real page.
+#
+# `carries` names the turn whose context this one depends on. `pages` is scored the same
+# way as in questions.toml, so a follow-up that retrieves its own gold page is a
+# follow-up that kept the thread.
+
+[[conversation]]
+name = "gpu follow-up to a batch job"
+why = "the second turn has no subject; it means 'a GPU in an sbatch script'"
+
+[[conversation.turn]]
+text = "how do I submit a batch job"
+pages = ["slurm/sbatch.md"]
+must_mention = ["sbatch"]
+
+[[conversation.turn]]
+text = "and how do I ask for a GPU in that script?"
+pages = ["slurm/sbatch.md", "slurm/partitions.md"]
+must_mention = ["gpu"]
+carries = "the script from the first answer"
+
+[[conversation]]
+name = "cluster switched mid-conversation"
+why = "partition names differ per cluster, so dropping 'Beagle3' is a wrong answer"
+
+[[conversation.turn]]
+text = "which partition should I use for a GPU job"
+pages = ["slurm/partitions.md", "slurm/sbatch.md"]
+must_mention = ["gpu"]
+
+[[conversation.turn]]
+text = "what about on Beagle3?"
+pages = ["slurm/partitions.md", "ecosystems.md"]
+must_mention = ["beagle3"]
+carries = "the cluster named in the follow-up, against the partitions in the first"
+
+[[conversation]]
+name = "quota, then the command"
+why = "an ellipsis follow-up: 'that' is the quota from the turn before"
+
+[[conversation.turn]]
+text = "what are the storage quotas on Midway"
+pages = ["storage/main.md", "storage/faq.md"]
+
+[[conversation.turn]]
+text = "how do I check how much of that I am using?"
+pages = ["storage/faq.md", "storage/main.md"]
+carries = "which quota is being checked"
+
+[[conversation]]
+name = "answerable, then not"
+why = "a caveat has to survive a conversation that started well"
+
+[[conversation.turn]]
+text = "how do I connect to Midway with SSH"
+pages = ["connection/ssh/main.md", "connection/main.md"]
+must_mention = ["ssh"]
+
+[[conversation.turn]]
+text = "and how do I connect to Frontera?"
+expect = "caveat"
+carries = "nothing — the point is that the earlier success does not license this answer"
+
+[[conversation]]
+name = "the same question twice"
+why = "a reader who repeats themselves should not get a different answer"
+
+[[conversation.turn]]
+text = "how do I cancel a running job"
+pages = ["slurm/sbatch.md", "slurm/main.md"]
+must_mention = ["scancel"]
+
+[[conversation.turn]]
+text = "sorry, can you say that again — how do I cancel a running job?"
+pages = ["slurm/sbatch.md", "slurm/main.md"]
+must_mention = ["scancel"]
+carries = "nothing; this is the stability check"

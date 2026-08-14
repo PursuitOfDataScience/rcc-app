@@ -70,6 +70,7 @@ can't call tools get one retrieval pass up front instead — same citations.
 | [`profiles/README.md`](profiles/README.md) | Writing a profile: sources, readers, URL schemes, providers |
 | [`CONFIG.md`](CONFIG.md) | Every environment variable, rate limits, login, docs refresh |
 | [`CLAUDE.md`](CLAUDE.md) | Working on the code: where things go, how to run the checks |
+| [`EVAL.md`](EVAL.md) | Measuring it: the three axes, the scorecard, and what is unmeasured |
 
 ## Layout
 
@@ -89,6 +90,7 @@ sage/
   llm.py history.py files.py links.py normalize.py prompts.py feedback.py limits.py
 static/                 # app.css, app.js
 tests/  tools/          # unit + smoke + retrieval eval; render, palette, anchor checks
+evals/                  # the evaluation sets, the answer checks, the turn harness
 docs/  web/             # the bundled RCC corpus
 ```
 

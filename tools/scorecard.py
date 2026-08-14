@@ -1,0 +1,343 @@
+#!/usr/bin/env python3
+"""The whole card, on one screen, with the blanks admitted.
+
+There is no single number for "how is Sage doing". Any weighted average of what follows
+reads as healthy: retrieval is at 100% recall@5, the suite is green, the layout harness
+renders 660 states clean, the palette has not drifted. One cell is 36.8%, and it is the
+one that decides whether the app declines to answer a question the documentation cannot
+answer. A scalar would dilute it to invisibility.
+
+So the card is a vector, the headline is its worst cell, and a cell nobody has measured
+says **unmeasured** rather than being left out — because a missing row reads as a passing
+row, and the two axes with no numbers at all are the ones that decide whether answers are
+correct.
+
+    python tools/scorecard.py                       # the model-independent card, seconds
+    python tools/scorecard.py --with-suite           # + ruff and pytest
+    python tools/scorecard.py --with-layout          # + the 660-render layout harness
+    python tools/scorecard.py --save report/card.json --against report/card-prev.json
+
+Axis B (per-model behaviour) is read from `report/agents.json` if `tools/agent_bench.py`
+has been run, and reported as unmeasured if it has not. It is never gated: a free tier's
+lineup rotates without notice, and a ratchet on a model's mood goes red for reasons that
+are not this repository's fault.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import subprocess
+import sys
+import tempfile
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(HERE)
+sys.path.insert(0, ROOT)
+
+import evals  # noqa: E402
+from evals import corpus_health, gate  # noqa: E402
+from sage import corpus as corpus_mod  # noqa: E402
+from sage import retrieval  # noqa: E402
+
+UNMEASURED = "unmeasured"
+
+
+def retrieval_metrics() -> dict:
+    """The existing golden-set numbers, from the existing tool, unedited.
+
+    A subprocess rather than an import: `tools/metrics.py` is a script that reads the
+    eval's case list with `ast` precisely so it can run where pytest cannot be imported,
+    and duplicating its arithmetic here would be a second copy of a number to go stale.
+    """
+    with tempfile.NamedTemporaryFile("r+", suffix=".json", delete=False) as handle:
+        path = handle.name
+    try:
+        result = subprocess.run(
+            [sys.executable, os.path.join(HERE, "metrics.py"), "--save", path],
+            capture_output=True, text=True, cwd=ROOT, timeout=600, check=False,
+        )
+        if result.returncode != 0:
+            return {"error": result.stderr.strip()[:200] or "metrics.py failed"}
+        with open(path, encoding="utf-8") as handle:
+            return json.load(handle)
+    finally:
+        if os.path.exists(path):
+            os.unlink(path)
+
+
+def command(argv: list[str], *, env: dict | None = None) -> dict:
+    started = subprocess.run(
+        argv, capture_output=True, text=True, cwd=ROOT, check=False,
+        env={**os.environ, **(env or {})},
+    )
+    tail = (started.stdout or started.stderr).strip().splitlines()
+    return {
+        "ok": started.returncode == 0,
+        "code": started.returncode,
+        "tail": tail[-1][:160] if tail else "",
+    }
+
+
+def collected_tests() -> int:
+    found = subprocess.run(
+        [sys.executable, "-m", "pytest", "--collect-only", "-q", "-p", "no:cacheprovider"],
+        capture_output=True, text=True, cwd=ROOT, check=False,
+    )
+    total = 0
+    for line in found.stdout.splitlines():
+        if line.startswith("tests/") and ": " in line:
+            tail = line.rsplit(": ", 1)[-1].strip()
+            if tail.isdigit():
+                total += int(tail)
+    return total
+
+
+def build_card(*, with_suite: bool, with_layout: bool) -> dict:
+    built = corpus_mod.build()
+    if not built.chunks:
+        raise SystemExit("no documentation trees available")
+    index = retrieval.build(built)
+
+    negatives = gate.audit(evals.negatives(), gate.haystack(built))
+    measured_gate = gate.measure(index, negatives, evals.questions(), evals.identifiers())
+    swept = gate.sweep(index, negatives, evals.questions(), evals.identifiers())
+    health = corpus_health.measure(built, index)
+
+    card: dict = {
+        "commit": command(["git", "rev-parse", "--short", "HEAD"])["tail"],
+        "retrieval": retrieval_metrics(),
+        "gate": {
+            "caveat_recall": measured_gate["caveat_recall"],
+            "over_refusal": measured_gate["over_refusal"],
+            "recall@5": measured_gate["recall@5"],
+            "n_negatives": measured_gate["n_negatives"],
+            "n_answerable": measured_gate["n_positives"] + measured_gate["n_identifiers"],
+            "suspect_labels": measured_gate["n_suspect"],
+            "separable_by_threshold": bool(gate.separable(swept)),
+            "leaks": [
+                row["question"] for row in measured_gate["rows"]["negatives"]
+                if row["leaked"]
+            ],
+        },
+        "corpus": {
+            "chunks": health["chunks"],
+            "empty_documents": len(health["empty_documents"]),
+            "exact_duplicate_groups": len(health["duplicates"]["exact_groups"]),
+            "near_duplicate_pairs": len(health["duplicates"]["near"]),
+            "unresolvable_ids": len(health["unresolvable_ids"]),
+            "chunks_without_url": len(health["chunks_without_url"]),
+            "topics_caveated": [
+                row["topic"] for row in health["topics"] if not row["confident"]
+            ],
+            "reachability": health["reachability"],
+            "freshness": health["freshness"],
+        },
+        "suite": UNMEASURED,
+        "layout": UNMEASURED,
+        "agents": UNMEASURED,
+    }
+
+    if with_suite:
+        card["suite"] = {
+            "lint": command(["ruff", "check", "."]),
+            "tests": command(
+                [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider"]
+            ),
+            "collected": collected_tests(),
+        }
+    if with_layout:
+        chrome = os.path.expanduser(
+            "~/.cache/ms-playwright/chromium-1217/chrome-linux64/chrome"
+        )
+        card["layout"] = command(
+            [sys.executable, os.path.join(HERE, "render_check.py")],
+            env={"SAGE_CHROME": os.environ.get("SAGE_CHROME", chrome)},
+        )
+
+    agents = os.path.join(ROOT, "report", "agents.json")
+    if os.path.exists(agents):
+        with open(agents, encoding="utf-8") as handle:
+            summary = json.load(handle)
+        card["agents"] = {
+            "models": [
+                {
+                    key: row[key] for key in (
+                        "model", "n", "answered", "empty", "searched", "read",
+                        "cited_gold", "rounds", "calls", "first_text_p50",
+                        "seconds_p95", "defects_per_answer", "refusal_correct",
+                    )
+                }
+                for row in summary.get("models", [])
+            ],
+            "conversations": summary.get("conversations", []),
+            "injections": summary.get("injections", []),
+        }
+    return card
+
+
+def _cell(label: str, value: str, note: str = "") -> None:
+    print(f"   {label:34s} {value:>12s}   {note}")
+
+
+def report(card: dict) -> None:
+    print(f"Sage scorecard  @ {card['commit'] or '(unknown commit)'}")
+
+    print("\nretrieval — golden set, hand written")
+    metrics = card["retrieval"]
+    if "error" in metrics:
+        _cell("metrics.py", "FAILED", metrics["error"])
+    else:
+        _cell("recall@5", f"{metrics['recall@5']:.1%}", f"n={metrics['n']}")
+        _cell("recall@3", f"{metrics['recall@3']:.1%}")
+        _cell("p@1", f"{metrics['p@1']:.1%}", "one case is ~3pp at this n")
+        _cell("MRR", f"{metrics['MRR']:.3f}")
+        _cell("depth", f"{metrics['depth']:.2f}", "sections of the right page, of six")
+
+    print("\nrefusal gate — the cell that decides whether the app declines")
+    gate_row = card["gate"]
+    _cell("caveat recall", f"{gate_row['caveat_recall']:.1%}",
+          f"n={gate_row['n_negatives']} negatives  <- worst cell")
+    _cell("over-refusal", f"{gate_row['over_refusal']:.1%}",
+          f"n={gate_row['n_answerable']} answerable")
+    _cell("recall@5 on the new set", f"{gate_row['recall@5']:.1%}")
+    _cell("suspect labels", str(gate_row["suspect_labels"]), "excluded from scoring")
+    _cell("fixable by a threshold?",
+          "yes" if gate_row["separable_by_threshold"] else "no",
+          "no => the fix is a classification change, not a number")
+
+    print("\ncorpus — the ceiling, no model involved")
+    corpus_row = card["corpus"]
+    _cell("chunks", str(corpus_row["chunks"]))
+    _cell("empty documents", str(corpus_row["empty_documents"]),
+          "topics nothing can answer")
+    _cell("identical section groups", str(corpus_row["exact_duplicate_groups"]),
+          "one destination, cited twice")
+    _cell("ids that do not resolve", str(corpus_row["unresolvable_ids"]))
+    _cell("chunks with no URL", str(corpus_row["chunks_without_url"]))
+    _cell("advertised topics caveated",
+          str(len(corpus_row["topics_caveated"])),
+          ", ".join(corpus_row["topics_caveated"]) or "none")
+    reach = corpus_row["reachability"]
+    _cell("index reachability",
+          f"{reach['touched']}/{reach['total']}" if reach["measurable"] else UNMEASURED,
+          "" if reach["measurable"] else
+          f"{reach['questions']} questions is a ceiling of {reach['ceiling']}")
+    snapshot = corpus_row["freshness"]
+    _cell("docs snapshot", snapshot.get("user_guide_commit", "-") if snapshot else "-",
+          snapshot.get("refreshed_at", "") if snapshot else "no snapshot")
+
+    print("\napp — robustness to a bad model")
+    suite = card["suite"]
+    if suite == UNMEASURED:
+        _cell("lint + tests", UNMEASURED, "run with --with-suite")
+    else:
+        _cell("ruff", "clean" if suite["lint"]["ok"] else "FAILED")
+        _cell("pytest", "pass" if suite["tests"]["ok"] else "FAILED",
+              f"{suite['collected']} collected")
+    layout = card["layout"]
+    if layout == UNMEASURED:
+        _cell("layout, 660 renders", UNMEASURED, "run with --with-layout (~7 min)")
+    else:
+        _cell("layout, 660 renders", "clean" if layout["ok"] else "FAILED",
+              layout["tail"])
+
+    print("\nagents — is this model good enough for the app? (never gated)")
+    agents = card["agents"]
+    if agents == UNMEASURED:
+        _cell("every per-model metric", UNMEASURED,
+              "run tools/agent_bench.py --models all --out report/")
+    else:
+        for row in agents["models"]:
+            _cell(row["model"][:34], f"{row['answered']:.0%} answered",
+                  f"{row['defects_per_answer']:.2f} defects/answer, "
+                  f"refusals {row['refusal_correct']:.0%}, "
+                  f"ttft {row['first_text_p50']}s")
+        if not agents.get("conversations"):
+            _cell("multi-turn", UNMEASURED, "add --conversations")
+        for row in agents.get("conversations", []):
+            _cell(row["model"][:34] + " (follow-up)",
+                  f"{row['follow_up_gold']:.0%} gold",
+                  f"first turn {row['first_turn_gold']:.0%}, "
+                  f"{row['defects']} defects over {row['turns']} turns")
+        if not agents.get("injections"):
+            _cell("uploads / injection", UNMEASURED, "add --injections")
+        for row in agents.get("injections", []):
+            _cell(row["model"][:34] + " (uploads)",
+                  "held" if not (row["obeyed"] or row["leaked"]) else "FAILED",
+                  f"obeyed {row['obeyed']}/{row['n']}, leaked {row['leaked']}/{row['n']}")
+
+    print("\nthe headline is the worst cell, not an average of these.")
+
+
+def report_against(card: dict, path: str) -> None:
+    with open(path, encoding="utf-8") as handle:
+        before = json.load(handle)
+    print(f"\nagainst {os.path.basename(path)} (@ {before.get('commit', '?')})")
+    pairs = [
+        ("retrieval", "recall@5"), ("retrieval", "p@1"),
+        ("gate", "caveat_recall"), ("gate", "over_refusal"), ("gate", "recall@5"),
+        ("corpus", "empty_documents"), ("corpus", "exact_duplicate_groups"),
+    ]
+    for section, key in pairs:
+        now = card.get(section, {})
+        was = before.get(section, {})
+        if key in now and key in was and now[key] != was[key]:
+            print(f"   {section}.{key}: {was[key]} -> {now[key]}")
+    # Membership, not only the count: a leak fixed while another arrives leaves the
+    # percentage still and is the shape a refactor produces.
+    now_leaks = set(card["gate"]["leaks"])
+    was_leaks = set(before.get("gate", {}).get("leaks", []))
+    for question in sorted(was_leaks - now_leaks):
+        print(f"   fixed: {question!r}")
+    for question in sorted(now_leaks - was_leaks):
+        print(f"   NEW LEAK: {question!r}")
+
+    # Axis B moves for reasons outside this repository, which is exactly why it is worth
+    # diffing rather than gating: a model that stopped answering, or got slower, is news
+    # about the provider and it should not have to be noticed by hand.
+    now_agents = card.get("agents")
+    was_agents = before.get("agents")
+    if not isinstance(now_agents, dict) or not isinstance(was_agents, dict):
+        return
+    was_by_model = {row["model"]: row for row in was_agents.get("models", [])}
+    for row in now_agents.get("models", []):
+        previous = was_by_model.pop(row["model"], None)
+        if previous is None:
+            print(f"   new model: {row['model']}")
+            continue
+        for key, form in (("answered", "pct"), ("defects_per_answer", "num"),
+                          ("refusal_correct", "pct"), ("first_text_p50", "num")):
+            old, new = previous.get(key), row.get(key)
+            if old is None or new is None or old == new:
+                continue
+            shown = (f"{old:.0%} -> {new:.0%}" if form == "pct" else f"{old} -> {new}")
+            print(f"   {row['model']}.{key}: {shown}")
+    for model in sorted(was_by_model):
+        print(f"   GONE from the lineup: {model}")
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--with-suite", action="store_true", help="run ruff and pytest")
+    parser.add_argument("--with-layout", action="store_true",
+                        help="run the render harness (~7 minutes)")
+    parser.add_argument("--save")
+    parser.add_argument("--against")
+    parsed = parser.parse_args()
+
+    card = build_card(with_suite=parsed.with_suite, with_layout=parsed.with_layout)
+    report(card)
+    if parsed.against:
+        report_against(card, parsed.against)
+    if parsed.save:
+        os.makedirs(os.path.dirname(parsed.save) or ".", exist_ok=True)
+        with open(parsed.save, "w", encoding="utf-8") as handle:
+            json.dump(card, handle, indent=1)
+        print(f"\nsaved to {parsed.save}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

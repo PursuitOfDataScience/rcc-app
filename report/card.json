@@ -1,0 +1,289 @@
+{
+ "commit": "a9197d0",
+ "retrieval": {
+  "n": 33,
+  "recall@5": 1.0,
+  "recall@3": 1.0,
+  "p@1": 0.8484848484848485,
+  "MRR": 0.9191919191919191,
+  "depth": 2.121212121212121,
+  "ranks": {
+   "how do I submit a batch job with sbatch": 1,
+   "submit a job script to the queue": 1,
+   "how do I request a GPU in my job": 1,
+   "run a large memory job": 2,
+   "how do I check the status of my job": 1,
+   "cancel a running job": 1,
+   "my job failed because it exceeded the memory limit": 1,
+   "why is my job stuck in the queue": 1,
+   "what partitions can I use": 1,
+   "start an interactive session on a compute node": 2,
+   "what is a service unit": 1,
+   "how do I check my allocation balance": 1,
+   "what are the storage quotas": 1,
+   "difference between home project and scratch": 2,
+   "is scratch space backed up or purged": 1,
+   "how do I see how much disk space I have left": 1,
+   "how do I request more storage": 1,
+   "how do I connect to midway with ssh": 1,
+   "set up a remote desktop session": 1,
+   "thinlinc will not connect": 1,
+   "transfer files with globus": 1,
+   "mount my project directory as a network drive": 1,
+   "sync data to cloud storage": 1,
+   "share files with a collaborator outside the university": 1,
+   "how do I set up a python environment": 1,
+   "install a package with conda": 1,
+   "how do I run pytorch on a gpu": 1,
+   "run matlab on the cluster": 1,
+   "use R on midway": 1,
+   "run gromacs simulations": 1,
+   "use a container image": 2,
+   "how do I get an RCC account": 1,
+   "what clusters does RCC run": 3
+  }
+ },
+ "gate": {
+  "caveat_recall": 0.3684210526315789,
+  "over_refusal": 0.025974025974025976,
+  "recall@5": 0.9846153846153847,
+  "n_negatives": 38,
+  "n_answerable": 77,
+  "suspect_labels": 0,
+  "separable_by_threshold": false,
+  "leaks": [
+   "how do I submit a job on Frontera",
+   "how do I run Jupyter on the Delta cluster",
+   "what is the queue structure on Stampede3",
+   "how do I get an allocation on Bridges-2",
+   "how do I load modules on Perlmutter",
+   "is there a scratch purge policy on Expanse",
+   "how many GPUs per node does Midway4 have",
+   "how do I connect to Midway5",
+   "what is the memory limit on the bigmem3 partition",
+   "what is the quota on scratch2",
+   "how many nodes does Beagle4 have",
+   "how do I submit to the turbo partition",
+   "how do I submit a job with qsub",
+   "how do I check the queue with bjobs",
+   "how do I write PBS directives in my job script",
+   "how do I submit with condor_submit",
+   "how do I load the ANSYS Fluent module",
+   "how do I run VASP on Beagle3",
+   "can I get a static public IP for my desktop from RCC",
+   "what does a service unit cost for an external collaborator",
+   "what is the penalty for sharing my CNetID password",
+   "how do I renew my parking permit",
+   "how do I book a study room in the library",
+   "how do I enrol in a computer science course"
+  ]
+ },
+ "corpus": {
+  "chunks": 572,
+  "empty_documents": 2,
+  "exact_duplicate_groups": 4,
+  "near_duplicate_pairs": 0,
+  "unresolvable_ids": 0,
+  "chunks_without_url": 0,
+  "topics_caveated": [
+   "Slurm",
+   "storage",
+   "policy"
+  ],
+  "reachability": {
+   "questions": 77,
+   "touched": 160,
+   "ceiling": 462,
+   "total": 572,
+   "measurable": false
+  },
+  "freshness": {
+   "refreshed_at": "2026-07-06 10:34 CDT",
+   "user_guide_commit": "f5676ad",
+   "docs_files": 72,
+   "web_files": 55
+  }
+ },
+ "suite": {
+  "lint": {
+   "ok": true,
+   "code": 0,
+   "tail": "All checks passed!"
+  },
+  "tests": {
+   "ok": true,
+   "code": 0,
+   "tail": "........................                                                 [100%]"
+  },
+  "collected": 744
+ },
+ "layout": {
+  "ok": true,
+  "code": 0,
+  "tail": "No layout or contrast problems found."
+ },
+ "agents": {
+  "models": [
+   {
+    "model": "opencode:nemotron-3.5-lightning-free",
+    "n": 14,
+    "answered": 1.0,
+    "empty": 0.0,
+    "searched": 0.9285714285714286,
+    "read": 0.5714285714285714,
+    "cited_gold": 1.0,
+    "rounds": 3.5,
+    "calls": 3.5,
+    "first_text_p50": 3.43,
+    "seconds_p95": 20.01,
+    "defects_per_answer": 0.29,
+    "refusal_correct": 0.5
+   },
+   {
+    "model": "opencode:deepseek-v4-flash-free",
+    "n": 14,
+    "answered": 1.0,
+    "empty": 0.0,
+    "searched": 0.9285714285714286,
+    "read": 0.5714285714285714,
+    "cited_gold": 1.0,
+    "rounds": 4.86,
+    "calls": 4.86,
+    "first_text_p50": 3.51,
+    "seconds_p95": 8.94,
+    "defects_per_answer": 0.29,
+    "refusal_correct": 0.3333333333333333
+   },
+   {
+    "model": "opencode:big-pickle",
+    "n": 14,
+    "answered": 1.0,
+    "empty": 0.0,
+    "searched": 0.9285714285714286,
+    "read": 0.5714285714285714,
+    "cited_gold": 1.0,
+    "rounds": 5,
+    "calls": 5,
+    "first_text_p50": 4.38,
+    "seconds_p95": 16.21,
+    "defects_per_answer": 0.43,
+    "refusal_correct": 0.5
+   },
+   {
+    "model": "opencode:mimo-v2.5-free",
+    "n": 14,
+    "answered": 1.0,
+    "empty": 0.0,
+    "searched": 0.9285714285714286,
+    "read": 0.5714285714285714,
+    "cited_gold": 1.0,
+    "rounds": 4.64,
+    "calls": 4.64,
+    "first_text_p50": 4.2,
+    "seconds_p95": 7.72,
+    "defects_per_answer": 0.36,
+    "refusal_correct": 0.16666666666666666
+   },
+   {
+    "model": "opencode:hy3-free",
+    "n": 14,
+    "answered": 1.0,
+    "empty": 0.0,
+    "searched": 0.9285714285714286,
+    "read": 0.5714285714285714,
+    "cited_gold": 1.0,
+    "rounds": 2.93,
+    "calls": 2.93,
+    "first_text_p50": 7.22,
+    "seconds_p95": 18.12,
+    "defects_per_answer": 0.07,
+    "refusal_correct": 0.8333333333333334
+   },
+   {
+    "model": "opencode:laguna-s-2.1-free",
+    "n": 14,
+    "answered": 1.0,
+    "empty": 0.0,
+    "searched": 0.9285714285714286,
+    "read": 0.6428571428571429,
+    "cited_gold": 1.0,
+    "rounds": 3,
+    "calls": 3,
+    "first_text_p50": 5.4,
+    "seconds_p95": 37.83,
+    "defects_per_answer": 0.21,
+    "refusal_correct": 0.5
+   },
+   {
+    "model": "opencode:nemotron-3-ultra-free",
+    "n": 14,
+    "answered": 0.6428571428571429,
+    "empty": 0.35714285714285715,
+    "searched": 1.0,
+    "read": 0.6666666666666666,
+    "cited_gold": 1.0,
+    "rounds": 2.86,
+    "calls": 2.86,
+    "first_text_p50": 6.08,
+    "seconds_p95": 20.04,
+    "defects_per_answer": 0.11,
+    "refusal_correct": 0.75
+   }
+  ],
+  "conversations": [
+   {
+    "model": "opencode:nemotron-3.5-lightning-free",
+    "turns": 10,
+    "first_turn_gold": 1.0,
+    "follow_up_gold": 0.75,
+    "answered": 1.0,
+    "question_always_sent": true,
+    "peak_request_chars": 16280,
+    "defects": 3
+   },
+   {
+    "model": "opencode:hy3-free",
+    "turns": 10,
+    "first_turn_gold": 1.0,
+    "follow_up_gold": 0.75,
+    "answered": 1.0,
+    "question_always_sent": true,
+    "peak_request_chars": 12594,
+    "defects": 0
+   },
+   {
+    "model": "opencode:big-pickle",
+    "turns": 10,
+    "first_turn_gold": 1.0,
+    "follow_up_gold": 0.75,
+    "answered": 1.0,
+    "question_always_sent": true,
+    "peak_request_chars": 15957,
+    "defects": 1
+   }
+  ],
+  "injections": [
+   {
+    "model": "opencode:nemotron-3.5-lightning-free",
+    "n": 5,
+    "obeyed": 1,
+    "leaked": 1,
+    "answered": 5
+   },
+   {
+    "model": "opencode:hy3-free",
+    "n": 5,
+    "obeyed": 0,
+    "leaked": 0,
+    "answered": 5
+   },
+   {
+    "model": "opencode:big-pickle",
+    "n": 5,
+    "obeyed": 0,
+    "leaked": 0,
+    "answered": 5
+   }
+  ]
+ }
+}
