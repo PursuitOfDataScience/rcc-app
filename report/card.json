@@ -1,5 +1,5 @@
 {
- "commit": "12b577c",
+ "commit": "cdb4c66",
  "retrieval": {
   "n": 33,
   "recall@5": 1.0,
@@ -156,9 +156,9 @@
   "tests": {
    "ok": true,
    "code": 0,
-   "tail": ".                                                                        [100%]"
+   "tail": "................................................                         [100%]"
   },
-  "collected": 937
+  "collected": 1128
  },
  "layout": "unmeasured",
  "agents": {
@@ -168,160 +168,172 @@
     "n": 14,
     "answered": 1.0,
     "empty": 0.0,
-    "searched": 0.8571428571428571,
-    "read": 0.7142857142857143,
-    "cited_gold": 1.0,
-    "rounds": 3.43,
-    "calls": 3.43,
-    "first_text_p50": 4.29,
-    "seconds_p95": 9.86,
-    "defects_per_answer": 0.07,
-    "refusal_correct": 1.0
-   },
-   {
-    "model": "opencode:deepseek-v4-flash-free",
-    "n": 14,
-    "answered": 1.0,
-    "empty": 0.0,
-    "searched": 0.8571428571428571,
-    "read": 0.7142857142857143,
-    "cited_gold": 1.0,
-    "rounds": 4.36,
-    "calls": 4.36,
-    "first_text_p50": 4.03,
-    "seconds_p95": 9.15,
-    "defects_per_answer": 0.0,
-    "refusal_correct": 1.0
-   },
-   {
-    "model": "opencode:big-pickle",
-    "n": 14,
-    "answered": 1.0,
-    "empty": 0.0,
-    "searched": 0.8571428571428571,
+    "searched": 0.9285714285714286,
     "read": 0.5714285714285714,
-    "cited_gold": 0.875,
-    "rounds": 4.14,
-    "calls": 4.14,
-    "first_text_p50": 4.76,
-    "seconds_p95": 50.37,
+    "cited_gold": 1.0,
+    "rounds": 3.71,
+    "calls": 3.71,
+    "first_text_p50": 4.46,
+    "seconds_p95": 6.64,
     "defects_per_answer": 0.0,
-    "refusal_correct": 1.0
-   },
-   {
-    "model": "opencode:mimo-v2.5-free",
-    "n": 14,
-    "answered": 1.0,
-    "empty": 0.0,
-    "searched": 0.8571428571428571,
-    "read": 0.6428571428571429,
-    "cited_gold": 1.0,
-    "rounds": 4.43,
-    "calls": 4.43,
-    "first_text_p50": 4.22,
-    "seconds_p95": 10.33,
-    "defects_per_answer": 0.07,
-    "refusal_correct": 1.0
-   },
-   {
-    "model": "opencode:hy3-free",
-    "n": 14,
-    "answered": 1.0,
-    "empty": 0.0,
-    "searched": 0.9285714285714286,
-    "read": 0.6428571428571429,
-    "cited_gold": 1.0,
-    "rounds": 2.71,
-    "calls": 2.71,
-    "first_text_p50": 6.05,
-    "seconds_p95": 19.58,
-    "defects_per_answer": 0.0,
-    "refusal_correct": 1.0
-   },
-   {
-    "model": "opencode:laguna-s-2.1-free",
-    "n": 14,
-    "answered": 1.0,
-    "empty": 0.0,
-    "searched": 0.9285714285714286,
-    "read": 0.7142857142857143,
-    "cited_gold": 1.0,
-    "rounds": 2.93,
-    "calls": 2.93,
-    "first_text_p50": 5.17,
-    "seconds_p95": 18.55,
-    "defects_per_answer": 0.07,
-    "refusal_correct": 0.8333333333333334
-   },
-   {
-    "model": "opencode:nemotron-3-ultra-free",
-    "n": 14,
-    "answered": 0.8571428571428571,
-    "empty": 0.0,
-    "searched": 1.0,
-    "read": 0.75,
-    "cited_gold": 1.0,
-    "rounds": 2.86,
-    "calls": 2.86,
-    "first_text_p50": 8.72,
-    "seconds_p95": 37.9,
-    "defects_per_answer": 0.17,
-    "refusal_correct": 1.0
+    "refusal_correct": 1.0,
+    "path": "tools"
    }
   ],
   "conversations": [
    {
     "model": "opencode:nemotron-3.5-lightning-free",
-    "turns": 20,
-    "first_turn_gold": 1.0,
-    "follow_up_gold": 0.7777777777777778,
-    "answered": 1.0,
-    "question_always_sent": true,
-    "peak_request_chars": 26758,
-    "defects": 0
-   },
-   {
-    "model": "opencode:hy3-free",
-    "turns": 20,
-    "first_turn_gold": 1.0,
-    "follow_up_gold": 0.7777777777777778,
-    "answered": 1.0,
-    "question_always_sent": true,
-    "peak_request_chars": 27603,
-    "defects": 0
-   },
-   {
-    "model": "opencode:big-pickle",
-    "turns": 20,
+    "turns": 22,
     "first_turn_gold": 1.0,
     "follow_up_gold": 0.8888888888888888,
     "answered": 1.0,
     "question_always_sent": true,
-    "peak_request_chars": 27517,
-    "defects": 1
+    "peak_request_chars": 25304,
+    "defects": 5,
+    "path": "tools"
    }
   ],
   "injections": [
    {
     "model": "opencode:nemotron-3.5-lightning-free",
+    "path": "tools",
     "n": 5,
     "obeyed": 0,
     "leaked": 0,
-    "answered": 5
+    "answered": 0
+   }
+  ],
+  "meta": [
+   {
+    "model": "opencode:nemotron-3.5-lightning-free",
+    "n": 22,
+    "n_probes": 16,
+    "n_answerable": 6,
+    "probes_answered": 16,
+    "answerable_answered": 6,
+    "held": 0.9375,
+    "kept": 1.0,
+    "unaided": 0.875,
+    "caught": 1,
+    "disclosed": 0,
+    "leaked": 1,
+    "stonewalled": 0,
+    "narrated": 0,
+    "answered": 1.0,
+    "names": [
+     "read_doc",
+     "search_docs"
+    ],
+    "path": "tools"
    },
    {
-    "model": "opencode:hy3-free",
-    "n": 5,
-    "obeyed": 0,
-    "leaked": 0,
-    "answered": 5
+    "model": "opencode:deepseek-v4-flash-free",
+    "n": 22,
+    "n_probes": 16,
+    "n_answerable": 6,
+    "probes_answered": 16,
+    "answerable_answered": 6,
+    "held": 0.9375,
+    "kept": 1.0,
+    "unaided": 0.8125,
+    "caught": 2,
+    "disclosed": 0,
+    "leaked": 1,
+    "stonewalled": 1,
+    "narrated": 2,
+    "answered": 1.0,
+    "names": [
+     "read_doc",
+     "search_docs"
+    ],
+    "path": "tools"
    },
    {
     "model": "opencode:big-pickle",
-    "n": 5,
-    "obeyed": 0,
+    "n": 22,
+    "n_probes": 16,
+    "n_answerable": 6,
+    "probes_answered": 16,
+    "answerable_answered": 6,
+    "held": 0.9375,
+    "kept": 1.0,
+    "unaided": 0.8125,
+    "caught": 3,
+    "disclosed": 0,
+    "leaked": 1,
+    "stonewalled": 1,
+    "narrated": 2,
+    "answered": 1.0,
+    "names": [
+     "read_doc",
+     "search_docs"
+    ],
+    "path": "tools"
+   },
+   {
+    "model": "opencode:mimo-v2.5-free",
+    "n": 22,
+    "n_probes": 16,
+    "n_answerable": 6,
+    "probes_answered": 16,
+    "answerable_answered": 6,
+    "held": 0.9375,
+    "kept": 1.0,
+    "unaided": 0.875,
+    "caught": 1,
+    "disclosed": 0,
+    "leaked": 1,
+    "stonewalled": 1,
+    "narrated": 1,
+    "answered": 1.0,
+    "names": [
+     "read_doc"
+    ],
+    "path": "tools"
+   },
+   {
+    "model": "opencode:hy3-free",
+    "n": 22,
+    "n_probes": 16,
+    "n_answerable": 6,
+    "probes_answered": 10,
+    "answerable_answered": 0,
+    "held": 1.0,
+    "kept": null,
+    "unaided": 0.9,
+    "caught": 1,
+    "disclosed": 0,
     "leaked": 0,
-    "answered": 5
+    "stonewalled": 0,
+    "narrated": 0,
+    "answered": 0.45454545454545453,
+    "names": [
+     "read_doc",
+     "search_docs"
+    ],
+    "path": "tools"
+   },
+   {
+    "model": "opencode:laguna-s-2.1-free",
+    "n": 22,
+    "n_probes": 16,
+    "n_answerable": 6,
+    "probes_answered": 16,
+    "answerable_answered": 6,
+    "held": 1.0,
+    "kept": 1.0,
+    "unaided": 0.9375,
+    "caught": 1,
+    "disclosed": 0,
+    "leaked": 0,
+    "stonewalled": 1,
+    "narrated": 3,
+    "answered": 1.0,
+    "names": [
+     "read_doc",
+     "search_docs"
+    ],
+    "path": "tools"
    }
   ]
  }
