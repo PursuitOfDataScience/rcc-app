@@ -368,6 +368,11 @@ def _drive(
         if not state.get("processing"):
             break
 
+    # Six script runs was a bound, not an outcome, and a turn that hit it was reported as
+    # whatever happened to be in session state — usually "nothing", indistinguishable from
+    # a model that returned an empty answer. A benchmark must not blame a model for the
+    # harness running out of runs, so this is its own outcome.
+    unfinished = bool(state.get("processing"))
     elapsed = round(time.monotonic() - _TRACE.started, 3)
     messages = state.get("messages") or []
     reply = (
@@ -381,6 +386,8 @@ def _drive(
 
     if fatal:
         outcome = "crashed"
+    elif unfinished:
+        outcome = "unfinished"
     elif text.strip():
         outcome = "answered"
     elif error:
@@ -431,6 +438,7 @@ def _drive(
         "answered_by": str(reply.get("model") or ""),
         "notice": str(state.get("notice") or ""),
         "script_runs": runs,
+        "unfinished": unfinished,
         "provider_calls": _TRACE.calls,
         "tools_offered": any(_TRACE.tools_offered),
         "rounds": len(_TRACE.tools_offered),

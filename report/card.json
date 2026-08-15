@@ -1,5 +1,5 @@
 {
- "commit": "8ec6d5b",
+ "commit": "c7dd37f",
  "retrieval": {
   "n": 33,
   "recall@5": 1.0,
@@ -45,14 +45,14 @@
  },
  "gate": {
   "caveat_recall": 0.8666666666666667,
-  "over_refusal": 0.025974025974025976,
+  "over_refusal": 0.02564102564102564,
   "recall@5": 0.9846153846153847,
   "n_negatives": 45,
-  "n_answerable": 77,
+  "n_answerable": 78,
   "suspect_labels": 0,
   "free_win_from_thresholds": [],
   "threshold_trade": [
-   "24/24: caveat 91.1%, answerable kept 96.1%"
+   "24/24: caveat 91.1%, answerable kept 96.2%"
   ],
   "leaks": [
    "how do I get an allocation on Bridges-2",
@@ -124,9 +124,9 @@
    "policy"
   ],
   "reachability": {
-   "questions": 77,
+   "questions": 78,
    "touched": 160,
-   "ceiling": 462,
+   "ceiling": 468,
    "total": 572,
    "measurable": false
   },
@@ -156,15 +156,11 @@
   "tests": {
    "ok": true,
    "code": 0,
-   "tail": ".............................................                            [100%]"
+   "tail": ".......................................................                  [100%]"
   },
-  "collected": 765
+  "collected": 775
  },
- "layout": {
-  "ok": true,
-  "code": 0,
-  "tail": "No layout or contrast problems found."
- },
+ "layout": "unmeasured",
  "agents": {
   "models": [
    {

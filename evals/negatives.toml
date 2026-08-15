@@ -374,3 +374,7 @@ why = "endpoint activation is documented; the UUID is an identifier"
 [[identifier]]
 text = "quota exceeded writing to /project2/pi-jsmith"
 why = "quotas are documented; the path names a person"
+
+[[identifier]]
+text = "SBATCH: ERROR: BATCH JOB SUBMISSION FAILED: INVALID ACCOUNT"
+why = "pasted in caps, where capitalisation distinguishes nothing — and in caps every word looks like a proper noun"

@@ -266,16 +266,26 @@ def dominating(swept: dict, measured: dict) -> list[dict]:
     """
     shipped_recall = measured["caveat_recall"]
     shipped_kept = 1 - measured["over_refusal"]
-    negative_case = 1 / max(measured["n_negatives"], 1)
-    answerable_case = 1 / max(
-        measured["n_positives"] + measured["n_identifiers"], 1
-    )
+    negatives = max(measured["n_negatives"], 1)
+    answerable = max(measured["n_positives"] + measured["n_identifiers"], 1)
+
+    def cases(gain: float, total: int) -> float:
+        """A difference between two rates, in questions.
+
+        Counted rather than compared as floats. `76/78 + 1/78 > 77/78` is False in exact
+        arithmetic and True in binary, so a pair that was better by *exactly* one case
+        fell on whichever side the rounding landed — and it changed sides when one case
+        was added to the set, failing a test for a reason that had nothing to do with the
+        gate.
+        """
+        return gain * total
+
     return [
         point for point in swept["front"]
-        if point["caveat_recall"] >= shipped_recall - 1e-9
-        and point["answerable_kept"] >= shipped_kept - 1e-9
+        if cases(point["caveat_recall"] - shipped_recall, negatives) > -1e-6
+        and cases(point["answerable_kept"] - shipped_kept, answerable) > -1e-6
         and (
-            point["caveat_recall"] > shipped_recall + negative_case
-            or point["answerable_kept"] > shipped_kept + answerable_case
+            cases(point["caveat_recall"] - shipped_recall, negatives) > 1 + 1e-6
+            or cases(point["answerable_kept"] - shipped_kept, answerable) > 1 + 1e-6
         )
     ]

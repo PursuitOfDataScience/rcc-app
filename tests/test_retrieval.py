@@ -333,6 +333,32 @@ class TestNamingAnUnknownThing:
     def test_a_username_the_reader_supplied(self, real_index):
         assert real_index.assess("my CNetID is jsmith and I cannot log in").confident
 
+    def test_shouting_is_not_a_proper_noun(self, real_index):
+        """Readers paste error messages in caps, and in caps everything is capitalised.
+
+        Both of these answer in ordinary case; without the shouting guard the capital
+        letters alone made `slurmstepd` and `jsmith` read as names of systems the
+        documentation has never heard of, and the same question was refused for being
+        typed loudly.
+        """
+        for question in (
+            "MY JOB WAS KILLED BY SLURMSTEPD OOM-KILL EVENT",
+            "MY CNETID IS JSMITH AND I CANNOT LOG IN",
+        ):
+            assessment = real_index.assess(question)
+            assert assessment.named_topics == (), question
+            assert assessment.confident, question
+
+    def test_shouting_does_not_rescue_a_thing_that_is_named(self, real_index):
+        """The other signals do not depend on case, so caps cannot smuggle one past."""
+        assert not real_index.assess("HOW DO I SUBMIT A JOB ON FRONTERA").confident
+        assert not real_index.assess("HOW MANY GPUS DOES MIDWAY4 HAVE").confident
+
+    def test_an_all_caps_name_inside_an_ordinary_question_still_counts(self, real_index):
+        """`ANSYS` is a name in caps; the guard is about the *query*, not the word."""
+        assessment = real_index.assess("how do I load the ANSYS Fluent module")
+        assert "ansys" in assessment.named_topics
+
     def test_a_regional_spelling_of_a_word_the_corpus_uses(self, real_index):
         """`favourite` is one edit from `favorite`, which is the FAQ heading's spelling."""
         assessment = real_index.assess("why is my favourite command not available")

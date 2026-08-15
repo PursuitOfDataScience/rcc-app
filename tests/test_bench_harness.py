@@ -482,3 +482,39 @@ class TestPerTurnTelemetry:
         turn()
         rows = [row for row in self.written(log) if row["kind"] == "turn"]
         assert rows[0]["caveats"] == 0
+
+
+class TestTheHarnessOwnBound:
+    """A limit of the instrument must never be charged to the model.
+
+    `MAX_SCRIPT_RUNS` bounds how many times one question may re-enter `app.py` — a
+    failover asks the next model on the *following* run, so more than one is needed. A
+    turn that hits the bound used to be reported as whatever sat in session state, which
+    for a stuck turn is `nothing`: indistinguishable from a model that answered with
+    silence, and blamed on it.
+    """
+
+    def test_a_turn_still_processing_at_the_bound_is_unfinished(self, monkeypatch):
+        """The rule itself, driven at the bound rather than through a failover chain.
+
+        With no script runs allowed, `processing` is still set and there is no answer and
+        no error card — exactly the state a pending failover leaves when the harness stops.
+        Reported as `nothing`, that was indistinguishable from a model answering with
+        silence, and it was charged to the model.
+
+        Driven this way on purpose: `Recorder` caches the provider's model list so a
+        benchmark does not re-discover the lineup per question, which means a test cannot
+        add a second model to fail over *to* after the first call.
+        """
+        monkeypatch.setattr(harness, "MAX_SCRIPT_RUNS", 0)
+        record = turn()
+        assert record["script_runs"] == 0
+        assert record["unfinished"] is True
+        assert record["outcome"] == "unfinished"
+        assert not record["text"]
+
+    def test_a_finished_turn_is_never_marked_unfinished(self):
+        PROVIDER.turns = [SEARCH, READ, ANSWER]
+        record = turn()
+        assert record["unfinished"] is False
+        assert record["outcome"] == "answered"

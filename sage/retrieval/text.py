@@ -161,6 +161,11 @@ class Mention:
     #: First word, or straight after `:`/`.`/`!`/`?` — where capitalisation says nothing.
     #: "srun: error: … failed: Unspecified error" capitalises a word that is not a name.
     after_boundary: bool
+    #: The whole query is upper case, so capitalisation distinguishes nothing at all.
+    #: Without this, "MY JOB WAS KILLED BY SLURMSTEPD" refused over `slurmstepd` while
+    #: the same sentence in ordinary case answered — readers paste error messages in
+    #: caps, and a rule that reads shouting as a proper noun punishes them for it.
+    shouting: bool
     #: The word before it, lowercased, or "".
     previous: str
 
@@ -176,6 +181,10 @@ def mentions(query: str, stemmer=None) -> list[Mention]:
     has already lowercased by the time anything can read a capital letter.
     """
     stem_of = stemmer or (lambda word: stem(word))
+    # Decided once for the whole query: a sentence with no lower-case letter in it is
+    # shouting, and every word in it is "capitalised" for reasons that say nothing about
+    # which words are names.
+    shouting = not any(character.islower() for character in query)
     found: list[Mention] = []
     previous = ""
     for match in _MENTION.finditer(query):
@@ -184,6 +193,7 @@ def mentions(query: str, stemmer=None) -> list[Mention]:
         shape = {
             "word": word,
             "capitalized": word[:1].isupper(),
+            "shouting": shouting,
             "after_boundary": not before or before[-1] in _BOUNDARY,
             "previous": previous,
         }
@@ -248,12 +258,14 @@ def names_a_thing(mention: Mention, *, versioned: bool) -> bool:
     * `versioned` — the corpus knows the name and not this version of it: `midway4`,
       `bigmem3`, `scratch2`. A job number has no name part, so it cannot qualify.
     * capitalised away from a sentence boundary — `Frontera`, `ANSYS`, `Perlmutter`.
-      The boundary condition is what keeps `… failed: Unspecified error` out.
+      The boundary condition is what keeps `… failed: Unspecified error` out, and the
+      shouting condition is what keeps a whole query in caps out: there, capitalisation
+      distinguishes nothing.
     * introduced by a naming preposition — `with qsub`, `on Perlmutter`.
     """
     if versioned:
         return True
-    if mention.capitalized and not mention.after_boundary:
+    if mention.capitalized and not (mention.after_boundary or mention.shouting):
         return True
     return mention.previous in NAMING_PREPOSITIONS
 

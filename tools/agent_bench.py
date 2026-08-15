@@ -129,6 +129,11 @@ def summarise(model: str, records: list[dict], index) -> dict:
         "empty": sum(1 for row in records if row["error_kind"] == "empty") / total,
         "refused": sum(1 for row in records if row["outcome"] == "refused") / total,
         "crashed": sum(1 for row in records if row["outcome"] == "crashed") / total,
+        # The harness running out of script runs, not the model failing. Kept separate so
+        # a bound of the instrument is never charged to the thing being measured.
+        "unfinished": sum(
+            1 for row in records if row["outcome"] == "unfinished"
+        ) / total,
         "error_kinds": kinds,
         "searched": (
             sum(1 for row in answered if row["searches"]) / (len(answered) or 1)
@@ -169,6 +174,7 @@ def crashed_record(question, model, expect, must, pages, exc, started) -> dict:
     return {
         "question": question, "model": model, "expect": expect,
         "outcome": "crashed", "fatal": f"{type(exc).__name__}: {exc}",
+        "unfinished": False,
         "error": "", "error_kind": "", "text": "", "raw": "",
         "sources": [], "source_pages": [], "evidence": {},
         "pages": list(pages), "must_mention": list(must),
@@ -239,6 +245,7 @@ def run(
                 mark = {
                     "answered": "ok", "refused": "refused",
                     "nothing": "nothing", "crashed": "CRASH",
+                    "unfinished": "UNFIN",
                 }.get(record["outcome"], record["outcome"])
                 print(f"   {mark:8s} {record['seconds']:6.1f}s "
                       f"r{record['rounds']} s{record['searches']} d{record['reads']} "

@@ -199,3 +199,45 @@ def test_no_threshold_pair_beats_the_shipped_one_for_free(real_index, audited, m
     assert not free, (
         "a threshold pair is better than the shipped one at no cost: " + str(free[:3])
     )
+
+
+class TestTheDominationTolerance:
+    """Counted in questions, because a rate comparison is decided by float noise.
+
+    `76/78 + 1/78 > 77/78` is False in exact arithmetic and True in binary. A pair better
+    by *exactly* one case therefore fell on whichever side the rounding landed, and it
+    changed sides the day one question was added to the set — failing a test for a reason
+    that had nothing to do with the gate.
+    """
+
+    SHIPPED = {
+        "caveat_recall": 39 / 45,
+        "over_refusal": 2 / 78,
+        "n_negatives": 45,
+        "n_positives": 70,
+        "n_identifiers": 8,
+    }
+
+    def front(self, recall: float, kept: float) -> dict:
+        return {"front": [{"min": 18, "strong": 18,
+                           "caveat_recall": recall, "answerable_kept": kept}]}
+
+    def test_one_case_better_is_within_tolerance(self):
+        swept = self.front(39 / 45, 77 / 78)
+        assert gate.dominating(swept, self.SHIPPED) == []
+
+    def test_two_cases_better_is_not(self):
+        swept = self.front(39 / 45, 78 / 78)
+        assert gate.dominating(swept, self.SHIPPED)
+
+    def test_two_cases_better_on_the_other_axis_is_not(self):
+        swept = self.front(41 / 45, 76 / 78)
+        assert gate.dominating(swept, self.SHIPPED)
+
+    def test_better_on_one_axis_and_worse_on_the_other_is_a_trade(self):
+        swept = self.front(43 / 45, 60 / 78)
+        assert gate.dominating(swept, self.SHIPPED) == []
+
+    def test_identical_is_not_domination(self):
+        swept = self.front(39 / 45, 76 / 78)
+        assert gate.dominating(swept, self.SHIPPED) == []
