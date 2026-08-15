@@ -24,6 +24,7 @@ Everything network-bound is in the provider. Point `OPENCODE_BASE_URL` at
 
 from __future__ import annotations
 
+import contextlib
 import os
 import sys
 import time
@@ -261,6 +262,33 @@ def _kinds_by_message() -> dict[str, str]:
     }
 
 
+@contextlib.contextmanager
+def without_tools(model_key: str):
+    """Make one model tool-less for the duration, the way a deployment can.
+
+    The app has two ways of answering and the benchmark could only drive one. A model in
+    `SAGE_TOOLLESS_MODELS` — or any model whose provider rejects a request carrying tools
+    — is answered by `turn.grounded`: one retrieval up front, inlined into a system
+    message, no second round. That path has its own prompt, its own caveat handling and
+    its own citation contract, and none of it was ever measured; the bug fixed in d74178f
+    lived there, where a query matching nothing reached the model as silence.
+
+    Patched on `config` rather than on the environment because `sage/config.py` resolves
+    every setting at import, which is the same reason `tests/test_app_smoke.py` does it
+    this way. `sage.config` survives `forget_importers()` (it drops only `streamlit`,
+    `app` and `sage.ui.*`), so the patch holds across the script runs one turn may take.
+    """
+    from sage import config  # noqa: PLC0415
+
+    mark = model_key.split(":", 1)[-1].strip().lower() or model_key.strip().lower()
+    before = config.TOOLLESS_MODELS
+    config.TOOLLESS_MODELS = (*before, mark)
+    try:
+        yield
+    finally:
+        config.TOOLLESS_MODELS = before
+
+
 def run_turn(
     question: str,
     model_key: str,
@@ -270,22 +298,31 @@ def run_turn(
     pages: tuple[str, ...] = (),
     attachments: list | None = None,
     stub_kwargs: dict | None = None,
+    toolless: bool = False,
 ) -> dict:
     """Ask one question on one model, and return everything observable about it.
 
     `expect` is `"answer"` for a question the corpus covers and `"caveat"` for one it
     does not; it is carried into the record because the answer checks are asymmetric — a
     fenced command block is right on one side and a defect on the other.
+
+    `toolless` runs the same question down the other path — see `without_tools`. The
+    record says which one it went down either way, read off what the provider was
+    actually offered rather than off this flag, so a model that failed over to the
+    grounded path on its own is labelled correctly too.
     """
     stub = stub_streamlit.install(**(stub_kwargs or {}))
-    return _drive(
-        stub, question, model_key,
-        expect=expect, must_mention=must_mention, pages=pages,
-        attachments=attachments,
-    )
+    with without_tools(model_key) if toolless else contextlib.nullcontext():
+        return _drive(
+            stub, question, model_key,
+            expect=expect, must_mention=must_mention, pages=pages,
+            attachments=attachments,
+        )
 
 
-def run_conversation(turns: list[dict], model_key: str, **shared) -> list[dict]:
+def run_conversation(
+    turns: list[dict], model_key: str, *, toolless: bool = False, **shared
+) -> list[dict]:
     """Several questions in one session, which is where a retrieval agent rots.
 
     One stub for the whole conversation, so `st.session_state.messages` accumulates
@@ -297,20 +334,21 @@ def run_conversation(turns: list[dict], model_key: str, **shared) -> list[dict]:
     """
     stub = stub_streamlit.install()
     records = []
-    for position, turn in enumerate(turns):
-        record = _drive(
-            stub,
-            str(turn["text"]),
-            model_key,
-            expect=str(turn.get("expect", "answer")),
-            must_mention=tuple(turn.get("must_mention", ())),
-            pages=tuple(turn.get("pages", ())),
-            attachments=turn.get("attachments"),
-            **shared,
-        )
-        record["turn_index"] = position
-        record["conversation_length"] = len(turns)
-        records.append(record)
+    with without_tools(model_key) if toolless else contextlib.nullcontext():
+        for position, turn in enumerate(turns):
+            record = _drive(
+                stub,
+                str(turn["text"]),
+                model_key,
+                expect=str(turn.get("expect", "answer")),
+                must_mention=tuple(turn.get("must_mention", ())),
+                pages=tuple(turn.get("pages", ())),
+                attachments=turn.get("attachments"),
+                **shared,
+            )
+            record["turn_index"] = position
+            record["conversation_length"] = len(turns)
+            records.append(record)
     return records
 
 
@@ -441,6 +479,11 @@ def _drive(
         "unfinished": unfinished,
         "provider_calls": _TRACE.calls,
         "tools_offered": any(_TRACE.tools_offered),
+        # Which of the app's two answering paths this turn went down, named rather than
+        # left to be inferred from the flag above. Read off what the provider was offered,
+        # so a model that was *asked* with tools and rejected them — `turn.run` falls back
+        # within the same turn — is recorded as having answered the way it really did.
+        "path": "tools" if any(_TRACE.tools_offered) else "grounded",
         "rounds": len(_TRACE.tools_offered),
         "tool_calls": list(_TRACE.tool_calls),
         "searches": len(searches),

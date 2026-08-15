@@ -185,11 +185,13 @@ def crashed_record(question, model, expect, must, pages, exc, started) -> dict:
     }
 
 
-def one_turn(question, model, expect, must, pages, sage, haystack, contact) -> dict:
+def one_turn(question, model, expect, must, pages, sage, haystack, contact,
+             toolless=False) -> dict:
     started = time.monotonic()
     try:
         record = harness.run_turn(
-            question, model, expect=expect, must_mention=must, pages=pages
+            question, model, expect=expect, must_mention=must, pages=pages,
+            toolless=toolless,
         )
     except BaseException as exc:  # noqa: BLE001 — one bad turn is data, not an exit
         record = crashed_record(question, model, expect, must, pages, exc, started)
@@ -213,6 +215,7 @@ def run(
     out: str,
     conversations: bool = False,
     injections: bool = False,
+    toolless: bool = False,
 ) -> dict:
     """Every phase asked for, over one prepared harness and one transcript stream."""
     sage = harness.prepare()
@@ -236,7 +239,8 @@ def run(
             print(f"\n{model}", flush=True)
             for question, expect, must, pages in cases:
                 record = one_turn(
-                    question, model, expect, must, pages, sage, haystack, contact
+                    question, model, expect, must, pages, sage, haystack, contact,
+                    toolless=toolless,
                 )
                 records.append(record)
                 if stream:
@@ -256,23 +260,26 @@ def run(
 
         if conversations:
             summary["conversations"] = run_conversations(
-                models, sage, haystack, contact, stream
+                models, sage, haystack, contact, stream, toolless=toolless
             )
         if injections:
             summary["injections"] = run_injections(
-                models, sage, haystack, contact, stream
+                models, sage, haystack, contact, stream, toolless=toolless
             )
     return summary
 
 
-def run_conversations(models, sage, haystack, contact, stream) -> list[dict]:
+def run_conversations(models, sage, haystack, contact, stream,
+                      toolless=False) -> list[dict]:
     """Multi-turn, one session per case. What a single-question benchmark cannot see."""
     out = []
     for model in models:
         print(f"\n{model} — conversations", flush=True)
         rows = []
         for case in evals.conversations():
-            records = harness.run_conversation(list(case.turns), model)
+            records = harness.run_conversation(
+                list(case.turns), model, toolless=toolless
+            )
             for position, record in enumerate(records):
                 found = checks.inspect(record, sage.corpus, haystack, contact=contact)
                 record["defects"] = [item.kind for item in checks.defects(found)]
@@ -328,7 +335,8 @@ def _gold_rate(rows: list[dict]) -> float:
     return hits / len(rows)
 
 
-def run_injections(models, sage, haystack, contact, stream) -> list[dict]:
+def run_injections(models, sage, haystack, contact, stream,
+                   toolless=False) -> list[dict]:
     """An instruction hidden in an uploaded file, which the app promises to ignore."""
     from sage.files import Attachment  # noqa: PLC0415 — only this phase needs it
 
@@ -341,7 +349,7 @@ def run_injections(models, sage, haystack, contact, stream) -> list[dict]:
                 filename=case.filename, kind="text", text=case.content
             )
             record = harness.run_turn(
-                case.question, model, attachments=[attachment]
+                case.question, model, attachments=[attachment], toolless=toolless
             )
             found = checks.inspect(record, sage.corpus, haystack, contact=contact)
             found += checks.injection_findings(
@@ -548,6 +556,10 @@ def main() -> int:
                         help="hidden instructions in uploads, from evals/injections.toml")
     parser.add_argument("--limit", type=int, default=0, help="answerable questions")
     parser.add_argument("--negatives", type=int, default=0)
+    parser.add_argument("--toolless", action="store_true",
+                        help="drive the grounded path instead: one retrieval up front, "
+                             "no tool rounds, which is what a model in "
+                             "SAGE_TOOLLESS_MODELS gets")
     parser.add_argument("--sleep", type=float, default=0.0,
                         help="seconds between turns, for a rate-limited free tier")
     parser.add_argument("--out", default="", help="directory for transcripts + summary")
@@ -586,11 +598,13 @@ def main() -> int:
     if parsed.injections:
         extra += len(evals.injections())
     print(f"{len(models)} model(s) x {len(cases) + extra} turn(s) = "
-          f"{len(models) * (len(cases) + extra)} turns")
+          f"{len(models) * (len(cases) + extra)} turns"
+          + ("  [grounded path: no tools offered]" if parsed.toolless else ""))
 
     summary = run(
         models, cases, sleep=parsed.sleep, out=parsed.out,
         conversations=parsed.conversations, injections=parsed.injections,
+        toolless=parsed.toolless,
     )
     report(summary)
 

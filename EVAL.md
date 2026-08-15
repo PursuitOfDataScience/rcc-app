@@ -47,6 +47,7 @@ already worked this way and it is the right instinct.
 | `tools/corpus_check.py` | C | — | empty documents, duplicates, integrity, freshness |
 | `tools/agent_bench.py` | B | a key | per-model behaviour through the real app loop |
 | `tools/agent_bench.py --rescore` | B | — | re-run every check over saved transcripts |
+| `tools/agent_bench.py --toolless` | B | a key | the same phases down the grounded path |
 | `tools/scorecard.py` | all | — | the card, and the diff against the last one |
 | `tools/render_check.py` | UI | Chrome | 660 renders (predates this) |
 | `tools/palette_check.py` | UI | — | declared colours against the baseline (predates this) |
@@ -233,6 +234,30 @@ get a different answer).
 `question_sent` is recorded on every turn because `history.build` trims oldest-first and
 once clipped a turn at exactly the point the question began — leaving the model two
 attached files and no question. It answered anyway.
+
+## The other answering path
+
+```bash
+python tools/agent_bench.py --models default --limit 8 --negatives 6 --toolless
+```
+
+The app answers two ways. A model that can call tools gets the loop — `search_docs`,
+`read_doc`, up to `MAX_TOOL_ROUNDS` of them. A model in `SAGE_TOOLLESS_MODELS`, or any
+model whose provider rejects a request carrying tools, gets `turn.grounded` instead: one
+retrieval up front, inlined into a system message, and a single round in which to answer.
+Its prompt is different (`prompts.grounded_instruction`), its caveat handling is different
+(`tools.gather_context`, not `SearchDocs.format`), and it has no second chance.
+
+Every measurement above was of the first path. `--toolless` runs any of the phases down
+the second one, which is worth doing because the free tiers this app is built around are
+exactly where tool support is missing, and because a path nothing exercises accumulates
+bugs: the one fixed in `d74178f` was a query matching *nothing* reaching the model as
+silence — no sections, no caveat, no instruction to decline — where the tool path had said
+"No matching documentation was found" all along.
+
+Every record carries `path`, read off what the provider was actually offered rather than
+off the flag, so a model that was asked with tools and rejected them is labelled by what
+it really did. `--rescore` reads it back.
 
 ## Uploads, and instructions hidden in them
 

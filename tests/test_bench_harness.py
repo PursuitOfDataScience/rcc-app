@@ -484,6 +484,66 @@ class TestPerTurnTelemetry:
         assert rows[0]["caveats"] == 0
 
 
+class TestTheOtherAnsweringPath:
+    """The app answers two ways and the benchmark could only drive one.
+
+    A model in `SAGE_TOOLLESS_MODELS`, or one whose provider rejects a request carrying
+    tools, is answered by `turn.grounded`: one retrieval inlined into a system message, no
+    tool rounds, no second chance. Its prompt, its caveat handling and its citation
+    contract are all its own, and none of it was reachable from `tools/agent_bench.py` —
+    which is where the bug fixed in d74178f was able to live.
+
+    Calibrated the same way as everything else in this file: drive it to a known state and
+    read the field back.
+    """
+
+    def test_the_grounded_path_offers_no_tools_and_takes_one_round(self):
+        PROVIDER.turns = [ANSWER]
+        record = turn(toolless=True)
+        assert record["outcome"] == "answered"
+        assert record["tools_offered"] is False
+        assert PROVIDER.tools_seen[-1] is None
+        assert record["rounds"] == 1
+        assert record["searches"] == 0, "the retrieval is up front, not a tool call"
+
+    def test_the_record_names_the_path(self):
+        PROVIDER.turns = [ANSWER]
+        assert turn(toolless=True)["path"] == "grounded"
+
+    def test_the_ordinary_turn_is_still_named_tools(self):
+        PROVIDER.turns = [SEARCH, READ, ANSWER]
+        assert turn()["path"] == "tools"
+
+    def test_the_sections_still_reach_the_model_and_become_sources(self):
+        PROVIDER.turns = [ANSWER]
+        record = turn(toolless=True)
+        sent = "\n".join(str(item.get("content", "")) for item in PROVIDER.sent[-1])
+        assert "Answer only from these RCC documentation sections" in sent
+        assert record["sources"], "the retrieved sections are the Sources strip"
+
+    def test_a_question_the_corpus_cannot_match_arrives_caveated(self):
+        """The path's own gate, which is what d74178f put there."""
+        PROVIDER.turns = [ANSWER]
+        turn("sbatchh", toolless=True)
+        sent = "\n".join(str(item.get("content", "")) for item in PROVIDER.sent[-1])
+        assert "No matching RCC documentation was found" in sent
+
+    def test_the_patch_is_put_back_afterwards(self):
+        """Process-wide state, so the teardown is the load-bearing half — as above."""
+        before = config.TOOLLESS_MODELS
+        PROVIDER.turns = [ANSWER]
+        turn(toolless=True)
+        assert before == config.TOOLLESS_MODELS
+
+    def test_it_is_put_back_even_when_the_turn_raises(self):
+        before = config.TOOLLESS_MODELS
+        with harness.without_tools(MODEL):
+            assert before != config.TOOLLESS_MODELS
+            with pytest.raises(RuntimeError), harness.without_tools(MODEL):
+                raise RuntimeError("boom")
+        assert before == config.TOOLLESS_MODELS
+
+
 class TestTheHarnessOwnBound:
     """A limit of the instrument must never be charged to the model.
 
