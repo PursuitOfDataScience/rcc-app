@@ -80,3 +80,83 @@ text = "sorry, can you say that again — how do I cancel a running job?"
 pages = ["slurm/sbatch.md", "slurm/main.md"]
 must_mention = ["scancel"]
 carries = "nothing; this is the stability check"
+
+# --- added to make the follow-up number mean something ---------------------
+#
+# With five cases the metric had four scored follow-ups per model, so one turn was 25
+# percentage points. A prompt line telling the model to carry the earlier subject into its
+# search query moved two models in opposite directions by exactly that much — which is to
+# say it measured nothing, and the line was reverted rather than shipped on a coin flip.
+# These five double the sample so the next attempt can be judged.
+
+[[conversation]]
+name = "software then its module"
+why = "the follow-up names no software; it means the one just discussed"
+
+[[conversation.turn]]
+text = "how do I run MATLAB on the cluster"
+pages = ["software/apps-and-envs/matlab.md"]
+must_mention = ["matlab"]
+
+[[conversation.turn]]
+text = "which module do I load for it?"
+pages = ["software/apps-and-envs/matlab.md", "software/index.md"]
+must_mention = ["module"]
+carries = "which software the module is for"
+
+[[conversation]]
+name = "transfer then permissions"
+why = "two topics in one thread; the second must not drag the first's page along"
+
+[[conversation.turn]]
+text = "how do I transfer files with Globus"
+pages = ["data_transfer/globus/transfer-files.md"]
+must_mention = ["globus"]
+
+[[conversation.turn]]
+text = "and how do I let a colleague read them afterwards?"
+pages = ["data_sharing/access_control.md", "data_sharing/globus_sharing.md"]
+carries = "that the files are the ones just transferred"
+
+[[conversation]]
+name = "interactive then time limit"
+why = "an ellipsis follow-up about the thing just described"
+
+[[conversation.turn]]
+text = "how do I start an interactive session on a compute node"
+pages = ["slurm/sinteractive.md"]
+must_mention = ["sinteractive"]
+
+[[conversation.turn]]
+text = "how long can it run for?"
+pages = ["slurm/sinteractive.md", "slurm/partitions.md"]
+carries = "which kind of session has a time limit"
+
+[[conversation]]
+name = "quota then the other filesystem"
+why = "a comparison follow-up: the reader is still asking about quotas"
+
+[[conversation.turn]]
+text = "what is my home directory quota"
+pages = ["storage/main.md", "storage/faq.md"]
+
+[[conversation.turn]]
+text = "what about on scratch?"
+pages = ["storage/main.md", "storage/faq.md"]
+must_mention = ["scratch"]
+carries = "that the question is still about quotas"
+
+[[conversation]]
+name = "python then a package"
+why = "the follow-up is a step inside the first answer's workflow"
+
+[[conversation.turn]]
+text = "how do I set up a Python environment"
+pages = ["software/apps-and-envs/python.md"]
+must_mention = ["conda"]
+
+[[conversation.turn]]
+text = "how do I add a package to it?"
+pages = ["software/apps-and-envs/python.md"]
+must_mention = ["conda"]
+carries = "which environment the package goes into"

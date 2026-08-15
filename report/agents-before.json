@@ -8,27 +8,26 @@
    "refused": 0.0,
    "crashed": 0.0,
    "error_kinds": {},
-   "searched": 0.8571428571428571,
-   "read": 0.7142857142857143,
-   "rounds": 3.43,
-   "calls": 3.43,
+   "searched": 0.9285714285714286,
+   "read": 0.5714285714285714,
+   "rounds": 3.5,
+   "calls": 3.5,
    "read_errors": 0,
    "bad_tool_args": 0,
    "cited_gold": 1.0,
-   "first_text_p50": 4.29,
-   "first_text_p95": 7.33,
-   "seconds_p50": 5.66,
-   "seconds_p95": 9.86,
+   "first_text_p50": 3.43,
+   "first_text_p95": 11.27,
+   "seconds_p50": 4.47,
+   "seconds_p95": 20.01,
    "defects_per_answer": 0.29,
    "defect_kinds": {
-    "no-refusal": 3,
-    "footer-survived": 1
+    "invented-token": 1,
+    "no-refusal": 3
    },
    "warning_kinds": {
-    "h1-heading": 1,
-    "unsupported-token": 5,
-    "uncited-paragraph": 29,
-    "unlabelled-code-fence": 1
+    "h1-heading": 2,
+    "unsupported-token": 10,
+    "uncited-paragraph": 20
    },
    "refusal_correct": 0.5,
    "n_negatives_answered": 6,
@@ -46,27 +45,27 @@
    "refused": 0.0,
    "crashed": 0.0,
    "error_kinds": {},
-   "searched": 0.8571428571428571,
-   "read": 0.7142857142857143,
-   "rounds": 4.36,
-   "calls": 4.36,
+   "searched": 0.9285714285714286,
+   "read": 0.5714285714285714,
+   "rounds": 4.86,
+   "calls": 4.86,
    "read_errors": 0,
    "bad_tool_args": 0,
    "cited_gold": 1.0,
-   "first_text_p50": 4.03,
-   "first_text_p95": 8.03,
-   "seconds_p50": 4.88,
-   "seconds_p95": 9.15,
-   "defects_per_answer": 0.64,
+   "first_text_p50": 3.51,
+   "first_text_p95": 13.62,
+   "seconds_p50": 4.47,
+   "seconds_p95": 8.94,
+   "defects_per_answer": 0.29,
    "defect_kinds": {
-    "no-refusal": 5,
-    "commands-for-uncovered-question": 4
+    "no-refusal": 4
    },
    "warning_kinds": {
-    "h1-heading": 1,
-    "uncited-paragraph": 24
+    "uncited-paragraph": 28,
+    "unlabelled-code-fence": 1,
+    "refused-without-contact": 1
    },
-   "refusal_correct": 0.16666666666666666,
+   "refusal_correct": 0.3333333333333333,
    "n_negatives_answered": 6,
    "query_quality": {
     "better": 2,
@@ -82,27 +81,28 @@
    "refused": 0.0,
    "crashed": 0.0,
    "error_kinds": {},
-   "searched": 0.8571428571428571,
+   "searched": 0.9285714285714286,
    "read": 0.5714285714285714,
-   "rounds": 4.14,
-   "calls": 4.14,
+   "rounds": 5,
+   "calls": 5,
    "read_errors": 0,
    "bad_tool_args": 0,
-   "cited_gold": 0.875,
-   "first_text_p50": 4.76,
-   "first_text_p95": 7.44,
-   "seconds_p50": 5.94,
-   "seconds_p95": 50.37,
-   "defects_per_answer": 0.14,
+   "cited_gold": 1.0,
+   "first_text_p50": 4.38,
+   "first_text_p95": 42.63,
+   "seconds_p50": 6.53,
+   "seconds_p95": 16.21,
+   "defects_per_answer": 0.43,
    "defect_kinds": {
-    "invented-token": 1,
-    "no-refusal": 1
+    "invented-citation": 1,
+    "footer-survived": 2,
+    "no-refusal": 3
    },
    "warning_kinds": {
-    "uncited-paragraph": 29,
+    "uncited-paragraph": 31,
     "unsupported-token": 1
    },
-   "refusal_correct": 0.8333333333333334,
+   "refusal_correct": 0.5,
    "n_negatives_answered": 6,
    "query_quality": {
     "better": 2,
@@ -118,28 +118,28 @@
    "refused": 0.0,
    "crashed": 0.0,
    "error_kinds": {},
-   "searched": 0.8571428571428571,
-   "read": 0.6428571428571429,
-   "rounds": 4.43,
-   "calls": 4.43,
+   "searched": 0.9285714285714286,
+   "read": 0.5714285714285714,
+   "rounds": 4.64,
+   "calls": 4.64,
    "read_errors": 0,
    "bad_tool_args": 0,
    "cited_gold": 1.0,
-   "first_text_p50": 4.22,
-   "first_text_p95": 8.79,
-   "seconds_p50": 6.16,
-   "seconds_p95": 10.33,
+   "first_text_p50": 4.2,
+   "first_text_p95": 6.35,
+   "seconds_p50": 5.53,
+   "seconds_p95": 7.72,
    "defects_per_answer": 0.36,
    "defect_kinds": {
-    "invented-token": 1,
-    "no-refusal": 3,
-    "footer-survived": 1
+    "no-refusal": 5
    },
    "warning_kinds": {
-    "h1-heading": 3,
-    "uncited-paragraph": 31
+    "uncited-paragraph": 27,
+    "unsupported-token": 13,
+    "h1-heading": 9,
+    "bare-title-citation": 1
    },
-   "refusal_correct": 0.5,
+   "refusal_correct": 0.16666666666666666,
    "n_negatives_answered": 6,
    "query_quality": {
     "better": 2,
@@ -156,24 +156,23 @@
    "crashed": 0.0,
    "error_kinds": {},
    "searched": 0.9285714285714286,
-   "read": 0.6428571428571429,
-   "rounds": 2.71,
-   "calls": 2.71,
+   "read": 0.5714285714285714,
+   "rounds": 2.93,
+   "calls": 2.93,
    "read_errors": 0,
    "bad_tool_args": 0,
    "cited_gold": 1.0,
-   "first_text_p50": 6.05,
-   "first_text_p95": 10.27,
-   "seconds_p50": 7.94,
-   "seconds_p95": 19.58,
+   "first_text_p50": 7.22,
+   "first_text_p95": 16.0,
+   "seconds_p50": 9.27,
+   "seconds_p95": 18.12,
    "defects_per_answer": 0.07,
    "defect_kinds": {
     "no-refusal": 1
    },
    "warning_kinds": {
-    "uncited-paragraph": 18,
-    "h1-heading": 2,
-    "bare-title-citation": 1
+    "uncited-paragraph": 9,
+    "unsupported-token": 10
    },
    "refusal_correct": 0.8333333333333334,
    "n_negatives_answered": 6,
@@ -192,27 +191,26 @@
    "crashed": 0.0,
    "error_kinds": {},
    "searched": 0.9285714285714286,
-   "read": 0.7142857142857143,
-   "rounds": 2.93,
-   "calls": 2.93,
+   "read": 0.6428571428571429,
+   "rounds": 3,
+   "calls": 3,
    "read_errors": 0,
    "bad_tool_args": 0,
    "cited_gold": 1.0,
-   "first_text_p50": 5.17,
-   "first_text_p95": 8.06,
-   "seconds_p50": 12.85,
-   "seconds_p95": 18.55,
-   "defects_per_answer": 0.14,
+   "first_text_p50": 5.4,
+   "first_text_p95": 16.28,
+   "seconds_p50": 10.26,
+   "seconds_p95": 37.83,
+   "defects_per_answer": 0.21,
    "defect_kinds": {
-    "no-refusal": 2
+    "no-refusal": 3
    },
    "warning_kinds": {
+    "h1-heading": 1,
     "uncited-paragraph": 27,
-    "unsupported-token": 1,
-    "bare-title-citation": 1,
-    "refused-without-contact": 2
+    "unsupported-token": 12
    },
-   "refusal_correct": 0.6666666666666666,
+   "refusal_correct": 0.5,
    "n_negatives_answered": 6,
    "query_quality": {
     "better": 2,
@@ -223,83 +221,82 @@
   {
    "model": "opencode:nemotron-3-ultra-free",
    "n": 14,
-   "answered": 0.8571428571428571,
-   "empty": 0.0,
-   "refused": 0.0,
+   "answered": 0.6428571428571429,
+   "empty": 0.35714285714285715,
+   "refused": 0.35714285714285715,
    "crashed": 0.0,
-   "error_kinds": {},
+   "error_kinds": {
+    "empty": 5
+   },
    "searched": 1.0,
-   "read": 0.75,
+   "read": 0.6666666666666666,
    "rounds": 2.86,
    "calls": 2.86,
    "read_errors": 0,
    "bad_tool_args": 0,
    "cited_gold": 1.0,
-   "first_text_p50": 8.72,
-   "first_text_p95": 29.18,
-   "seconds_p50": 15.78,
-   "seconds_p95": 37.9,
-   "defects_per_answer": 0.33,
+   "first_text_p50": 6.08,
+   "first_text_p95": 19.17,
+   "seconds_p50": 9.16,
+   "seconds_p95": 20.04,
+   "defects_per_answer": 0.11,
    "defect_kinds": {
-    "invented-token": 1,
-    "footer-survived": 1,
-    "no-refusal": 1,
-    "commands-for-uncovered-question": 1
+    "no-refusal": 1
    },
    "warning_kinds": {
-    "unsupported-token": 2,
-    "uncited-paragraph": 25,
-    "h1-heading": 13,
     "bare-title-citation": 1,
-    "refused-without-contact": 2
+    "unsupported-token": 12,
+    "uncited-paragraph": 14,
+    "h1-heading": 3,
+    "refused-without-contact": 3
    },
    "refusal_correct": 0.75,
    "n_negatives_answered": 4,
    "query_quality": {
-    "better": 2,
+    "better": 1,
     "worse": 0,
-    "same": 6
+    "same": 4
    }
   }
  ],
  "conversations": [
   {
    "model": "opencode:nemotron-3.5-lightning-free",
-   "turns": 20,
+   "turns": 10,
    "first_turn_gold": 1.0,
-   "follow_up_gold": 0.7777777777777778,
+   "follow_up_gold": 0.75,
    "answered": 1.0,
    "question_always_sent": true,
-   "peak_request_chars": 26758,
-   "defects": 1
+   "peak_request_chars": 16280,
+   "defects": 3
   },
   {
    "model": "opencode:hy3-free",
-   "turns": 20,
+   "turns": 10,
    "first_turn_gold": 1.0,
-   "follow_up_gold": 0.7777777777777778,
+   "follow_up_gold": 0.75,
    "answered": 1.0,
    "question_always_sent": true,
-   "peak_request_chars": 27603,
-   "defects": 1
+   "peak_request_chars": 12594,
+   "defects": 0
   },
   {
    "model": "opencode:big-pickle",
-   "turns": 20,
+   "turns": 10,
    "first_turn_gold": 1.0,
-   "follow_up_gold": 0.8888888888888888,
+   "follow_up_gold": 0.75,
    "answered": 1.0,
    "question_always_sent": true,
-   "peak_request_chars": 27517,
-   "defects": 3
+   "peak_request_chars": 15957,
+   "defects": 1
   }
  ],
  "injections": [
   {
    "model": "opencode:nemotron-3.5-lightning-free",
    "n": 5,
-   "obeyed": 0,
-   "leaked": 0,
+   "obeyed": 1,
+   "leaked": 1,
    "answered": 5
   },
   {

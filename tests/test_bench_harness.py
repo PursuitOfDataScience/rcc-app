@@ -15,10 +15,12 @@ section read.
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from evals import checks, harness
-from sage import config, links, providers
+from sage import config, feedback, links, providers
 
 
 def event(text="", tool_calls=None):
@@ -383,3 +385,100 @@ def test_restore_puts_the_seams_back():
 
     # Leave the module fixture's patches in place for whatever runs next in this file.
     harness.prepare(build_provider=lambda _name, _key: PROVIDER)
+
+
+class TestWhatCountsAsEvidence:
+    """`evidence` must be what the turn read, not what the Sources strip points at.
+
+    `read_doc` on a path with no anchor returns the whole page — up to `MAX_DOC_CHARS` —
+    and records only its first chunk. Rebuilding evidence from the recorded chunks
+    therefore missed most of what the model saw, and the answer checks reported flags as
+    "unsupported by what this turn read" that it had read three paragraphs earlier. 58
+    such warnings across 143 real answers came from that alone.
+    """
+
+    def test_a_whole_page_read_is_evidence_in_full(self):
+        PROVIDER.turns = [
+            [event(tool_calls=[call(0, "c1", "read_doc", '{"path":"docs/storage/main.md"}')])],
+            ANSWER,
+        ]
+        record = turn()
+        read = "\n".join(record["evidence"].values())
+        # The page is longer than any single one of its sections.
+        longest = max(
+            (len(chunk.text) for chunk in harness.prepare().corpus.chunks
+             if chunk.path == "storage/main.md"),
+            default=0,
+        )
+        assert len(read) > longest, "evidence is only the first chunk again"
+
+    def test_search_snippets_count_too(self):
+        """The model saw them, so a token quoted from a snippet is not invented."""
+        PROVIDER.turns = [SEARCH, ANSWER]
+        record = turn()
+        assert any("snippet" in text for text in record["evidence"].values())
+
+
+class TestPerTurnTelemetry:
+    """The other end of the whole programme.
+
+    Everything under `evals/` measures this app against questions somebody wrote down,
+    which is a guess at what readers ask — and the only guess in the programme that cannot
+    be checked offline. `feedback.record_turn` is what makes it checkable: a week of live
+    turns says which questions arrive, what they cost, and how often the refusal gate fires
+    on real traffic against the 86.7% it scores on the labelled set.
+
+    Off unless `SAGE_FEEDBACK_LOG` names a file, so the default deployment is unchanged.
+    """
+
+    def written(self, path):
+        return [json.loads(line) for line in open(path, encoding="utf-8")]
+
+    def test_nothing_is_written_by_default(self, monkeypatch, tmp_path):
+        monkeypatch.delenv("SAGE_FEEDBACK_LOG", raising=False)
+        PROVIDER.turns = [SEARCH, READ, ANSWER]
+        turn()
+        assert not list(tmp_path.iterdir())
+
+    def test_an_answered_turn_records_its_mechanics(self, monkeypatch, tmp_path):
+        log = tmp_path / "feedback.jsonl"
+        monkeypatch.setattr(feedback.config, "FEEDBACK_LOG", str(log))
+        PROVIDER.turns = [SEARCH, READ, ANSWER]
+        turn()
+        rows = [row for row in self.written(log) if row["kind"] == "turn"]
+        assert len(rows) == 1
+        assert rows[0]["outcome"] == "answered"
+        assert rows[0]["rounds"] == 3
+        assert rows[0]["searches"] == 1
+        assert rows[0]["sources"] == 1
+        assert rows[0]["seconds"] >= 0
+
+    def test_a_failed_turn_is_recorded_too(self, monkeypatch, tmp_path):
+        """The half a 👍/👎 can never reach: there is no answer under it to rate."""
+        log = tmp_path / "feedback.jsonl"
+        monkeypatch.setattr(feedback.config, "FEEDBACK_LOG", str(log))
+        PROVIDER.turns = [[event("   ")]]
+        turn()
+        rows = [row for row in self.written(log) if row["kind"] == "turn"]
+        assert [row["outcome"] for row in rows] == ["failed"]
+        assert rows[0]["error_kind"] == "empty"
+
+    def test_a_caveated_search_is_counted(self, monkeypatch, tmp_path):
+        """The refusal gate's live hit-rate, which no offline set can produce."""
+        log = tmp_path / "feedback.jsonl"
+        monkeypatch.setattr(feedback.config, "FEEDBACK_LOG", str(log))
+        PROVIDER.turns = [
+            [event(tool_calls=[call(0, "c1", "search_docs", '{"query":"how do I submit a job on Frontera"}')])],
+            ANSWER,
+        ]
+        turn(question="how do I submit a job on Frontera")
+        rows = [row for row in self.written(log) if row["kind"] == "turn"]
+        assert rows[0]["caveats"] == 1, "a caveated search should be counted"
+
+    def test_a_confident_search_is_not_counted(self, monkeypatch, tmp_path):
+        log = tmp_path / "feedback.jsonl"
+        monkeypatch.setattr(feedback.config, "FEEDBACK_LOG", str(log))
+        PROVIDER.turns = [SEARCH, READ, ANSWER]
+        turn()
+        rows = [row for row in self.written(log) if row["kind"] == "turn"]
+        assert rows[0]["caveats"] == 0

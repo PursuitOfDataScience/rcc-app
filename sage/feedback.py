@@ -57,3 +57,50 @@ def record_miss(queries: list[str], question: str) -> bool:
     return _write(
         {"kind": "miss", "queries": queries[:10], "question": question[:1000]}
     )
+
+
+def record_turn(
+    *,
+    question: str,
+    outcome: str,
+    model: str,
+    error_kind: str = "",
+    rounds: int = 0,
+    searches: int = 0,
+    sections: int = 0,
+    caveats: int = 0,
+    sources: int = 0,
+    seconds: float = 0.0,
+) -> bool:
+    """One line of mechanics per turn: what it cost and how it ended.
+
+    Everything under `evals/` measures this app against questions somebody wrote down.
+    That is a guess at what readers ask, and it is the only guess in the whole programme
+    that cannot be checked offline — so this is the other end of it. A week of these says
+    which questions arrive, how many rounds they really take, how often the refusal gate
+    fires on live traffic against the 86.7% it scores on the labelled set, and which of
+    `llm.classify`'s failure kinds a deployment actually sees.
+
+    No answer text, and no ratings: `record_rating` already handles the reader's verdict
+    and quotes them. What is here is arithmetic plus the question, which is what turns a
+    log into a question set — and the question is logged because `record_miss` and
+    `record_rating` already log it, so this adds no new kind of disclosure. As with both
+    of those, nothing is written at all unless `SAGE_FEEDBACK_LOG` names a file.
+    """
+    return _write(
+        {
+            "kind": "turn",
+            "question": question[:1000],
+            "outcome": outcome,
+            "model": model,
+            "error_kind": error_kind,
+            "rounds": rounds,
+            # Sections the turn exposed, against `sources` — the destinations the
+            # reader is shown, which is fewer whenever two sections share a page.
+            "searches": searches,
+            "sections": sections,
+            "caveats": caveats,
+            "sources": sources,
+            "seconds": round(seconds, 2),
+        }
+    )

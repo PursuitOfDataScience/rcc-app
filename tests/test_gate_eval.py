@@ -8,9 +8,11 @@ labelled probes, all six of whose negatives are lexically alien ("sourdough",
 the score floor alone. This file adds the class none of them cover: a question in
 fluent RCC dialect about something the RCC does not have, which scores 26–64.
 
-The numbers are low and they are the measurement, not the target. `tools/gate_check.py`
-prints them, `tools/gate_check.py --sweep` shows that no threshold pair fixes them, and
-the ratchets below sit one case under what the tree measures today so a single
+Fourteen of thirty-eight were caveated when this file was written; thirty-nine of
+forty-five are now, over a set that has since gained the quadrant nothing covered. What
+moved it was `names_a_thing` and `reads_like_a_report` in `sage/retrieval/text.py`, not
+either threshold — `tools/gate_check.py --sweep` had shown the two sides occupying one
+score range. The ratchets below sit one case under what the tree measures, so a single
 regression fails and the slack is stated rather than hidden.
 """
 
@@ -21,12 +23,15 @@ import pytest
 import evals
 from evals import gate
 
-# Measured on the tree that introduced this file. One case is 2.6pp on the negative
-# split and 1.3pp on the answerable one, so each ratchet is one case of slack.
+# Measured after the classification fix. One case is 2.2pp on the negative split and
+# 1.3pp on the answerable one, so each ratchet is one case of slack.
 #
-# Raise them when the gate improves; never lower one to make CI pass. 36.8% is not an
-# acceptable level, it is where this started — see EVAL.md.
-MINIMUM_CAVEAT_RECALL = 0.34    # measured 0.368 (14 of 38)
+# Raise them when the gate improves; never lower one to make CI pass. The first version
+# of this file recorded 36.8% caveat recall over 38 negatives, with a comment saying that
+# was where it started and not an acceptable level. What moved it was not a threshold —
+# `tools/gate_check.py --sweep` showed no pair could — but telling an unfamiliar word
+# that *names* something from one that carries a value. See EVAL.md.
+MINIMUM_CAVEAT_RECALL = 0.84    # measured 0.867 (39 of 45)
 MAXIMUM_OVER_REFUSAL = 0.04     # measured 0.026 (2 of 77)
 MINIMUM_RECALL_AT_5 = 0.96      # measured 0.985
 
@@ -68,11 +73,25 @@ class TestTheLabels:
         assert not suspect, "mislabelled negatives: " + "; ".join(suspect)
 
     def test_every_negative_names_what_makes_it_one(self):
-        """No `absent` tokens means the label cannot be checked at all."""
-        unverifiable = [case.text for case in evals.negatives() if not case.absent]
+        """No `absent` tokens means the label cannot be checked at all.
+
+        Exempt by kind, not by silence: an `[[unrecorded]]` case is one where every word
+        *is* in the corpus and only the fact is missing, so there is nothing to audit and
+        the label rests on judgement. Keeping those in their own table is what lets this
+        rule stay strict for every case it can check.
+        """
+        unverifiable = [
+            case.text for case in evals.negatives()
+            if not case.absent and case.kind != evals.UNRECORDED
+        ]
         assert not unverifiable, (
             "negatives with nothing to audit: " + "; ".join(unverifiable)
         )
+
+    def test_the_unrecorded_quadrant_is_covered(self):
+        """The class the score floor exists for. Uncovered, the sweep looked like a free
+        win: lowering the floor to 14 removes both over-refusals and lets these through."""
+        assert len(evals.negatives(evals.UNRECORDED)) >= 5
 
     def test_gold_pages_exist_in_the_corpus(self, real_corpus):
         known = {chunk.path for chunk in real_corpus.chunks}
@@ -124,30 +143,17 @@ class TestWhatLeaksToday:
     """
 
     LEAKING = [
-        "how do I submit a job on Frontera",
-        "how do I run Jupyter on the Delta cluster",
-        "what is the queue structure on Stampede3",
+        # Every one of these has NO unknown term at all: "bridges" is in the scraped
+        # publication text and `2` is a digit, `pbs` is named once in a sentence
+        # comparing Slurm to it, and the rest are ordinary words the documentation uses.
+        # The gate has nothing to go on but the score, and the sweep shows the score
+        # cannot separate them. This is the boundary of the mechanism, not a to-do list.
         "how do I get an allocation on Bridges-2",
-        "how do I load modules on Perlmutter",
-        "is there a scratch purge policy on Expanse",
-        "how many GPUs per node does Midway4 have",
-        "how do I connect to Midway5",
-        "what is the memory limit on the bigmem3 partition",
-        "what is the quota on scratch2",
-        "how many nodes does Beagle4 have",
-        "how do I submit to the turbo partition",
-        "how do I submit a job with qsub",
-        "how do I check the queue with bjobs",
-        "how do I write PBS directives in my job script",
-        "how do I submit with condor_submit",
-        "how do I load the ANSYS Fluent module",
-        "how do I run VASP on Beagle3",
-        "can I get a static public IP for my desktop from RCC",
         "what does a service unit cost for an external collaborator",
-        "what is the penalty for sharing my CNetID password",
-        "how do I renew my parking permit",
-        "how do I book a study room in the library",
+        "how do I write PBS directives in my job script",
         "how do I enrol in a computer science course",
+        "how much does the university spend on computing each year",
+        "how many users does the cluster have",
     ]
 
     @pytest.mark.parametrize("question", LEAKING, ids=LEAKING)
@@ -169,22 +175,27 @@ class TestWhatLeaksToday:
         assert not surprises, "new leaks, not in the recorded list: " + "; ".join(surprises)
 
 
-def test_no_threshold_pair_separates_the_two_sides(real_index, audited):
-    """Why the fix is not a number, kept as an executable claim.
+def test_no_threshold_pair_beats_the_shipped_one_for_free(real_index, audited, measured):
+    """The two constants are not leaving anything on the table.
 
-    Moving `MIN_CONFIDENT_SCORE` and `STRONG_SCORE` is the obvious response to a leak
-    and it cannot work: the leaks score 26–64 and answerable questions score 18–126, so
-    every pair that catches the leaks refuses real questions in about equal measure. If
-    this test ever fails, the score distributions have separated and a threshold change
-    IS the fix — which would be worth knowing immediately.
+    A pair that buys caveat recall by refusing answerable questions is a *trade*, and
+    which side to take is a judgement about which error is worse on an app somebody reads
+    every day — not something a test should decide. A pair that improves one axis and
+    costs nothing on the other is not a judgement, it is an oversight, and this fails on
+    it.
+
+    History worth keeping: before the classification fix, no pair reached 90% caveat
+    recall while keeping 95% of answerable questions — the two sides occupied the same
+    score range, which is why the fix could not be a number. Afterwards one does (24/24
+    buys 4.4pp of caveat recall for 1.3pp of over-refusal). That is a trade on n=45, and
+    taking it would mean tuning two constants to catch two cases in the very set they are
+    measured on, so it is written down rather than shipped. `tools/gate_check.py --sweep`
+    prints the whole front against the shipped point.
     """
     swept = gate.sweep(
         real_index, audited, evals.questions(), evals.identifiers()
     )
-    usable = [
-        point for point in swept["front"]
-        if point["caveat_recall"] >= 0.9 and point["answerable_kept"] >= 0.95
-    ]
-    assert not usable, (
-        "a threshold pair now separates the two sides: " + str(usable[:3])
+    free = gate.dominating(swept, measured)
+    assert not free, (
+        "a threshold pair is better than the shipped one at no cost: " + str(free[:3])
     )

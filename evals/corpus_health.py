@@ -95,9 +95,11 @@ def duplicates(corpus) -> dict:
     construction, so cross-source pairs are expected; the count is what matters.
     """
     exact: dict[str, list[str]] = {}
+    titles: dict[str, set[str]] = {}
     for chunk in corpus.chunks:
         digest = hashlib.sha1(_normalise(chunk.text).encode()).hexdigest()
         exact.setdefault(digest, []).append(chunk.id)
+        titles.setdefault(digest, set()).add(chunk.doc_title)
 
     # Near-duplicates, compared only within a length band so this stays fast enough to
     # belong in a check rather than a job.
@@ -123,8 +125,22 @@ def duplicates(corpus) -> dict:
                     }
                 )
                 break
+    # Two very different things, and counting them together makes the number unreadable.
+    # Identical text under ONE title is a page indexed twice — `web/midway2.txt` and
+    # `web/support-and-services_midway2.txt` are the same RCC page at two URLs — and it
+    # wastes a result slot. Identical text under DIFFERENT titles is shared boilerplate:
+    # `bfi.md` and `booth.md` document two databases with the same Globus instructions,
+    # and each must keep its own citation. Deduplicating the index would have answered a
+    # Booth question with a link to the BFI page.
+    repeated = [ids for ids in exact.values() if len(ids) > 1]
+    same_page = [
+        ids for digest, ids in exact.items()
+        if len(ids) > 1 and len(titles[digest]) == 1
+    ]
     return {
-        "exact_groups": [ids for ids in exact.values() if len(ids) > 1],
+        "exact_groups": repeated,
+        "same_page_twice": same_page,
+        "shared_boilerplate": [ids for ids in repeated if ids not in same_page],
         "near": near,
     }
 
@@ -146,6 +162,52 @@ def reachability(index, asked: list[str]) -> dict:
         "ceiling": ceiling,
         "total": index.total,
         "measurable": ceiling >= index.total,
+    }
+
+
+def self_reachability(index, corpus) -> dict:
+    """Can each page be found by asking for it by its own title?
+
+    The honest version of the reachability question, and it took two tries. Asking the 77
+    labelled questions and reporting "160 of 572 chunks surfaced" says nothing about the
+    index — 77 questions at six results is a ceiling of 462 — so that number stays
+    unmeasurable by construction.
+
+    The obvious next attempt, one query per *section*, measured the wrong thing too: it
+    reported 72 sections unreachable, and they were sections like `sbatch.md#batch-jobs`
+    losing to two siblings of their own page. That is `MAX_PER_PAGE` doing its job, not
+    dead weight — the page is retrieved and `read_doc` reaches the section by anchor. A
+    metric that moves when the cap moves is a statement about the cap.
+
+    Page granularity is unaffected by it: the cap allows two sections of any page and this
+    needs one. A page that cannot be retrieved when the query *is* its own title is weight
+    the index carries and no reader can reach.
+    """
+    titles: dict[str, str] = {}
+    for chunk in corpus.chunks:
+        titles.setdefault(f"{chunk.source}/{chunk.path}", chunk.doc_title)
+
+    unreachable = []
+    for page, title in titles.items():
+        if not title.strip():
+            unreachable.append(page)
+            continue
+        found = {
+            f"{result.chunk.source}/{result.chunk.path}"
+            for result in index.search(title, SEARCH_LIMIT)
+        }
+        if page not in found:
+            # The title travels with it: two of the seven are unreachable *because* of
+            # their title. `singularity.md` is titled "Modules" upstream, so every
+            # citation chip for it reads "Modules — …", and `MidwayGeoSpatial` returns
+            # nothing at all because a CamelCase compound is one token the page's own
+            # text never uses. Reporting the page alone hid both.
+            unreachable.append({"page": page, "title": title})
+    total = len(titles) or 1
+    return {
+        "pages": len(titles),
+        "unreachable": unreachable,
+        "rate": (total - len(unreachable)) / total,
     }
 
 
@@ -200,6 +262,7 @@ def measure(corpus, index) -> dict:
         "empty_documents": empty_documents(),
         "duplicates": duplicates(corpus),
         "reachability": reachability(index, asked),
+        "self_reachability": self_reachability(index, corpus),
         "topics": topic_coverage(index),
         "unresolvable_ids": unresolvable_ids(corpus),
         "chunks_without_url": chunks_without_url(corpus),

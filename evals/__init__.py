@@ -121,7 +121,21 @@ def questions(kind: str = "") -> list[Question]:
     return [case for case in found if not kind or case.kind == kind]
 
 
+#: The class with no absent token to audit: every word is in the corpus and the fact
+#: simply is not recorded. Labelled by judgement, kept in its own table so that is
+#: visible, and scored alongside the rest — it is the quadrant the score floor exists
+#: for, and the sweep looked like a free win until it was covered.
+UNRECORDED = "unrecorded"
+
+
 def negatives(kind: str = "") -> list[Negative]:
+    """Every question the documentation cannot answer, both tables.
+
+    `[[unrecorded]]` rows arrive with `absent=()`, which the audit passes over — there is
+    nothing to check — and which `tests/test_eval_datasets.py` exempts from the
+    names-what-makes-it-one rule by kind rather than by silence.
+    """
+    data = _load(NEGATIVES_FILE)
     found = [
         Negative(
             text=str(row["text"]),
@@ -129,7 +143,11 @@ def negatives(kind: str = "") -> list[Negative]:
             why=str(row.get("why", "")),
             kind=str(row.get("kind", "out-of-domain")),
         )
-        for row in _load(NEGATIVES_FILE).get("negative", [])
+        for row in data.get("negative", [])
+    ]
+    found += [
+        Negative(text=str(row["text"]), why=str(row.get("why", "")), kind=UNRECORDED)
+        for row in data.get(UNRECORDED, [])
     ]
     return [case for case in found if not kind or case.kind == kind]
 

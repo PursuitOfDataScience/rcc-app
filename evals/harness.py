@@ -62,6 +62,12 @@ class Trace:
     first_byte: float | None = None
     first_text: float | None = None
     raw_answers: list[str] = field(default_factory=list)
+    #: Every tool result verbatim. This — not the chunks behind the Sources strip — is
+    #: what the model actually read: `read_doc` on a path with no anchor returns the whole
+    #: page but records only its first chunk, so evidence rebuilt from `sources` was
+    #: missing most of what the turn saw and the answer checks reported flags as
+    #: "unsupported" that the model had read three paragraphs earlier.
+    tool_results: list[str] = field(default_factory=list)
     started: float = 0.0
     # The last request's shape. Kept rather than the request itself: a multi-turn
     # conversation carrying two attachments is most of a megabyte, and what is wanted
@@ -209,6 +215,7 @@ def prepare(build_provider=None, *, fresh: bool = False) -> runtime.Runtime:
                 "no_results": "No matching" in result[:200],
             }
         )
+        _TRACE.tool_results.append(result)
         return result
 
     tools_module.ToolRunner.run = run
@@ -381,7 +388,12 @@ def _drive(
     else:
         outcome = "nothing"
 
-    evidence = {}
+    # What the turn actually read, in the order it read it. Keyed by position rather than
+    # by chunk id because a whole-page read has no single chunk behind it.
+    evidence = {
+        f"tool-{position}": result
+        for position, result in enumerate(_TRACE.tool_results)
+    }
     # Pages resolved through the corpus rather than sliced off the id. A chunk id is
     # `{source}/{path}#{anchor}` and a gold label is `{path}`; cutting the prefix by hand
     # made every gold comparison miss, silently, and read as a model that never cited the
@@ -390,7 +402,9 @@ def _drive(
     for source in sources:
         chunk = sage.corpus.chunk(str(source.get("id", "")))
         if chunk is not None:
-            evidence[chunk.id] = chunk.text
+            # Still added: a model that cannot call tools is handed its context up front
+            # by `gather_context`, so there are no tool results to read it from.
+            evidence.setdefault(chunk.id, chunk.text)
             cited_pages.add(chunk.path)
 
     searches = [

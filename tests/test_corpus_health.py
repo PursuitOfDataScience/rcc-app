@@ -24,8 +24,14 @@ KNOWN_EMPTY = {
     # 188 bytes of boilerplate from the scrape.
     "web/takecourse.txt",
 }
-MAXIMUM_EXACT_DUPLICATE_GROUPS = 4   # measured 4
+# Split, because the two are not the same problem. A page indexed twice wastes a result
+# slot and is fixable upstream; identical text under two different titles is shared
+# boilerplate that must keep its own citation — deduplicating the index would answer a
+# Booth question with a link to the BFI page.
+MAXIMUM_SAME_PAGE_TWICE = 2          # measured 2 (web/midway2 under two URLs)
+MAXIMUM_SHARED_BOILERPLATE = 2       # measured 2 (bfi.md and booth.md)
 MAXIMUM_NEAR_DUPLICATE_PAIRS = 0     # measured 0
+MINIMUM_PAGES_FINDABLE_BY_TITLE = 0.92   # measured 0.939 (7 of 114 are not)
 
 
 @pytest.fixture(scope="module")
@@ -66,17 +72,57 @@ class TestWhatTheCorpusCannotAnswer:
 
 
 class TestDuplication:
-    def test_exact_duplicates_are_held_at_the_measured_count(self, measured):
-        groups = measured["duplicates"]["exact_groups"]
-        assert len(groups) <= MAXIMUM_EXACT_DUPLICATE_GROUPS, (
-            f"{len(groups)} identical-section groups: {groups[:3]}"
+    def test_no_new_page_is_indexed_twice(self, measured):
+        groups = measured["duplicates"]["same_page_twice"]
+        assert len(groups) <= MAXIMUM_SAME_PAGE_TWICE, (
+            f"{len(groups)} pages indexed twice: {groups[:3]}"
         )
+
+    def test_shared_boilerplate_is_held_at_the_measured_count(self, measured):
+        groups = measured["duplicates"]["shared_boilerplate"]
+        assert len(groups) <= MAXIMUM_SHARED_BOILERPLATE, (
+            f"{len(groups)} boilerplate groups: {groups[:3]}"
+        )
+
+    def test_the_two_kinds_are_told_apart(self, measured):
+        """The classification is the point; a single count reads as four bugs."""
+        duplicated = measured["duplicates"]
+        assert len(duplicated["same_page_twice"]) + len(
+            duplicated["shared_boilerplate"]
+        ) == len(duplicated["exact_groups"])
 
     def test_near_duplicates_are_held_at_the_measured_count(self, measured):
         near = measured["duplicates"]["near"]
         assert len(near) <= MAXIMUM_NEAR_DUPLICATE_PAIRS, (
             f"{len(near)} near-duplicate pairs: {near[:3]}"
         )
+
+
+class TestFindability:
+    def test_most_pages_are_retrievable_by_their_own_title(self, measured):
+        rate = measured["self_reachability"]["rate"]
+        assert rate >= MINIMUM_PAGES_FINDABLE_BY_TITLE, (
+            f"only {rate:.1%} of pages can be found by their own title"
+        )
+
+    def test_the_ones_that_are_not_are_the_ones_we_know_about(self, measured):
+        """Two of the seven are worth a reader's attention and neither is fixable here.
+
+        `singularity.md` is titled `# Modules` upstream, so every citation chip for the
+        Singularity page reads "Modules — …"; the fix is in the User Guide. And
+        `MidwayGeoSpatial` retrieves *nothing* for its own title, because a CamelCase
+        compound is one token the page's own prose never uses — splitting CamelCase in the
+        tokenizer would touch every score in the index to rescue one page, which is a
+        worse trade than the page.
+        """
+        pages = {row["page"] for row in measured["self_reachability"]["unreachable"]}
+        assert "docs/software/apps-and-envs/singularity.md" in pages
+        assert "docs/tutorials/gis/MidwayGeoSpatial.md" in pages
+        titles = {
+            row["page"]: row["title"]
+            for row in measured["self_reachability"]["unreachable"]
+        }
+        assert titles["docs/software/apps-and-envs/singularity.md"] == "Modules"
 
 
 class TestAdvertisedTopics:

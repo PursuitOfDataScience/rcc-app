@@ -244,3 +244,113 @@ class TestAssessment:
         assessment = real_index.assess("how do I install OpenFOAM")
         assert "%" not in assessment.caveat()
         assert assessment.margin >= 0
+
+
+class TestNamingAnUnknownThing:
+    """Telling a word that names something from a word that carries a value.
+
+    This is what took the refusal gate from caveating 14 of 38 labelled unanswerable
+    questions to 39 of 45, without moving either threshold — `tools/gate_check.py
+    --sweep` had shown that no pair could, because the two sides occupy the same score
+    range. Every case below is the shape of a real question, and the second half of the
+    class is the half that must never regress: each one is answerable, and each one was
+    refused by the first version of the weak-retrieval idea.
+    """
+
+    def test_a_cluster_that_does_not_exist(self, real_index):
+        """`midway4` — the corpus knows `midway`, and the digit rule made this invisible."""
+        assessment = real_index.assess("how many GPUs per node does Midway4 have")
+        assert not assessment.confident
+        assert "midway4" in assessment.named_topics
+
+    def test_named_topics_is_a_subset_of_the_unknown_terms(self, real_index):
+        """Same words, same spelling, so the two can be compared."""
+        for question in (
+            "how do I submit a job on Frontera",
+            "how many GPUs per node does Midway4 have",
+            "how do I submit a job with qsub",
+        ):
+            assessment = real_index.assess(question)
+            assert set(assessment.named_topics) <= set(assessment.unknown_terms)
+
+    def test_a_partition_that_does_not_exist(self, real_index):
+        assert not real_index.assess(
+            "what is the memory limit on the bigmem3 partition"
+        ).confident
+
+    def test_a_cluster_that_does_exist(self, real_index):
+        """The same rule must not fire on the real one."""
+        assessment = real_index.assess("how many GPUs per node does Midway3 have")
+        assert assessment.named_topics == ()
+        assert assessment.confident
+
+    def test_another_sites_machine_by_its_capital_letter(self, real_index):
+        assessment = real_index.assess("how do I submit a job on Frontera")
+        assert not assessment.confident
+        assert "frontera" in assessment.named_topics
+        # Scores well above STRONG_SCORE: every word but the machine's name matches
+        # sbatch.md, which is exactly why `strong` used to walk straight past it.
+        assert assessment.strong
+
+    def test_a_scheduler_this_centre_does_not_run(self, real_index):
+        """Lower case, so it is the naming preposition that catches `with qsub`."""
+        assessment = real_index.assess("how do I submit a job with qsub")
+        assert not assessment.confident
+        assert "qsub" in assessment.named_topics
+
+    def test_a_package_that_is_not_installed(self, real_index):
+        assert not real_index.assess("is Abaqus available on Midway").confident
+
+    def test_an_undocumented_partition_named_in_prose(self, real_index):
+        """`turbo` is neither capitalised nor versioned: the report rule catches it.
+
+        "How do I submit to the turbo partition" is a question *about* the unknown word,
+        not a report of something that happened, so evidence does not outweigh it.
+        """
+        assert not real_index.assess("how do I submit to the turbo partition").confident
+
+    # --- and the other side, which must not move -------------------------------
+
+    def test_a_daemon_in_a_message(self, real_index):
+        assessment = real_index.assess("my job was killed by slurmstepd oom-kill event")
+        assert assessment.confident
+        assert assessment.named_topics == ()
+        assert assessment.reporting
+
+    def test_a_pasted_log_line(self, real_index):
+        assert real_index.assess(
+            "srun: error: task 0 launch failed: Unspecified error"
+        ).confident
+
+    def test_a_capital_letter_after_a_colon_is_not_a_name(self, real_index):
+        """`Unspecified` is capitalised because a colon precedes it, not because it names
+        anything. Without the boundary rule this was an over-refusal."""
+        assessment = real_index.assess(
+            "sbatch: error: Batch job submission failed: Invalid account"
+        )
+        assert assessment.named_topics == ()
+
+    def test_a_username_the_reader_supplied(self, real_index):
+        assert real_index.assess("my CNetID is jsmith and I cannot log in").confident
+
+    def test_a_regional_spelling_of_a_word_the_corpus_uses(self, real_index):
+        """`favourite` is one edit from `favorite`, which is the FAQ heading's spelling."""
+        assessment = real_index.assess("why is my favourite command not available")
+        assert assessment.confident
+        assert "favourite" not in assessment.unknown_terms
+
+    def test_a_short_word_is_not_treated_as_a_misspelling(self, real_index):
+        """`book` is one edit from `boot`, which the corpus uses 27 times."""
+        assert not real_index.assess(
+            "how do I book a study room in the library"
+        ).confident
+
+    def test_vocabulary_the_profile_declares_is_known(self, real_index):
+        """`scavenge` is in the RCC profile's synonym groups and in none of its pages.
+
+        The documentation calls the same thing preemptible. Refusing over a word the
+        deployment's own configuration supplies would be the app contradicting itself.
+        """
+        assessment = real_index.assess("what does the scavenge partition do")
+        assert assessment.unknown_terms == ()
+        assert assessment.confident

@@ -401,6 +401,104 @@ class TestUnlabelledSourceFooter:
         assert links.strip_source_footer(answer) == answer
 
 
+class TestAFooterWithTheAnswerContinuingUnderneath:
+    """The shape every trailing rule above is blind to.
+
+    Measured on 98 live turns: two answers wrote a `**Citations:**` block and then one
+    more sentence. One of them listed the same two sections the Sources strip printed
+    three lines below — the duplicate this module exists to prevent, in a position it
+    could not see.
+
+    Cutting inside an answer is more dangerous than cutting off its end, so the bar is
+    proof rather than shape: every line of the block must carry a link, and every link
+    must resolve to a page the strip already shows.
+    """
+
+    @staticmethod
+    def two_chunks(corpus):
+        chunks = [chunk for chunk in corpus.chunks if "cli" in chunk.path][:2]
+        sources = [
+            {"id": c.id, "label": c.label, "url": c.url, "source": c.source}
+            for c in chunks
+        ]
+        return chunks, sources
+
+    def answer(self, chunks, *, tail=True, described=True):
+        entries = "\n".join(
+            f"- {'How to do it: ' if described else ''}[{chunk.heading}]({chunk.id})"
+            for chunk in chunks
+        )
+        end = (
+            "\n\nIf you are moving very large datasets, use Globus instead."
+            if tail else ""
+        )
+        return f"Copy it with `scp`.\n\n---\n\n**Citations:**\n{entries}{end}"
+
+    def test_the_block_goes_and_the_sentence_after_it_stays(self, real_corpus):
+        chunks, sources = self.two_chunks(real_corpus)
+        out = links.strip_source_footer(self.answer(chunks), real_corpus, sources)
+        assert "Citations" not in out
+        assert "If you are moving very large datasets" in out
+        assert out.startswith("Copy it with `scp`.")
+
+    def test_the_rule_it_was_fenced_off_with_goes_too(self, real_corpus):
+        chunks, sources = self.two_chunks(real_corpus)
+        out = links.strip_source_footer(self.answer(chunks), real_corpus, sources)
+        assert "---" not in out
+
+    def test_a_description_before_the_link_does_not_save_it(self, real_corpus):
+        """What defeated the shape rules: `- How to do it: [CLI › SCP](…)` is not a bare
+        title and not a bare link, so `_is_citation_line` declined to judge it."""
+        chunks, sources = self.two_chunks(real_corpus)
+        out = links.strip_source_footer(
+            self.answer(chunks, described=True), real_corpus, sources
+        )
+        assert "Citations" not in out
+
+    def test_a_link_to_a_page_the_strip_does_not_show_keeps_the_block(self, real_corpus):
+        """No proof of duplication, no cut — the reader may be being sent somewhere new.
+
+        A different *page*, not a different section of the same one: `_pages` compares at
+        page granularity on purpose, because a chip linking `…/cli/#scp` already gives the
+        reader the page whatever anchor the model chose.
+        """
+        chunks, sources = self.two_chunks(real_corpus)
+        elsewhere = next(
+            chunk for chunk in real_corpus.chunks if "storage" in chunk.path
+        )
+        answer = self.answer([chunks[0], elsewhere])
+        out = links.strip_source_footer(answer, real_corpus, sources)
+        assert "Citations" in out
+
+    def test_prose_entries_are_left_alone(self, real_corpus):
+        """The other real case: a `**Citations**` heading over two sentences summarising
+        what each source says. That is content, not a duplicate list, and there is no link
+        to prove anything with."""
+        chunks, sources = self.two_chunks(real_corpus)
+        answer = (
+            "Copy it with `scp`.\n\n**Citations**\n"
+            "- The CLI page lists the scp command format and gives two examples.\n"
+            "- The rsync section explains the flags for a whole directory.\n\n"
+            "Contact the help desk if it still fails."
+        )
+        out = links.strip_source_footer(answer, real_corpus, sources)
+        assert "Citations" in out
+
+    def test_nothing_happens_without_the_strip_to_compare_against(self, real_corpus):
+        chunks, _sources = self.two_chunks(real_corpus)
+        answer = self.answer(chunks)
+        assert links.strip_source_footer(answer, real_corpus, None) == answer
+
+    def test_a_trailing_footer_is_still_the_trailing_rules_business(self, real_corpus):
+        """One decision in one place: with nothing after it, the rules above own it."""
+        chunks, sources = self.two_chunks(real_corpus)
+        out = links.strip_source_footer(
+            self.answer(chunks, tail=False), real_corpus, sources
+        )
+        assert "Citations" not in out
+        assert out.startswith("Copy it with `scp`.")
+
+
 class TestCitationSentenceFooter:
     """The third shape, and the one that arrived after the prompt was told not to write
     the word "Sources": a footer with grammar. "Cited from A and B." is a sentence, so

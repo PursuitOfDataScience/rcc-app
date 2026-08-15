@@ -10,6 +10,7 @@ about something other than HPC inherited "sbatch is a synonym for script".
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 
 from ..profile import Retrieval
 
@@ -140,6 +141,121 @@ class Vocabulary:
         for raw in _WORD.findall(query.lower()):
             surface.setdefault(self.stem(raw), raw)
         return surface
+
+
+@dataclass(frozen=True)
+class Mention:
+    """One word as the reader actually typed it, with the shape of its surroundings.
+
+    `tokenize` lowercases and stems, which is right for matching and throws away the two
+    things that say whether an unfamiliar word names a *thing* or carries a *value*: how
+    the reader capitalised it, and what stands in front of it. "Frontera" and "jsmith" are
+    both words this corpus has never seen; only one of them is a topic the documentation
+    could have had a section about.
+    """
+
+    word: str
+    stem: str
+    #: Capitalised, including all-caps: `Frontera`, `ANSYS`, `VASP`.
+    capitalized: bool
+    #: First word, or straight after `:`/`.`/`!`/`?` — where capitalisation says nothing.
+    #: "srun: error: … failed: Unspecified error" capitalises a word that is not a name.
+    after_boundary: bool
+    #: The word before it, lowercased, or "".
+    previous: str
+
+
+_MENTION = re.compile(r"[A-Za-z0-9]+")
+_BOUNDARY = frozenset(":.!?;")
+
+
+def mentions(query: str, stemmer=None) -> list[Mention]:
+    """Every word of the query in the order typed, with its shape.
+
+    Deliberately over the raw string rather than the tokenizer's output: the tokenizer
+    has already lowercased by the time anything can read a capital letter.
+    """
+    stem_of = stemmer or (lambda word: stem(word))
+    found: list[Mention] = []
+    previous = ""
+    for match in _MENTION.finditer(query):
+        word = match.group(0)
+        before = query[: match.start()].rstrip()
+        shape = {
+            "word": word,
+            "capitalized": word[:1].isupper(),
+            "after_boundary": not before or before[-1] in _BOUNDARY,
+            "previous": previous,
+        }
+        found.append(Mention(stem=stem_of(word.lower()), **shape))
+        # `tokenize` also emits the split form of `Stampede3` — (`stampede`, `3`) — and it
+        # is the split form that ends up in the unknown-term list, because the whole token
+        # carries a digit. Without a mention under that stem too, the word arrived at the
+        # classifier with no shape at all and a capitalised machine name read as a value.
+        split = _ALNUM_SPLIT.match(word.lower())
+        if split:
+            found.append(Mention(stem=stem_of(split.group(1)), **shape))
+        previous = word.lower()
+    return found
+
+
+# Prepositions that introduce the thing a question is about: "submit a job **with
+# qsub**", "load modules **on Perlmutter**". Deliberately short, and deliberately
+# without "by": "my job was killed **by slurmstepd**" reports what happened rather than
+# naming a topic, and slurmstepd is exactly the kind of word this must not flag.
+NAMING_PREPOSITIONS = frozenset({"with", "using", "on", "to", "from", "for"})
+
+
+# Words that mark a query as a *report* of something that happened rather than a
+# question about a topic. Inside one, an unfamiliar word is almost always incidental —
+# a daemon in a message, a username, an error token — and refusing over it is what made
+# the first version of the weak-retrieval idea unusable.
+#
+# Outside one, an unfamiliar content word is what the question is *about*: "how do I
+# submit to the turbo partition", "what is the penalty for sharing my password". The
+# documentation not containing that word is then the answer, not a detail.
+REPORTING_WORDS = frozenset({
+    "error", "errors", "failed", "fail", "fails", "failure", "denied", "refused",
+    "exceeded", "killed", "kill", "crashed", "cannot", "can't", "couldn't", "won't",
+    "says", "said", "saying", "warning", "timeout", "timed", "stuck", "hangs", "hung",
+    "rejected", "invalid", "unable", "aborted", "oom",
+})
+
+
+def reads_like_a_report(query: str) -> bool:
+    """Is the reader describing something that happened, rather than asking about a topic?
+
+    Deliberately a word list and not a parser. What it has to get right is the eight
+    `[[identifier]]` cases in `evals/negatives.toml` — every one of them a real question
+    the documentation answers, each carrying a word the corpus has never seen — without
+    licensing "how do I submit to the turbo partition", where the unseen word *is* the
+    question. A colon counts too: a pasted log line is the most common shape of all.
+    """
+    if ":" in query:
+        return True
+    words = {word.lower() for word in _MENTION.findall(query)}
+    return bool(words & REPORTING_WORDS)
+
+
+def names_a_thing(mention: Mention, *, versioned: bool) -> bool:
+    """Does this unfamiliar word name something, rather than carry a value?
+
+    Three signals, any of which is enough. None of them is clever, and that is the
+    point — each one is checkable against the eight `[[identifier]]` cases in
+    `evals/negatives.toml`, every one of which was refused by the first version of the
+    weak-retrieval idea and must never be refused again.
+
+    * `versioned` — the corpus knows the name and not this version of it: `midway4`,
+      `bigmem3`, `scratch2`. A job number has no name part, so it cannot qualify.
+    * capitalised away from a sentence boundary — `Frontera`, `ANSYS`, `Perlmutter`.
+      The boundary condition is what keeps `… failed: Unspecified error` out.
+    * introduced by a naming preposition — `with qsub`, `on Perlmutter`.
+    """
+    if versioned:
+        return True
+    if mention.capitalized and not mention.after_boundary:
+        return True
+    return mention.previous in NAMING_PREPOSITIONS
 
 
 def snippet(text: str, weights: dict[str, float], width: int) -> str:

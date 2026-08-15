@@ -37,12 +37,20 @@ def report(measured: dict) -> None:
         print(f"   {row['bytes']:5d} bytes  {row['source']}/{row['path']}")
 
     duplicated = measured["duplicates"]
-    exact, near = duplicated["exact_groups"], duplicated["near"]
+    near = duplicated["near"]
     across = sum(1 for row in near if row["cross_source"])
-    print(f"\nduplicate sections   exact groups {len(exact)}   "
-          f"near-duplicate pairs {len(near)} ({across} across sources)")
-    for group in exact:
-        print(f"   identical: {group}")
+    print(f"\nduplicate sections   one page indexed twice "
+          f"{len(duplicated['same_page_twice'])}   shared boilerplate "
+          f"{len(duplicated['shared_boilerplate'])}   near-duplicate pairs "
+          f"{len(near)} ({across} across sources)")
+    for group in duplicated["same_page_twice"]:
+        print(f"   same page, two entries: {group}")
+    for group in duplicated["shared_boilerplate"]:
+        print(f"   shared boilerplate (keep both, they cite different pages): {group}")
+    if duplicated["same_page_twice"]:
+        print("   -> a page indexed twice wastes one of six result slots. The fix is in "
+              "the scrape, not the app: dropping one copy in the index would have to "
+              "choose which URL a citation points at.")
 
     reach = measured["reachability"]
     print(f"\nreachability   {reach['touched']} of {reach['total']} chunks surfaced by "
@@ -54,6 +62,13 @@ def report(measured: dict) -> None:
               f"{corpus_health.SEARCH_LIMIT} results is a ceiling of {reach['ceiling']} "
               f"chunks, below the {reach['total']} indexed. A percentage here would "
               "describe the question set, not the index.")
+
+    reachable = measured["self_reachability"]
+    print(f"   asked for by its own title: {reachable['rate']:.1%} of "
+          f"{reachable['pages']} pages are retrievable "
+          f"({len(reachable['unreachable'])} are not)")
+    for row in reachable["unreachable"]:
+        print(f"      unreachable: {row['page']}  (titled {row['title']!r})")
 
     print("\ntopics the profile advertises")
     for row in measured["topics"]:

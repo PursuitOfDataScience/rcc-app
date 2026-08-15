@@ -32,6 +32,10 @@ logger = logging.getLogger(__name__)
 SEARCH_DOCS = "search_docs"
 READ_DOC = "read_doc"
 
+# How a weak retrieval announces itself at the top of a search result. Named here rather
+# than written twice, because `ToolRunner` counts them and `SearchDocs.format` writes them.
+RETRIEVAL_WARNING = "RETRIEVAL WARNING:"
+
 # What a tool calls to say "the answer may now cite this section". Passing it in
 # rather than letting a tool reach for the runner keeps a custom tool from having to
 # know how sources are deduplicated.
@@ -139,7 +143,7 @@ class SearchDocs:
             # Ahead of the results, not after them: a model reads top-down, and a
             # warning underneath six confident-looking rows arrives too late to
             # change the answer.
-            lines += [f"RETRIEVAL WARNING: {caveat}", ""]
+            lines += [f"{RETRIEVAL_WARNING} {caveat}", ""]
         lines += [
             f"Top matching {self.identity.qualifier}documentation sections. "
             "Call read_doc with the exact `path` to read one in full.",
@@ -288,6 +292,13 @@ class ToolRunner:
         self.sources: list[Chunk] = []
         self.queries: list[str] = []
         self.last_read: str = ""
+        # How many searches this turn came back caveated. The one number about the
+        # refusal gate that a *deployment* can produce: offline, `tools/gate_check.py`
+        # measures it against 45 labelled questions somebody wrote, and this says how
+        # often it fires on the questions readers actually ask. Read off the tool result
+        # rather than plumbed through the Tool protocol, so a custom tool needs to know
+        # nothing about it.
+        self.caveats: int = 0
 
     def _remember(self, chunk: Chunk) -> None:
         if all(existing.id != chunk.id for existing in self.sources):
@@ -306,7 +317,10 @@ class ToolRunner:
         # assistant".
         if name == SEARCH_DOCS:
             self.queries.append(_text(arguments.get("query")).strip())
-        return tool.run(arguments, self._remember)
+        result = tool.run(arguments, self._remember)
+        if name == SEARCH_DOCS and result.startswith(RETRIEVAL_WARNING):
+            self.caveats += 1
+        return result
 
 
 def gather_context(retriever: Retriever, query: str, limit: int | None = None):
@@ -326,5 +340,5 @@ def gather_context(retriever: Retriever, query: str, limit: int | None = None):
     ]
     caveat = retriever.assess(query, results).caveat()
     if caveat and blocks:
-        blocks.insert(0, f"RETRIEVAL WARNING: {caveat}")
+        blocks.insert(0, f"{RETRIEVAL_WARNING} {caveat}")
     return "\n\n".join(blocks), [result.chunk for result in results]

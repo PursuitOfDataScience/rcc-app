@@ -66,6 +66,15 @@ class Assessment:
     top_score: float = 0.0
     margin: float = 0.0
     unknown_terms: tuple[str, ...] = ()
+    #: The subset of `unknown_terms` that names a *thing* rather than carrying a value:
+    #: another site's cluster, a scheduler this centre does not run, a package that is
+    #: not installed. Separate because evidence cannot outweigh one — see `confident`.
+    named_topics: tuple[str, ...] = ()
+    #: Whether the query reads as a report of something that happened — an error, a
+    #: killed job, a pasted log line — rather than a question about a topic. That is
+    #: what decides whether an unfamiliar word is incidental (a daemon, a username, an
+    #: error token) or is the subject of the question.
+    reporting: bool = False
     documentation: str = "the documentation"
     #: Thresholds are carried rather than read from a module, so an engine that scores
     #: on a different scale can supply its own without redefining the constants.
@@ -87,7 +96,23 @@ class Assessment:
     def confident(self) -> bool:
         if self.top_score < self.min_confident_score:
             return False
-        return self.strong or not self.unknown_terms
+        if self.named_topics:
+            # The one thing `strong` must not walk past. "How do I submit a job on
+            # Frontera" scores 42 — every word except the machine's name matches
+            # `sbatch.md` richly — and no amount of that makes this documentation cover
+            # another site's cluster. Measured over 38 labelled unanswerable questions,
+            # the score alone caveated 14; this raises it without touching a threshold,
+            # which `tools/gate_check.py --sweep` showed could not work: the two sides
+            # occupy the same score range.
+            return False
+        if not self.unknown_terms:
+            return True
+        # Evidence outweighs an unfamiliar word only where the word is plausibly
+        # incidental. "My job was killed by slurmstepd" is a documented question with a
+        # daemon's name in it; "how do I submit to the turbo partition" is a question
+        # about a partition that does not exist, and it scores just as well because
+        # every other word is ordinary Slurm vocabulary.
+        return self.strong and self.reporting
 
     def caveat(self) -> str:
         """One honest sentence for the model, empty when retrieval looks sound."""

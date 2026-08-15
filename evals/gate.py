@@ -206,17 +206,33 @@ def sweep(
                     "answerable_kept": kept / (len(positive_assessments) or 1),
                 }
             )
-    front = [
-        point for point in grid
-        if not any(
+    # Dominance has to be strict in at least one dimension. With `>=` on both and
+    # `other != point` to exclude self-comparison, every pair of grid points scoring
+    # *identically* eliminated each other — and after the classification fix most of the
+    # low-threshold grid does score identically, so the front collapsed to one extreme
+    # point and the operating point the app actually runs at vanished from the report.
+    def dominated(point: dict) -> bool:
+        return any(
             other["caveat_recall"] >= point["caveat_recall"]
             and other["answerable_kept"] >= point["answerable_kept"]
-            and other != point
+            and (
+                other["caveat_recall"] > point["caveat_recall"]
+                or other["answerable_kept"] > point["answerable_kept"]
+            )
             for other in grid
         )
-    ]
-    front.sort(key=lambda point: point["caveat_recall"])
-    return {"front": front, "grid": len(grid)}
+
+    front = [point for point in grid if not dominated(point)]
+    # One row per distinct trade-off: the front is otherwise a run of identical numbers
+    # under different thresholds, which reads as precision it does not have.
+    seen: set[tuple[float, float]] = set()
+    unique = []
+    for point in sorted(front, key=lambda item: item["caveat_recall"]):
+        key = (round(point["caveat_recall"], 4), round(point["answerable_kept"], 4))
+        if key not in seen:
+            seen.add(key)
+            unique.append(point)
+    return {"front": unique, "grid": len(grid)}
 
 
 def separable(swept: dict, *, recall: float = 0.9, kept: float = 0.95) -> list[dict]:
@@ -224,4 +240,42 @@ def separable(swept: dict, *, recall: float = 0.9, kept: float = 0.95) -> list[d
     return [
         point for point in swept["front"]
         if point["caveat_recall"] >= recall and point["answerable_kept"] >= kept
+    ]
+
+
+def dominating(swept: dict, measured: dict) -> list[dict]:
+    """Threshold pairs strictly better than the shipped one, and worse at nothing.
+
+    The question worth asking of a sweep, and the one worth failing a build over: is a
+    constant leaving something on the table? A pair that buys caveat recall by refusing
+    answerable questions is a *trade*, and which side of it to take is a judgement about
+    which error is worse on an app somebody reads every day. A pair that improves one
+    axis and costs nothing on the other is not a judgement, it is an oversight.
+
+    Before the classification fix nothing dominated, and nothing reached 90% caveat
+    recall at 95% answerable either. Afterwards a pair does reach that — 24/24 buys 4.4pp
+    of caveat recall for 1.3pp of over-refusal — which is a trade, on n=45, and taking it
+    would be tuning two constants to catch two cases in the set they are measured on.
+
+    Judged with one case of tolerance on each axis, derived from the set sizes rather
+    than hardcoded. At n=45 and n=77 one question is 2.2pp and 1.3pp, so a pair that is
+    "better" by a single case is not evidence that a constant is wrong — it is evidence
+    that one question sits near the boundary, which is true of some question at every
+    threshold. Without the tolerance this fails on min=18, which rescues exactly one
+    answerable question and would have two constants re-tuned to catch it.
+    """
+    shipped_recall = measured["caveat_recall"]
+    shipped_kept = 1 - measured["over_refusal"]
+    negative_case = 1 / max(measured["n_negatives"], 1)
+    answerable_case = 1 / max(
+        measured["n_positives"] + measured["n_identifiers"], 1
+    )
+    return [
+        point for point in swept["front"]
+        if point["caveat_recall"] >= shipped_recall - 1e-9
+        and point["answerable_kept"] >= shipped_kept - 1e-9
+        and (
+            point["caveat_recall"] > shipped_recall + negative_case
+            or point["answerable_kept"] > shipped_kept + answerable_case
+        )
     ]

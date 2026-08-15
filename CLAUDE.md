@@ -64,13 +64,19 @@ httpx. Outbound HTTPS works. Chromium is at
 `~/.cache/ms-playwright/chromium-1217/chrome-linux64/chrome`.
 
 - **Lint**: `ruff check .`
-- **Tests**: `python -m pytest -q` — 572 pass, 1 xpass. Real pytest; no shim is needed.
+- **Tests**: `python -m pytest -q` — 765 collected, 1 xpass and 6 xfails (the refusal
+  gate's recorded leaks, and one lexical gap in the retrieval eval). Real pytest; no shim
+  is needed.
 - **Layout**: `SAGE_CHROME=~/.cache/ms-playwright/chromium-1217/chrome-linux64/chrome
   python tools/render_check.py` — ~7 minutes for 660 renders.
 - **Anchors**: `python tools/anchor_check.py` — network-bound, so not in the suite.
   Run it after touching `slugify`, `plain_heading` or a URL scheme.
 - **Palette**: `python tools/palette_check.py` — every declared colour and token
   against `tools/palette_baseline.json`. Milliseconds, and `pytest` runs it too.
+- **The card**: `python tools/scorecard.py` — retrieval, the refusal gate, corpus health,
+  and (when `tools/agent_bench.py` has been run) per-model behaviour. A cell nobody has
+  measured prints `unmeasured` rather than being left out. See [`EVAL.md`](EVAL.md) for
+  the three axes and why Axis B is never a CI gate.
 
 Run the first three before pushing. Each has failed CI at least once for want of
 being run.

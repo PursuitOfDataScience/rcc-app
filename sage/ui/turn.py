@@ -201,6 +201,8 @@ def run(view: View) -> None:
 
     answer = st.empty()
     runner = runtime.toolset.runner()
+    started = time.monotonic()
+    rounds = 0
     final_text = ""
     question = st.session_state.messages[-1].get("text", "")
     # Set only when Streamlit aborts this run from underneath us. The `finally` below
@@ -208,6 +210,16 @@ def run(view: View) -> None:
     # already is one, and clearing the flag on a turn that never finished left the
     # question on screen with no answer, no error and nothing to click.
     interrupted = False
+
+    def record_failure(kind: str) -> None:
+        """A turn that produced no answer. Ratings cannot see these — there is nothing
+        under the question to rate — so without this the log would describe only the
+        turns that went well."""
+        feedback.record_turn(
+            question=question, outcome="failed", model=model.key, error_kind=kind,
+            rounds=rounds, searches=len(runner.queries), sections=len(runner.sources),
+            caveats=runner.caveats, seconds=time.monotonic() - started,
+        )
 
     def fail(message: str, why: str) -> None:
         """Surface a failure — and drop any notice, which can only contradict it.
@@ -274,6 +286,7 @@ def run(view: View) -> None:
             turn = start(messages, None)
 
         for round_number in range(config.MAX_TOOL_ROUNDS + 1):
+            rounds = round_number + 1
             # Per round, not per turn. `answer.empty()` below wipes the display
             # between rounds, so a stop must keep what is on the screen now — not
             # this round's text appended to a previous round's, which the reader has
@@ -389,6 +402,12 @@ def run(view: View) -> None:
             if switched
             else ""
         )
+        feedback.record_turn(
+            question=question, outcome="answered", model=model.key, rounds=rounds,
+            searches=len(runner.queries), sections=len(runner.sources),
+            caveats=runner.caveats, sources=len(sources),
+            seconds=time.monotonic() - started,
+        )
         if runner.queries and not sources:
             feedback.record_miss(runner.queries, st.session_state.messages[-2]["text"])
         # A path the corpus does not have is a model inventing a citation. The renderer
@@ -437,6 +456,7 @@ def run(view: View) -> None:
                 exc.original,
                 exc_info=exc.original if exc.kind == "unknown" else None,
             )
+            record_failure(exc.kind)
             fail(exc.user_message, detail(view, exc.original or exc))
     except Exception as exc:  # last-resort guard so the UI never dies
         if is_control_flow(exc):
@@ -449,7 +469,9 @@ def run(view: View) -> None:
         status.clear()
         answer.empty()
         logger.exception("Unexpected failure")
-        fail(llm.classify(exc).user_message, detail(view, exc))
+        classified = llm.classify(exc)
+        record_failure(classified.kind)
+        fail(classified.user_message, detail(view, exc))
     except BaseException:
         # Streamlit's control flow does NOT derive from Exception. On 1.54
         # `RerunException.__mro__` is (RerunException, ScriptControlException,

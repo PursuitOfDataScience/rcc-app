@@ -329,11 +329,21 @@ def form_violations(text: str) -> list[Finding]:
     return findings
 
 
+# Two shapes count, and missing the second one scored the best answer in the whole run as
+# two defects. Asked "how do I check the queue with bjobs", a model replied "RCC's clusters
+# use Slurm, not PBS/Torque, so there is no `bjobs` command. The Slurm equivalent is
+# `squeue`" and then documented `squeue` correctly. That is not a refusal in the "the
+# documentation does not cover it" sense — it is better than one — and a rule that only
+# knew the first shape called it `no-refusal` *and* `commands-for-uncovered-question`.
 _REFUSAL = re.compile(
     r"(does not (?:appear to )?cover|do(?:es)?n't (?:appear to )?cover|not covered|"
     r"no (?:relevant )?(?:documentation|information|section)|"
     r"could not find|couldn't find|cannot find|no mention|does not (?:mention|say)|"
-    r"is not documented|not in the (?:official )?documentation)",
+    r"is not documented|not in the (?:official )?documentation|"
+    # …and the redirect: naming the absence, and often the real equivalent beside it.
+    r"there is no\b|there's no\b|is not a(?:n| valid)?\b|does not exist|do not exist|"
+    r"not available (?:on|at|here|through)|is not (?:offered|provided|supported)|"
+    r"no such\b|uses \*{0,2}slurm\*{0,2},? not\b|equivalent is\b|instead of\b)",
     re.IGNORECASE,
 )
 
@@ -356,11 +366,21 @@ def refusal_shape(text: str, contact: str) -> list[Finding]:
 
 
 def commands_for_uncovered_question(text: str) -> list[Finding]:
-    """A runnable command block in answer to something the documentation lacks.
+    """A runnable command block in answer to something the documentation lacks — and no
+    word anywhere saying it is not covered.
 
-    The most legible form of this app's worst failure: not a hedge, not a wrong link,
-    but a confident `sbatch` script for a cluster the RCC does not run.
+    The most legible form of this app's worst failure: not a hedge, not a wrong link, but a
+    confident `sbatch` script for a cluster the RCC does not run.
+
+    The second clause is load-bearing and was learnt the hard way. "Unanswerable therefore
+    no commands" is wrong for the two largest classes in the negative set: asked about a
+    scheduler this centre does not run, or a partition that does not exist, the *best*
+    answer says so and then shows the documented equivalent. Firing on the block alone
+    reported eleven such answers as defects, and the one I read was the best answer in the
+    run.
     """
+    if _REFUSAL.search(text):
+        return []
     bodies = [body for _lang, body in _FENCED.findall(text) if body.strip()]
     return [
         Finding("commands-for-uncovered-question", body.strip()[:80], DEFECT)
@@ -495,8 +515,21 @@ def _was_a_citation_line(line: str) -> bool:
     on 75 real answers, all nine remaining `damaging-strip` reports were this shape.
     """
     residue = _LINK_WHOLE.sub("", line)
-    residue = _CITATION_WORDS.sub("", residue)
-    return not re.sub(r"[\s\-*_:•>·,.;()\[\]|#]+", "", residue)
+    bare = _CITATION_WORDS.sub("", residue)
+    if not re.sub(r"[\s\-*_:•>·,.;()\[\]|#]+", "", bare):
+        return True
+    # A citation entry with a description in front of it: `- Why the connection closes:
+    # [Why does my sinteractive job fail…](docs/slurm/faq.md#…)`. The same descriptive
+    # prefix that defeated `strip_source_footer`'s shape rules defeated this exemption,
+    # and reported a correct removal as damage. A short fragment ending in a colon, or a
+    # list item, alongside a real link is an entry rather than a sentence.
+    if "](" not in line:
+        return False
+    stripped = residue.strip()
+    words = re.findall(r"[A-Za-z']+", stripped)
+    if len(words) > 12:
+        return False
+    return stripped.endswith(":") or bool(re.match(r"^\s*[-*+•]|^\s*\d+[.)]", line))
 
 
 def postprocess_damage(raw: str, final: str) -> list[Finding]:

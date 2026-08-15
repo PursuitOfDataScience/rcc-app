@@ -295,6 +295,46 @@ absent = ["world cup"]
 why = "not a computing question"
 kind = "out-of-domain"
 
+# --- every word known, the fact not recorded ----------------------------
+#
+# The quadrant nothing else in this file covers, and the one the score floor exists for.
+# These questions use only words the documentation uses, so there is no absent token to
+# audit and the label rests on judgement — which is why they are a separate table that
+# says so rather than `[[negative]]` entries with an empty `absent`.
+#
+# They earn their place: with `MIN_CONFIDENT_SCORE` at 20 they score 12–18 and are
+# caveated, and `tools/gate_check.py --sweep` shows that lowering the floor to 14 would
+# remove the two remaining over-refusals at no cost in caveat recall. It would also let
+# these through. Without them the sweep looked like a free win.
+
+[[unrecorded]]
+text = "how many people work at the computing center"
+why = "no headcount in the documentation"
+
+[[unrecorded]]
+text = "when was the cluster built"
+why = "no history in the documentation"
+
+[[unrecorded]]
+text = "how old are the compute nodes"
+why = "hardware is listed, its age is not"
+
+[[unrecorded]]
+text = "is the documentation written by staff or by users"
+why = "the documentation does not describe its own authorship"
+
+[[unrecorded]]
+text = "what time of day is the cluster busiest"
+why = "no utilisation statistics in the documentation"
+
+[[unrecorded]]
+text = "how many users does the cluster have"
+why = "no user count in the documentation"
+
+[[unrecorded]]
+text = "how much does the university spend on computing each year"
+why = "no budget in the documentation"
+
 # --- the trap on the other side -----------------------------------------
 #
 # NOT negatives. Answerable questions that each carry a word the documentation has

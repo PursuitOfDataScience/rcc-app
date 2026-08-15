@@ -1,35 +1,35 @@
 {
- "n_negatives": 38,
+ "n_negatives": 45,
  "n_positives": 69,
  "n_identifiers": 8,
  "n_suspect": 0,
- "caveat_recall": 0.3684210526315789,
+ "caveat_recall": 0.8666666666666667,
  "over_refusal": 0.025974025974025976,
  "recall@5": 0.9846153846153847,
  "by_kind": {
   "other-site": {
    "n": 8,
-   "leaked": 6
+   "leaked": 1
   },
   "nonexistent-resource": {
    "n": 6,
-   "leaked": 6
+   "leaked": 0
   },
   "wrong-scheduler": {
    "n": 4,
-   "leaked": 4
+   "leaked": 1
   },
   "software-absent": {
    "n": 4,
-   "leaked": 2
+   "leaked": 0
   },
   "unoffered-service": {
    "n": 4,
-   "leaked": 1
+   "leaked": 0
   },
   "policy-absent": {
    "n": 3,
-   "leaked": 2
+   "leaked": 1
   },
   "excluded-host": {
    "n": 2,
@@ -37,7 +37,11 @@
   },
   "out-of-domain": {
    "n": 7,
-   "leaked": 3
+   "leaked": 1
+  },
+  "unrecorded": {
+   "n": 7,
+   "leaked": 2
   }
  },
  "rows": {
@@ -49,7 +53,7 @@
     "unseen": [
      "frontera"
     ],
-    "leaked": true,
+    "leaked": false,
     "top_page": "slurm/sbatch.md"
    },
    {
@@ -59,7 +63,7 @@
     "unseen": [
      "delta"
     ],
-    "leaked": true,
+    "leaked": false,
     "top_page": "slurm/faq.md"
    },
    {
@@ -69,7 +73,7 @@
     "unseen": [
      "stamped"
     ],
-    "leaked": true,
+    "leaked": false,
     "top_page": "slurm/sbatch.md"
    },
    {
@@ -87,7 +91,7 @@
     "unseen": [
      "perlmutter"
     ],
-    "leaked": true,
+    "leaked": false,
     "top_page": "software/faq.md"
    },
    {
@@ -97,7 +101,7 @@
     "unseen": [
      "expanse"
     ],
-    "leaked": true,
+    "leaked": false,
     "top_page": "storage/main.md"
    },
    {
@@ -124,40 +128,50 @@
     "question": "how many GPUs per node does Midway4 have",
     "kind": "nonexistent-resource",
     "score": 39.8,
-    "unseen": [],
-    "leaked": true,
+    "unseen": [
+     "midway4"
+    ],
+    "leaked": false,
     "top_page": "software/compilers.md"
    },
    {
     "question": "how do I connect to Midway5",
     "kind": "nonexistent-resource",
     "score": 34.9,
-    "unseen": [],
-    "leaked": true,
+    "unseen": [
+     "midway5"
+    ],
+    "leaked": false,
     "top_page": "connection/ssh/main.md"
    },
    {
     "question": "what is the memory limit on the bigmem3 partition",
     "kind": "nonexistent-resource",
     "score": 40.3,
-    "unseen": [],
-    "leaked": true,
+    "unseen": [
+     "bigmem3"
+    ],
+    "leaked": false,
     "top_page": "slurm/partitions.md"
    },
    {
     "question": "what is the quota on scratch2",
     "kind": "nonexistent-resource",
     "score": 37.3,
-    "unseen": [],
-    "leaked": true,
+    "unseen": [
+     "scratch2"
+    ],
+    "leaked": false,
     "top_page": "storage/main.md"
    },
    {
     "question": "how many nodes does Beagle4 have",
     "kind": "nonexistent-resource",
     "score": 26.3,
-    "unseen": [],
-    "leaked": true,
+    "unseen": [
+     "beagle4"
+    ],
+    "leaked": false,
     "top_page": "allocations.md"
    },
    {
@@ -167,7 +181,7 @@
     "unseen": [
      "turbo"
     ],
-    "leaked": true,
+    "leaked": false,
     "top_page": "slurm/partitions.md"
    },
    {
@@ -177,7 +191,7 @@
     "unseen": [
      "qsub"
     ],
-    "leaked": true,
+    "leaked": false,
     "top_page": "slurm/sbatch.md"
    },
    {
@@ -187,7 +201,7 @@
     "unseen": [
      "bjobs"
     ],
-    "leaked": true,
+    "leaked": false,
     "top_page": "slurm/sbatch.md"
    },
    {
@@ -205,7 +219,7 @@
     "unseen": [
      "condor"
     ],
-    "leaked": true,
+    "leaked": false,
     "top_page": "slurm/sbatch.md"
    },
    {
@@ -225,7 +239,7 @@
     "unseen": [
      "ansys"
     ],
-    "leaked": true,
+    "leaked": false,
     "top_page": "software/faq.md"
    },
    {
@@ -245,7 +259,7 @@
     "unseen": [
      "vasp"
     ],
-    "leaked": true,
+    "leaked": false,
     "top_page": "allocations.md"
    },
    {
@@ -275,7 +289,7 @@
     "unseen": [
      "static"
     ],
-    "leaked": true,
+    "leaked": false,
     "top_page": "connection/thinlinc/main.md"
    },
    {
@@ -314,7 +328,7 @@
     "unseen": [
      "penalty"
     ],
-    "leaked": true,
+    "leaked": false,
     "top_page": "accounts.md"
    },
    {
@@ -323,8 +337,7 @@
     "score": 19.6,
     "unseen": [
      "rads",
-     "prostate",
-     "scoring"
+     "prostate"
     ],
     "leaked": false,
     "top_page": "allocations.md"
@@ -348,7 +361,7 @@
      "renew",
      "parking"
     ],
-    "leaked": true,
+    "leaked": false,
     "top_page": "allocations.md"
    },
    {
@@ -358,7 +371,7 @@
     "unseen": [
      "book"
     ],
-    "leaked": true,
+    "leaked": false,
     "top_page": "slurm/partitions.md"
    },
    {
@@ -411,6 +424,64 @@
     ],
     "leaked": false,
     "top_page": "tutorials/gis/geocoding.md"
+   },
+   {
+    "question": "how many people work at the computing center",
+    "kind": "unrecorded",
+    "score": 17.5,
+    "unseen": [],
+    "leaked": false,
+    "top_page": "tutorials/gis/index.md"
+   },
+   {
+    "question": "when was the cluster built",
+    "kind": "unrecorded",
+    "score": 12.1,
+    "unseen": [],
+    "leaked": false,
+    "top_page": "ecosystems.md"
+   },
+   {
+    "question": "how old are the compute nodes",
+    "kind": "unrecorded",
+    "score": 17.0,
+    "unseen": [],
+    "leaked": false,
+    "top_page": "allocations.md"
+   },
+   {
+    "question": "is the documentation written by staff or by users",
+    "kind": "unrecorded",
+    "score": 14.8,
+    "unseen": [],
+    "leaked": false,
+    "top_page": "software/apps-and-envs/alphafold.md"
+   },
+   {
+    "question": "what time of day is the cluster busiest",
+    "kind": "unrecorded",
+    "score": 17.2,
+    "unseen": [
+     "busiest"
+    ],
+    "leaked": false,
+    "top_page": "allocations.md"
+   },
+   {
+    "question": "how many users does the cluster have",
+    "kind": "unrecorded",
+    "score": 22.8,
+    "unseen": [],
+    "leaked": true,
+    "top_page": "allocations.md"
+   },
+   {
+    "question": "how much does the university spend on computing each year",
+    "kind": "unrecorded",
+    "score": 23.3,
+    "unseen": [],
+    "leaked": true,
+    "top_page": "allocations.md"
    }
   ],
   "positives": [
@@ -1455,8 +1526,7 @@
     "question": "my job was killed by slurmstepd oom-kill event",
     "score": 44.8,
     "unseen": [
-     "slurmstepd",
-     "oom"
+     "slurmstepd"
     ],
     "refused": false
    },
@@ -1469,9 +1539,7 @@
    {
     "question": "my CNetID is jsmith and I cannot log in",
     "score": 40.0,
-    "unseen": [
-     "jsmith"
-    ],
+    "unseen": [],
     "refused": false
    },
    {
@@ -1506,9 +1574,7 @@
    {
     "question": "quota exceeded writing to /project2/pi-jsmith",
     "score": 47.4,
-    "unseen": [
-     "jsmith"
-    ],
+    "unseen": [],
     "refused": false
    }
   ],

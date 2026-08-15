@@ -11,7 +11,13 @@ Every one was caught by the score floor alone.
 
 The class nobody had tested was a question in fluent RCC dialect about something the RCC
 does not have: another site's cluster, a partition that does not exist, a scheduler this
-centre does not run. Those score 26–64 and sail straight through.
+centre does not run. Those scored 26–64 and sailed straight through, 14 of 38 caveated.
+
+It is 39 of 45 now, and not because a threshold moved: `--sweep` showed the two sides
+occupying the same score range, so the fix distinguishes an unfamiliar word that *names a
+thing* from one that *carries a value* (`sage/retrieval/text.py`). What remains leaking has
+no unknown term at all — every word is in the corpus and only the fact is missing — which
+is the boundary of the mechanism rather than a backlog.
 
     python tools/gate_check.py                  # the report
     python tools/gate_check.py --audit          # only the label audit
@@ -98,18 +104,29 @@ def report(measured: dict, *, verbose: bool) -> None:
                       f"median {scores[len(scores) // 2]:5.1f}  max {scores[-1]:5.1f}")
 
 
-def report_sweep(swept: dict) -> None:
-    print(f"\nthreshold sweep ({swept['grid']} pairs) — Pareto front only")
+def report_sweep(swept: dict, measured: dict) -> None:
+    print(f"\nthreshold sweep ({swept['grid']} pairs) — Pareto front, one row per trade")
     print("   caveat recall   answerable kept   min_confident   strong")
     for point in swept["front"]:
         print(f"   {point['caveat_recall']:12.1%}   {point['answerable_kept']:14.1%}   "
               f"{point['min']:13d}   {point['strong']:6d}")
-    if gate.separable(swept):
-        print("   -> a threshold pair reaching 90% caveat recall while keeping 95% of "
-              "answerable questions EXISTS; the fix may be a number after all")
+    # Where the app actually stands, so the front is read against something.
+    print(f"   {measured['caveat_recall']:12.1%}   "
+          f"{1 - measured['over_refusal']:14.1%}   "
+          f"{'as shipped':>13s}   {'':>6s}")
+    free = gate.dominating(swept, measured)
+    if free:
+        print("   -> BETTER AT NO COST: "
+              + ", ".join(f"{point['min']}/{point['strong']}" for point in free)
+              + " beats the shipped pair on one axis and loses on neither, which means a "
+                "constant is set wrong rather than traded")
     else:
-        print("   -> no threshold pair reaches 90% caveat recall while keeping 95% of "
-              "answerable questions: the two sides overlap, so the fix is not a number")
+        print("   -> nothing beats the shipped pair for free. Every pair above it on "
+              "caveat recall pays for it in over-refusal, and which side of that trade to "
+              "take is a judgement, not a measurement.")
+    for point in gate.separable(swept):
+        print(f"      available trade: {point['min']}/{point['strong']} would caveat "
+              f"{point['caveat_recall']:.1%} and keep {point['answerable_kept']:.1%}")
 
 
 def report_against(measured: dict, path: str) -> None:
@@ -159,7 +176,7 @@ def main() -> int:
     report(measured, verbose=parsed.verbose)
 
     if parsed.sweep:
-        report_sweep(gate.sweep(index, negatives, positives, identifiers))
+        report_sweep(gate.sweep(index, negatives, positives, identifiers), measured)
     if parsed.against:
         report_against(measured, parsed.against)
     if parsed.save:

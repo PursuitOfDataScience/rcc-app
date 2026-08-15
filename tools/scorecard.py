@@ -3,9 +3,10 @@
 
 There is no single number for "how is Sage doing". Any weighted average of what follows
 reads as healthy: retrieval is at 100% recall@5, the suite is green, the layout harness
-renders 660 states clean, the palette has not drifted. One cell is 36.8%, and it is the
-one that decides whether the app declines to answer a question the documentation cannot
-answer. A scalar would dilute it to invisibility.
+renders 660 states clean, the palette has not drifted. When this file was written one cell
+read 36.8% — the gate that decides whether the app declines to answer at all — and a
+scalar would have diluted it to invisibility. It is 86.7% now, and the point stands: the
+headline is the worst cell, whichever cell that turns out to be.
 
 So the card is a vector, the headline is its worst cell, and a cell nobody has measured
 says **unmeasured** rather than being left out — because a missing row reads as a passing
@@ -115,16 +116,35 @@ def build_card(*, with_suite: bool, with_layout: bool) -> dict:
             "n_negatives": measured_gate["n_negatives"],
             "n_answerable": measured_gate["n_positives"] + measured_gate["n_identifiers"],
             "suspect_labels": measured_gate["n_suspect"],
-            "separable_by_threshold": bool(gate.separable(swept)),
+            # Not "could a threshold separate them" — after the classification fix one
+            # can, at a cost. The useful question is whether a pair is better at no cost,
+            # which would mean a constant is simply set wrong.
+            "free_win_from_thresholds": [
+                f"{point['min']}/{point['strong']}"
+                for point in gate.dominating(swept, measured_gate)
+            ],
+            "threshold_trade": [
+                f"{point['min']}/{point['strong']}: caveat {point['caveat_recall']:.1%}, "
+                f"answerable kept {point['answerable_kept']:.1%}"
+                for point in gate.separable(swept)
+            ],
             "leaks": [
                 row["question"] for row in measured_gate["rows"]["negatives"]
                 if row["leaked"]
+            ],
+            # Every question scored, not only the ones that leaked. Without it the diff
+            # cannot tell a regression from a case that was *added* and leaks: the two
+            # `[[unrecorded]]` questions written to justify the score floor were reported
+            # as NEW LEAK, which reads as damage rather than as coverage.
+            "negatives_scored": [
+                row["question"] for row in measured_gate["rows"]["negatives"]
             ],
         },
         "corpus": {
             "chunks": health["chunks"],
             "empty_documents": len(health["empty_documents"]),
-            "exact_duplicate_groups": len(health["duplicates"]["exact_groups"]),
+            "same_page_twice": len(health["duplicates"]["same_page_twice"]),
+            "shared_boilerplate": len(health["duplicates"]["shared_boilerplate"]),
             "near_duplicate_pairs": len(health["duplicates"]["near"]),
             "unresolvable_ids": len(health["unresolvable_ids"]),
             "chunks_without_url": len(health["chunks_without_url"]),
@@ -132,6 +152,10 @@ def build_card(*, with_suite: bool, with_layout: bool) -> dict:
                 row["topic"] for row in health["topics"] if not row["confident"]
             ],
             "reachability": health["reachability"],
+            "findable_by_title": health["self_reachability"]["rate"],
+            "unfindable_pages": [
+                row["page"] for row in health["self_reachability"]["unreachable"]
+            ],
             "freshness": health["freshness"],
         },
         "suite": UNMEASURED,
@@ -203,27 +227,35 @@ def report(card: dict) -> None:
           f"n={gate_row['n_answerable']} answerable")
     _cell("recall@5 on the new set", f"{gate_row['recall@5']:.1%}")
     _cell("suspect labels", str(gate_row["suspect_labels"]), "excluded from scoring")
-    _cell("fixable by a threshold?",
-          "yes" if gate_row["separable_by_threshold"] else "no",
-          "no => the fix is a classification change, not a number")
+    _cell("free win from thresholds?",
+          "none" if not gate_row["free_win_from_thresholds"] else
+          ", ".join(gate_row["free_win_from_thresholds"]),
+          "a pair better at no cost would mean a constant is set wrong")
+    for trade in gate_row["threshold_trade"]:
+        _cell("threshold trade available", "", trade)
 
     print("\ncorpus — the ceiling, no model involved")
     corpus_row = card["corpus"]
     _cell("chunks", str(corpus_row["chunks"]))
     _cell("empty documents", str(corpus_row["empty_documents"]),
           "topics nothing can answer")
-    _cell("identical section groups", str(corpus_row["exact_duplicate_groups"]),
-          "one destination, cited twice")
+    _cell("one page indexed twice", str(corpus_row["same_page_twice"]),
+          "two of six result slots for one destination; fix is in the scrape")
+    _cell("shared boilerplate", str(corpus_row["shared_boilerplate"]),
+          "identical text, different pages — must keep its own citation")
     _cell("ids that do not resolve", str(corpus_row["unresolvable_ids"]))
     _cell("chunks with no URL", str(corpus_row["chunks_without_url"]))
     _cell("advertised topics caveated",
           str(len(corpus_row["topics_caveated"])),
           ", ".join(corpus_row["topics_caveated"]) or "none")
+    _cell("pages findable by their title", f"{corpus_row['findable_by_title']:.1%}",
+          f"{len(corpus_row['unfindable_pages'])} are not, incl. one titled 'Modules'")
     reach = corpus_row["reachability"]
     _cell("index reachability",
           f"{reach['touched']}/{reach['total']}" if reach["measurable"] else UNMEASURED,
           "" if reach["measurable"] else
-          f"{reach['questions']} questions is a ceiling of {reach['ceiling']}")
+          f"{reach['questions']} questions is a ceiling of {reach['ceiling']}; "
+          "the line above is the measurable form")
     snapshot = corpus_row["freshness"]
     _cell("docs snapshot", snapshot.get("user_guide_commit", "-") if snapshot else "-",
           snapshot.get("refreshed_at", "") if snapshot else "no snapshot")
@@ -272,13 +304,21 @@ def report(card: dict) -> None:
 
 
 def report_against(card: dict, path: str) -> None:
-    with open(path, encoding="utf-8") as handle:
-        before = json.load(handle)
+    # A missing or unreadable baseline is the ordinary case on a first run, and a
+    # traceback after the card has already printed loses nothing except the reader's
+    # confidence in the tool.
+    try:
+        with open(path, encoding="utf-8") as handle:
+            before = json.load(handle)
+    except (OSError, ValueError) as exc:
+        print(f"\nno comparison: {path} ({exc.__class__.__name__})")
+        return
     print(f"\nagainst {os.path.basename(path)} (@ {before.get('commit', '?')})")
     pairs = [
         ("retrieval", "recall@5"), ("retrieval", "p@1"),
         ("gate", "caveat_recall"), ("gate", "over_refusal"), ("gate", "recall@5"),
-        ("corpus", "empty_documents"), ("corpus", "exact_duplicate_groups"),
+        ("corpus", "empty_documents"), ("corpus", "same_page_twice"),
+        ("corpus", "findable_by_title"),
     ]
     for section, key in pairs:
         now = card.get(section, {})
@@ -289,10 +329,14 @@ def report_against(card: dict, path: str) -> None:
     # percentage still and is the shape a refactor produces.
     now_leaks = set(card["gate"]["leaks"])
     was_leaks = set(before.get("gate", {}).get("leaks", []))
+    was_scored = set(before.get("gate", {}).get("negatives_scored", [])) or was_leaks
     for question in sorted(was_leaks - now_leaks):
         print(f"   fixed: {question!r}")
     for question in sorted(now_leaks - was_leaks):
-        print(f"   NEW LEAK: {question!r}")
+        if question in was_scored:
+            print(f"   NEW LEAK: {question!r}")
+        else:
+            print(f"   new case, and it leaks: {question!r}")
 
     # Axis B moves for reasons outside this repository, which is exactly why it is worth
     # diffing rather than gating: a model that stopped answering, or got slower, is news

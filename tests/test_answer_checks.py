@@ -275,3 +275,72 @@ class TestInspect:
         found = checks.inspect(self.record("caveat"), real_corpus, haystack)
         assert checks.defects(found)
         assert checks.tally(found)["no-refusal"] == 1
+
+
+class TestACitationEntryWithADescription:
+    """The shape that fooled two checks in a row.
+
+    `- Why the connection closes: [Why does my sinteractive job fail…](docs/slurm/faq.md#…)`
+    is a citation entry with a sentence fragment in front of the link. It defeated
+    `strip_source_footer`'s shape rules — that is what `_interior_footer` was written for —
+    and then defeated `postprocess_damage`'s exemption too, so a correct removal was
+    reported as the stripper eating content.
+    """
+
+    ENTRY = (
+        "- Why the connection closes: [Why does my sinteractive job fail with "
+        "“Connection closed.”?](docs/slurm/faq.md#why-it-fails)"
+    )
+
+    def test_removing_it_is_not_damage(self):
+        raw = f"The session ended early.\n\n**Citations:**\n{self.ENTRY}"
+        final = "The session ended early."
+        assert checks.postprocess_damage(raw, final) == []
+
+    def test_a_real_sentence_with_a_link_is_still_damage(self):
+        raw = (
+            "The session ended early.\n\nIf none of those is the cause, check the exit "
+            "reason in `squeue` and read [Running jobs](docs/slurm/faq.md#jobs) for the "
+            "other resource limits that end a job early."
+        )
+        final = "The session ended early."
+        assert [item.kind for item in checks.postprocess_damage(raw, final)] == [
+            "damaging-strip"
+        ]
+
+
+class TestTheRedirectAnswer:
+    """The best answer in the first real run, which two checks called a defect.
+
+    Asked "how do I check the queue with bjobs", a model replied that RCC's clusters use
+    Slurm rather than PBS, that there is no `bjobs`, that the equivalent is `squeue` — and
+    then documented `squeue` properly. Naming the absence and handing over the real command
+    is better than declining, and "unanswerable therefore no commands" is simply wrong for
+    the two largest classes in the negative set.
+    """
+
+    ANSWER = (
+        "RCC's clusters use **Slurm**, not PBS/Torque, so there is no `bjobs` command. "
+        "The Slurm equivalent is **`squeue`**.\n\n### Check your own jobs\n\n"
+        "```bash\nsqueue -u $USER\n```\n"
+    )
+
+    def test_it_counts_as_declining(self):
+        assert checks.refusal_shape(self.ANSWER, "help@rcc.uchicago.edu") == [] or [
+            item.kind for item in checks.refusal_shape(self.ANSWER, "help@rcc.uchicago.edu")
+        ] == ["refused-without-contact"]
+        assert "no-refusal" not in [
+            item.kind
+            for item in checks.refusal_shape(self.ANSWER, "help@rcc.uchicago.edu")
+        ]
+
+    def test_the_equivalent_command_is_not_a_defect(self):
+        assert checks.commands_for_uncovered_question(self.ANSWER) == []
+
+    def test_a_command_with_no_word_about_the_absence_still_is(self):
+        answer = (
+            "Use `bjobs` to list your jobs:\n\n```bash\nbjobs -u $USER\n```\n"
+        )
+        assert [
+            item.kind for item in checks.commands_for_uncovered_question(answer)
+        ] == ["commands-for-uncovered-question"]

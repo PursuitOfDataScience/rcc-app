@@ -21,7 +21,14 @@ from .. import config
 from ..corpus import Corpus
 from ..profile import Retrieval, active
 from .base import Assessment, Result, engines
-from .text import Vocabulary, snippet
+from .text import (
+    _ALNUM_SPLIT,
+    Vocabulary,
+    mentions,
+    names_a_thing,
+    reads_like_a_report,
+    snippet,
+)
 
 
 class Index:
@@ -117,26 +124,110 @@ class Index:
             for score, position in self._spread(scored, limit)
         ]
 
+    def _knows(self, term: str) -> bool:
+        """Is this term part of the subject's vocabulary?
+
+        Three ways in, and the third is not about the corpus at all. A term the profile's
+        synonym table names is vocabulary the *deployment* has declared — `scavenge` is in
+        the RCC profile's groups and appears nowhere in the bundled pages, because the
+        documentation calls the same thing preemptible. Refusing to answer over a word the
+        profile itself supplies would be the app disagreeing with its own configuration.
+        """
+        return (
+            bool(self._document_frequency.get(term))
+            or term in self.vocabulary.synonyms
+            or any(term in title for title in self._titles)
+        )
+
+    def _near_miss(self, term: str) -> bool:
+        """A spelling of something the corpus does know: `favourite` for `favorite`.
+
+        An unfamiliar word one edit away from a term the corpus uses repeatedly is a
+        misspelling or a regional variant, not a new topic. Without this, "why is my
+        favourite command not available" — the User Guide's own FAQ heading, in British
+        spelling — was told the documentation does not cover it.
+
+        Six characters and a single edit, against a term the corpus uses in at least two
+        sections. Short words are excluded deliberately: `book` is one edit from `boot`,
+        which appears 27 times, and "how do I book a study room" is not a question about
+        booting. `named_topics` is decided before this is consulted, so `midway4` — one
+        edit from `midway3` — never reaches it.
+        """
+        if len(term) < 6:
+            return False
+        letters = "abcdefghijklmnopqrstuvwxyz"
+        candidates = {term[:index] + term[index + 1:] for index in range(len(term))}
+        candidates |= {
+            term[:index] + letter + term[index + 1:]
+            for index in range(len(term))
+            for letter in letters
+        }
+        candidates |= {
+            term[:index] + term[index + 1] + term[index] + term[index + 2:]
+            for index in range(len(term) - 1)
+        }
+        candidates.discard(term)
+        return any(self._document_frequency.get(word, 0) >= 2 for word in candidates)
+
+    def _versioned_unknown(self, term: str) -> bool:
+        """`midway4` where the corpus knows `midway`: a version of a name that is not.
+
+        This is the half of the digit rule that was missing. Skipping every term with a
+        digit in it is right for a job ID — `41235567` has no name to recognise, and
+        counting one as an unseen topic told a reader asking why their job failed that
+        the RCC has no documentation about it. But a cluster that does not exist and a
+        partition that does not exist are *named* things with a number welded on, so the
+        same rule made `midway4`, `bigmem3` and `scratch2` invisible to the one check
+        that could have caught them.
+
+        The name part must be known and the whole term must not: that is what separates
+        "you have named a variant of something real that does not exist" from a
+        UUID (`4bd2c1a8` has no name part) and from `project2` (which the corpus knows).
+        """
+        split = _ALNUM_SPLIT.match(term)
+        if not split:
+            return False
+        return self._knows(self.vocabulary.stem(split.group(1)))
+
     def assess(self, query: str, results: list[Result] | None = None) -> Assessment:
         """Judge a query's retrieval without re-ranking it."""
         if results is None:
             results = self.search(query)
         surface = self.vocabulary.surface_forms(query)
+        shapes = {
+            mention.stem: mention
+            for mention in mentions(query, self.vocabulary.stem)
+        }
 
         unknown = []
+        named = []
         for term, weight in self.vocabulary.expand(query).items():
             if weight < 1.0:
                 continue          # a synonym the reader never typed
-            if any(character.isdigit() for character in term):
+            if self._knows(term):
+                continue
+            versioned = self._versioned_unknown(term)
+            if any(character.isdigit() for character in term) and not versioned:
                 # A job ID or a node number is not a topic the documentation could
-                # have a section about, and counting one as an unseen word told a
-                # reader asking why job 41235567 failed that RCC has no docs on it.
+                # have a section about. `_versioned_unknown` is the exception: see above.
                 continue
-            if self._document_frequency.get(term):
-                continue
-            if any(term in title for title in self._titles):
-                continue
-            unknown.append(surface.get(term, term))
+            mention = shapes.get(term)
+            named_thing = mention is not None and names_a_thing(
+                mention, versioned=versioned
+            )
+            if not named_thing and self._near_miss(term):
+                continue          # a spelling of something the corpus does know
+            word = surface.get(term, term)
+            unknown.append(word)
+            if named_thing:
+                # The reader's own spelling, the same one `unknown_terms` carries, so
+                # `named_topics` is a strict subset of it rather than the same words in
+                # different casing — which is a trap for anything comparing the two.
+                #
+                # A system, scheduler or package the corpus has never heard of. Held
+                # apart from the rest because evidence cannot outweigh it: no amount of
+                # scoring on the other words makes this documentation cover Frontera.
+                named.append(word)
 
         top = results[0].score if results else 0.0
         runner_up = results[1].score if len(results) > 1 else 0.0
@@ -144,6 +235,8 @@ class Index:
             top_score=top,
             margin=round(top - runner_up, 4),
             unknown_terms=tuple(unknown),
+            named_topics=tuple(named),
+            reporting=reads_like_a_report(query),
             documentation=self.documentation,
             min_confident_score=config.MIN_CONFIDENT_SCORE,
             strong_score=config.STRONG_SCORE,

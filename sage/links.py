@@ -426,6 +426,68 @@ def strip_inline_citations(text: str, sources: list[dict] | None = None) -> str:
     return _PAREN.sub(replace, text)
 
 
+def _interior_footer(
+    lines: list[str], corpus: Corpus, sources: list[dict], names: set[str]
+) -> tuple[int, int] | None:
+    """A labelled citation list with the answer continuing underneath it.
+
+    Everything above judges a *trailing* footer, and a model that carries on afterwards
+    escapes all of it. Measured across 98 live turns, two answers ended with a
+    `**Citations:**` block and then one more sentence, and one of them listed the same two
+    sections the Sources strip printed three lines below — the duplicate list this module
+    exists to prevent, arriving in a position it could not see.
+
+    Cutting inside an answer is more dangerous than cutting off its end, so the bar is the
+    strongest evidence available rather than the shape rules: **every line of the block
+    must carry a link, and every one of those links must resolve to a page the strip is
+    already showing.** No proof, no cut. That is deliberately narrower than the trailing
+    rules — the other surviving case is a `**Citations**` heading over two prose sentences
+    summarising what each source says, which is content, and it is left exactly where it
+    is.
+
+    Returns the half-open span to remove, including a `---` the model fenced the block off
+    with, or None.
+    """
+    shown = {
+        str(item.get("url", "")).split("#", 1)[0]
+        for item in sources
+        if item.get("url")
+    }
+    if not shown:
+        return None
+
+    for index, line in enumerate(lines):
+        payload = _footer_label(line)
+        if payload is None:
+            continue
+        if payload and not _is_citation_payload(payload, names):
+            continue
+        stop = index
+        proven = False
+        for position in range(index + 1, len(lines)):
+            if not lines[position].strip():
+                break        # the block ends at the blank line
+            pages = _pages(lines[position], corpus)
+            if not pages or not pages <= shown:
+                proven = False
+                break
+            proven = True
+            stop = position
+        if not proven or stop == index:
+            continue
+        # Nothing but blank lines after it means this is the trailing shape, which the
+        # rules above own; leaving it to them keeps one decision in one place.
+        if not any(item.strip() for item in lines[stop + 1:]):
+            continue
+        start = index
+        while start - 1 >= 0 and (
+            not lines[start - 1].strip() or _RULE.match(lines[start - 1])
+        ):
+            start -= 1
+        return start, stop
+    return None
+
+
 def strip_source_footer(
     text: str, corpus: Corpus | None = None, sources: list[dict] | None = None
 ) -> str:
@@ -535,6 +597,14 @@ def strip_source_footer(
             )
             if not above.rstrip().endswith(":"):
                 cut = begin
+
+    if cut is None and corpus is not None and sources:
+        interior = _interior_footer(lines, corpus, sources, names)
+        if interior is not None:
+            start, stop = interior
+            kept = lines[:start] + lines[stop + 1 :]
+            if any(line.strip() for line in kept):
+                return "\n".join(kept)
 
     if cut is None:
         return text
