@@ -193,6 +193,12 @@ def build_card(*, with_suite: bool, with_layout: bool) -> dict:
                         "seconds_p95", "defects_per_answer", "refusal_correct",
                     )
                 }
+                # Not in that tuple, because it is read with `.get`: every
+                # `agents.json` written before there were two answering paths lacks
+                # the key, and requiring it would crash the card on the file this
+                # repository ships. Absent means the tool loop, which is what those
+                # runs were — there was nothing else to run them down.
+                | {"path": row.get("path", "tools")}
                 for row in summary.get("models", [])
             ],
             "conversations": summary.get("conversations", []),
@@ -282,7 +288,9 @@ def report(card: dict) -> None:
               "run tools/agent_bench.py --models all --out report/")
     else:
         for row in agents["models"]:
-            _cell(row["model"][:34], f"{row['answered']:.0%} answered",
+            arm = str(row.get("path") or "tools")
+            name = row["model"] if arm == "tools" else f"{row['model']} [{arm}]"
+            _cell(name[:34], f"{row['answered']:.0%} answered",
                   f"{row['defects_per_answer']:.2f} defects/answer, "
                   f"refusals {row['refusal_correct']:.0%}, "
                   f"ttft {row['first_text_p50']}s")
@@ -345,11 +353,24 @@ def report_against(card: dict, path: str) -> None:
     was_agents = before.get("agents")
     if not isinstance(now_agents, dict) or not isinstance(was_agents, dict):
         return
-    was_by_model = {row["model"]: row for row in was_agents.get("models", [])}
+    def arm_of(row: dict) -> str:
+        return str(row.get("path") or "tools")
+
+    def label(row: dict) -> str:
+        arm = arm_of(row)
+        return row["model"] if arm == "tools" else f"{row['model']} [{arm}]"
+
+    # Keyed by arm as well as model. A grounded row and a tool row for the same model
+    # collided here, so one silently replaced the other and the surviving comparison was
+    # across two different paths through the app — "answered 100% -> 62%" as news about a
+    # provider, when it was news about which code answered.
+    was_by_model = {
+        (row["model"], arm_of(row)): row for row in was_agents.get("models", [])
+    }
     for row in now_agents.get("models", []):
-        previous = was_by_model.pop(row["model"], None)
+        previous = was_by_model.pop((row["model"], arm_of(row)), None)
         if previous is None:
-            print(f"   new model: {row['model']}")
+            print(f"   new model: {label(row)}")
             continue
         for key, form in (("answered", "pct"), ("defects_per_answer", "num"),
                           ("refusal_correct", "pct"), ("first_text_p50", "num")):
@@ -357,9 +378,10 @@ def report_against(card: dict, path: str) -> None:
             if old is None or new is None or old == new:
                 continue
             shown = (f"{old:.0%} -> {new:.0%}" if form == "pct" else f"{old} -> {new}")
-            print(f"   {row['model']}.{key}: {shown}")
-    for model in sorted(was_by_model):
-        print(f"   GONE from the lineup: {model}")
+            print(f"   {label(row)}.{key}: {shown}")
+    for model, arm in sorted(was_by_model):
+        gone = model if arm == "tools" else f"{model} [{arm}]"
+        print(f"   GONE from the lineup: {gone}")
 
 
 def main() -> int:
