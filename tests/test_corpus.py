@@ -196,6 +196,31 @@ def test_scraped_pages_window_and_keep_their_real_url(web_source):
     assert all(c.url == document.url for c in chunks)
 
 
+def test_zero_overlap_means_no_overlap_and_not_total_overlap(web_source, monkeypatch):
+    """The other `[-config.X:]` in the package, pinned rather than changed.
+
+    `tail = buffer[-config.WEB_CHUNK_OVERLAP:]` has the shape that made
+    `SAGE_ATTACHMENT_FULL_TEXT_TURNS=0` inline every attachment instead of none, because
+    `xs[-0:]` is the whole list. Here it is already correct — the very next line reads
+    `buffer = f"{tail}…" if config.WEB_CHUNK_OVERLAP else paragraph`, so at zero the tail
+    is computed and discarded. Nothing tested that, and the clause standing between this
+    and a corpus where every window repeats the whole of the previous one is a single
+    `if`. `minimum=0` permits the value.
+    """
+    raw = (
+        "URL: https://x.test/p\nTitle: P\n===\n"
+        + "\n".join(f"Sentence {n} about the software stack." for n in range(200))
+    )
+    monkeypatch.setattr(config, "WEB_CHUNK_OVERLAP", 240)
+    _doc, overlapping = corpus_mod.read(web_source, "p.txt", raw)
+    monkeypatch.setattr(config, "WEB_CHUNK_OVERLAP", 0)
+    _doc, plain = corpus_mod.read(web_source, "p.txt", raw)
+
+    assert len(plain) > 1, "expected several windows to have an overlap between them"
+    assert sum(len(c.text) for c in plain) < sum(len(c.text) for c in overlapping)
+    assert all(len(c.text) <= config.WEB_CHUNK_CHARS for c in plain)
+
+
 def test_a_window_is_not_a_section_named_part_2(web_source):
     """`(part 3)` was bookkeeping in a section heading's clothes.
 
