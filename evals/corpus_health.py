@@ -273,6 +273,32 @@ def chunks_without_url(corpus) -> list[str]:
     return [chunk.id for chunk in corpus.chunks if not chunk.url]
 
 
+def malformed_urls(corpus) -> list[dict]:
+    """Citation targets that are not usable web addresses.
+
+    "Has a URL" was the only thing asked, and a citation is the one string in this app
+    that becomes an `href`. A URL with a space in it, two fragment markers, a control
+    character or no scheme is a link that lands nowhere — and unlike a wrong *page*,
+    nothing downstream notices: `tools/anchor_check.py` validates against the live site
+    but is network-bound and out of the suite.
+    """
+    found = []
+    for chunk in corpus.chunks:
+        url = chunk.url
+        why = ""
+        if not url.startswith(("http://", "https://")):
+            why = "no http scheme"
+        elif url != url.strip() or " " in url:
+            why = "whitespace"
+        elif url.count("#") > 1:
+            why = "two fragment markers"
+        elif any(ord(character) < 32 for character in url):
+            why = "control character"
+        if why:
+            found.append({"id": chunk.id, "url": url[:80], "why": why})
+    return found
+
+
 def measure(corpus, index) -> dict:
     asked = [case.text for case in questions()] + [case.text for case in identifiers()]
     return {
@@ -286,5 +312,6 @@ def measure(corpus, index) -> dict:
         "topics": topic_coverage(index),
         "unresolvable_ids": unresolvable_ids(corpus),
         "chunks_without_url": chunks_without_url(corpus),
+        "malformed_urls": malformed_urls(corpus),
         "freshness": config.snapshot(),
     }

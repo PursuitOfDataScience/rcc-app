@@ -233,10 +233,24 @@ def prose_paragraphs(text: str) -> list[str]:
         stripped = block.strip()
         if not stripped or stripped.startswith("#"):
             continue
+        if _is_table(stripped):
+            # A table is not a paragraph making a claim in prose, and models reach for
+            # one constantly — a flag reference with four rows counted as an uncited
+            # paragraph, so this check was charging models for formatting.
+            continue
         words = re.findall(r"[A-Za-z]{2,}", stripped)
         if len(words) >= 8:
             out.append(stripped)
     return out
+
+
+def _is_table(block: str) -> bool:
+    """A markdown table: most of its lines are pipe-delimited rows."""
+    lines = [line for line in block.splitlines() if line.strip()]
+    if len(lines) < 2:
+        return False
+    piped = sum(1 for line in lines if line.strip().startswith("|") or line.count("|") >= 2)
+    return piped >= max(2, len(lines) - 1)
 
 
 _LINK_OR_MARKER = re.compile(r"\]\(|\[\d+\]")

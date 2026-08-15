@@ -344,3 +344,40 @@ class TestTheRedirectAnswer:
         assert [
             item.kind for item in checks.commands_for_uncovered_question(answer)
         ] == ["commands-for-uncovered-question"]
+
+
+class TestTablesAreNotParagraphs:
+    """Models reach for a table constantly, and a table makes no claim in prose.
+
+    A four-row flag reference counted as one uncited paragraph, so the check was charging
+    models for formatting. Measured across 143 real answers, `uncited-paragraph` was the
+    most numerous warning of all.
+    """
+
+    TABLE = (
+        "Use `squeue` to list jobs ([Running jobs](docs/slurm/main.md)).\n\n"
+        "| Flag | What it does |\n|---|---|\n"
+        "| `-u USER` | Show jobs for a specific user, replacing USER with a name |\n"
+        "| `-p PART` | Show jobs in one partition, for example standard or gpu |\n"
+    )
+
+    def test_a_table_is_not_counted_as_uncited(self):
+        coverage, findings = checks.citation_coverage(self.TABLE)
+        assert coverage == 1.0
+        assert findings == []
+
+    def test_prose_after_a_table_is_still_counted(self):
+        text = self.TABLE + (
+            "\nIf the job is not listed it has already finished, and the exit state is "
+            "the thing to look at next rather than the queue.\n"
+        )
+        coverage, findings = checks.citation_coverage(text)
+        assert [item.kind for item in findings] == ["uncited-paragraph"]
+        assert coverage == 0.5
+
+    def test_a_pipe_inside_a_sentence_is_not_a_table(self):
+        text = (
+            "Pipe the output into grep to narrow it down, using the | character between "
+            "the two commands, which the shell reads as a pipeline rather than as text.\n"
+        )
+        assert checks.prose_paragraphs(text)

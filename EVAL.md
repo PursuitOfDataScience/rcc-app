@@ -309,6 +309,11 @@ Two more corrections came out of the second run, and the second one matters most
   answer says the thing is not there, and the refusal detector recognises the redirect.
   Eleven reports became five.
 
+And one more from a later pass: **a markdown table counted as an uncited paragraph.**
+Models reach for a table constantly and a table makes no claim in prose, so the check was
+charging them for formatting — 29 of 383 warnings across 173 real answers, measured by
+running the check both ways over the same transcripts.
+
 After the fixes: 1 invented token, 0 false damaging strips, and the unit tests still trip
 every check in both directions. This is why `--rescore` exists — the correction has to
 reach the card without asking a free tier for the same answers again:
@@ -381,3 +386,9 @@ not loosen the case, and never lower a ratchet to make CI pass.
 - **Cost.** `provider_calls` is recorded per turn but nothing prices it, because the free
   tier has no price. A paid deployment would want spend per answered question, and the
   field is already there.
+- **Anchors.** `tools/anchor_check.py` validates citation targets against the live site,
+  and it is network-bound so it stays out of the suite. What *is* gated is the offline
+  half: every chunk has a URL, and every URL is a usable web address — scheme, no
+  whitespace, one fragment marker, no control characters. A citation is the one string in
+  this app that becomes an `href`, and until this pass the only question asked of it was
+  whether it existed.

@@ -200,7 +200,18 @@ def parse_scraped(text: str) -> tuple[str, str, str]:
     for idx, line in enumerate(lines[:6]):
         stripped = line.strip()
         if stripped.startswith("URL:"):
-            url = stripped[4:].strip()
+            claimed = stripped[4:].strip()
+            # Only a web address, because this string becomes the `href` of every
+            # citation to the page. Whatever followed `URL:` was taken verbatim, so a
+            # scrape that wrote a relative path, or nothing useful, produced citations
+            # pointing somewhere that is not a page — and `javascript:` would have gone
+            # into a markdown link in an answer. Anything else is treated as absent,
+            # which falls back to the source's `base_url`: a link to the site root is a
+            # worse citation than a deep one and a better one than a broken href.
+            #
+            # All 55 bundled scrapes carry an `https://` URL, so nothing here changes
+            # today; this is about the day the scraper's output shifts.
+            url = claimed if claimed.startswith(("http://", "https://")) else ""
             cursor = idx + 1
         elif stripped.startswith("Title:"):
             # Drop the site suffix: "FAQs | Skyway - RCC Cloud Solution".

@@ -49,6 +49,17 @@ class TestIntegrity:
         urlless = measured["chunks_without_url"]
         assert not urlless, f"{len(urlless)} chunks cannot be cited: {urlless[:5]}"
 
+    def test_every_url_is_a_usable_web_address(self, measured):
+        """A citation is the one string in this app that becomes an `href`.
+
+        "Has a URL" was all that was asked. A space in it, two fragment markers, no
+        scheme, a control character — each is a link that lands nowhere, and nothing
+        downstream notices: `anchor_check.py` validates against the live site but is
+        network-bound and out of the suite.
+        """
+        bad = measured["malformed_urls"]
+        assert not bad, f"{len(bad)} unusable citation URLs: {bad[:3]}"
+
     def test_both_sources_are_indexed(self, measured):
         assert set(measured["sources"]) == {"docs", "web"}
         for name, row in measured["sources"].items():

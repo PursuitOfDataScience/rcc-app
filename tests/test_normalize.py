@@ -1,3 +1,5 @@
+import pytest
+
 from sage import normalize
 
 
@@ -175,3 +177,48 @@ def test_pretty_title_of_an_index_page_names_its_directory():
     assert normalize.pretty_title("tutorials/gis/index.md") == "Gis"
     # Nothing above it to borrow a name from.
     assert normalize.pretty_title("index.md") == "Index"
+
+
+class TestTheUrlAScrapeClaims:
+    """That string becomes the `href` of every citation to the page.
+
+    Whatever followed `URL:` was taken verbatim, so a scrape that wrote a relative path
+    produced citations pointing at something that is not a page, and `javascript:` would
+    have gone into a markdown link inside an answer. All 55 bundled scrapes carry an
+    `https://` URL, so this changes nothing today — it is about the day the scraper's
+    output shifts.
+    """
+
+    def page(self, url_line: str) -> str:
+        return f"{url_line}\nTitle: Midway2 | RCC\n{'=' * 40}\nbody text here"
+
+    def test_an_https_url_is_kept(self):
+        url, title, body = normalize.parse_scraped(
+            self.page("URL: https://rcc.uchicago.edu/midway2")
+        )
+        assert url == "https://rcc.uchicago.edu/midway2"
+        assert title == "Midway2"
+        assert "body text here" in body
+
+    def test_http_is_kept_too(self):
+        url, _title, _body = normalize.parse_scraped(
+            self.page("URL: http://rcc.uchicago.edu/midway2")
+        )
+        assert url == "http://rcc.uchicago.edu/midway2"
+
+    @pytest.mark.parametrize(
+        "claimed",
+        ["javascript:alert(1)", "data:text/html,<script>x</script>",
+         "file:///etc/passwd", "/relative/path", "rcc.uchicago.edu/no-scheme", ""],
+    )
+    def test_anything_else_is_treated_as_absent(self, claimed):
+        """Absent falls back to the source's base_url — a link to the site root is a
+        worse citation than a deep one and a better one than a broken href."""
+        url, _title, body = normalize.parse_scraped(self.page(f"URL: {claimed}"))
+        assert url == ""
+        assert "body text here" in body
+
+    def test_the_body_still_starts_after_the_rule(self):
+        """Rejecting the URL must not move where the body begins."""
+        _url, _title, body = normalize.parse_scraped(self.page("URL: /relative"))
+        assert body.strip() == "body text here"

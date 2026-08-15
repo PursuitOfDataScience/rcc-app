@@ -89,8 +89,12 @@ def report(measured: dict) -> None:
 
     broken = measured["unresolvable_ids"]
     urlless = measured["chunks_without_url"]
+    malformed = measured["malformed_urls"]
     print(f"\nintegrity   ids that do not resolve {len(broken)}   "
-          f"chunks with no URL {len(urlless)}")
+          f"chunks with no URL {len(urlless)}   "
+          f"unusable URLs {len(malformed)}")
+    for row in malformed[:5]:
+        print(f"   {row['why']}: {row['id']} -> {row['url']}")
     for identifier in broken[:5]:
         print(f"   unresolvable: {identifier}")
     for identifier in urlless[:5]:
