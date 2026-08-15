@@ -518,3 +518,32 @@ class TestTheHarnessOwnBound:
         record = turn()
         assert record["unfinished"] is False
         assert record["outcome"] == "answered"
+
+
+class TestReadingTheFailureKindBackOut:
+    """`turn.run` keeps the kind to itself and puts only the message in session state.
+
+    The bench reads it back through a table built the same way the exception builds the
+    message, so a reworded message cannot silently stop matching. What that table cannot
+    survive is two kinds sharing one message: the dict collapses, and every failure of the
+    losing kind is reported as the winner. Nine kinds, nine entries today.
+    """
+
+    def test_every_kind_round_trips(self):
+        from sage import llm
+
+        table = harness._kinds_by_message()
+        for kind in llm._MESSAGES:
+            assert table.get(llm.AssistantError(kind).user_message) == kind, kind
+
+    def test_no_two_kinds_share_a_message(self):
+        from sage import llm
+
+        table = harness._kinds_by_message()
+        assert len(table) == len(llm._MESSAGES), (
+            "two kinds share a user-facing message, so one of them can never be "
+            "reported: " + str(sorted(set(llm._MESSAGES) - set(table.values())))
+        )
+
+    def test_an_unknown_message_does_not_masquerade_as_a_kind(self):
+        assert harness._kinds_by_message().get("something else entirely") is None

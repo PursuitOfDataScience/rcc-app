@@ -9,10 +9,16 @@ deployment's settings behaving the same way whichever module happens to read the
 
 from __future__ import annotations
 
+import math
 import os
 
 _TRUE = ("1", "true", "yes", "on")
-_FALSE = ("0", "false", "no", "")
+# `off` was missing while `on` was listed, which is the one asymmetry this pair exists to
+# prevent: `SAGE_ZEN_FREE_ONLY=off` on a profile whose value is `true` kept the default and
+# went on filtering the lineup, silently doing the opposite of what was asked. Every flag
+# in the repository happens to default to False today, so nothing changed behaviour — but
+# the profile's `free_only = true` is exactly a True default reached through this reader.
+_FALSE = ("0", "false", "no", "off", "")
 
 
 def text(name: str, default: str = "") -> str:
@@ -38,12 +44,23 @@ def integer(name: str, default: int, minimum: int | None = None) -> int:
 
 
 def number(name: str, default: float, minimum: float | None = None) -> float:
+    """A float setting, falling back to `default` on anything unusable.
+
+    `nan` and `inf` are unusable, and `float()` accepts both — which matters more here
+    than it looks. Every comparison with `nan` is False, so the `minimum` guard below
+    waved it through, and so does every threshold it is later compared against:
+    `SAGE_MIN_CONFIDENT_SCORE=nan` makes `top_score < min_confident_score` False for
+    every query, which switches the refusal gate off in silence. A mistyped variable
+    should not be able to disable a guard.
+    """
     raw = os.getenv(name)
     if raw is None or not raw.strip():
         return default
     try:
         value = float(raw)
     except ValueError:
+        return default
+    if not math.isfinite(value):
         return default
     return default if minimum is not None and value < minimum else value
 

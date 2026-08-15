@@ -121,6 +121,14 @@ class TestSurvivingFooter:
 
 
 class TestBareTitleCitations:
+    """Asked of the occurrence, not of the text before it.
+
+    The rule looked back for the nearest `[` and accepted any `](` within forty
+    characters, so a link *anywhere earlier in the line* marked every later bare title as
+    linked. Answers usually carry a link in their first sentence, so the check was inert:
+    three findings across 173 real answers.
+    """
+
     SOURCES = [{"label": "Running jobs on RCC clusters", "url": "https://x/#a"}]
 
     def test_a_section_named_in_plain_text(self):
@@ -132,6 +140,39 @@ class TestBareTitleCitations:
     def test_the_same_title_inside_a_link_is_fine(self):
         assert checks.bare_title_citations(
             "See [Running jobs on RCC clusters](docs/slurm/main.md).", self.SOURCES
+        ) == []
+
+    def test_an_earlier_link_does_not_excuse_a_later_bare_title(self):
+        """The false negative that made this check inert."""
+        text = (
+            "Start with [the overview](docs/index.md), " + "and read on. " * 6
+            + "Running jobs on RCC clusters has the flags."
+        )
+        found = checks.bare_title_citations(text, self.SOURCES)
+        assert [item.kind for item in found] == ["bare-title-citation"]
+
+    def test_a_link_whose_label_is_something_else_does_not_excuse_it(self):
+        text = (
+            "See [the GPU section](docs/slurm/sbatch.md) — "
+            "Running jobs on RCC clusters is the page."
+        )
+        found = checks.bare_title_citations(text, self.SOURCES)
+        assert [item.kind for item in found] == ["bare-title-citation"]
+
+    def test_a_title_quoted_as_a_literal_is_not_a_citation(self):
+        assert checks.bare_title_citations(
+            "Search for `Running jobs on RCC clusters` in the sidebar.", self.SOURCES
+        ) == []
+
+    def test_a_title_inside_a_code_block_is_not_a_citation(self):
+        assert checks.bare_title_citations(
+            "```\nRunning jobs on RCC clusters\n```", self.SOURCES
+        ) == []
+
+    def test_a_nested_bracket_in_the_label_still_counts_as_linked(self):
+        sources = [{"label": "Batch jobs [beta]", "url": "https://x/"}]
+        assert checks.bare_title_citations(
+            "See [Batch jobs [beta]](docs/slurm/sbatch.md).", sources
         ) == []
 
 
@@ -381,3 +422,34 @@ class TestTablesAreNotParagraphs:
             "the two commands, which the shell reads as a pipeline rather than as text.\n"
         )
         assert checks.prose_paragraphs(text)
+
+
+class TestAOneWordTitleIsAlsoAnOrdinaryNoun:
+    """`links._source_names` already knew this, and its floor is words, not characters.
+
+    `Charliecloud` is a page title *and* the name of a container runtime, so "RCC supports
+    Singularity/Apptainer and **Charliecloud**" was reported as a bare citation three times
+    across 173 real answers. A character floor let every long single word through.
+    """
+
+    def test_a_single_word_title_is_not_a_citation(self):
+        sources = [{"label": "Charliecloud", "url": "https://x/"}]
+        text = (
+            "RCC supports two container runtimes on Midway3: **Singularity/Apptainer** "
+            "and **Charliecloud**. Both pull and run images."
+        )
+        assert checks.bare_title_citations(text, sources) == []
+
+    def test_a_two_word_title_still_counts(self):
+        sources = [{"label": "Interactive jobs", "url": "https://x/"}]
+        text = "All of the above comes from the documentation page Interactive jobs."
+        assert [
+            item.kind for item in checks.bare_title_citations(text, sources)
+        ] == ["bare-title-citation"]
+
+    def test_a_hyphenated_pair_counts_as_two_words(self):
+        sources = [{"label": "Data-transfer", "url": "https://x/"}]
+        text = "The page Data-transfer covers it in full, with examples for each tool."
+        assert [
+            item.kind for item in checks.bare_title_citations(text, sources)
+        ] == ["bare-title-citation"]

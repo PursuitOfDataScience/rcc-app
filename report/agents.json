@@ -177,8 +177,7 @@
    },
    "warning_kinds": {
     "uncited-paragraph": 18,
-    "h1-heading": 2,
-    "bare-title-citation": 1
+    "h1-heading": 2
    },
    "refusal_correct": 0.8333333333333334,
    "n_negatives_answered": 6,
@@ -215,7 +214,6 @@
    "warning_kinds": {
     "uncited-paragraph": 26,
     "unsupported-token": 1,
-    "bare-title-citation": 1,
     "refused-without-contact": 2
    },
    "refusal_correct": 0.6666666666666666,
@@ -257,7 +255,6 @@
     "unsupported-token": 2,
     "uncited-paragraph": 22,
     "h1-heading": 13,
-    "bare-title-citation": 1,
     "refused-without-contact": 2
    },
    "refusal_correct": 0.75,

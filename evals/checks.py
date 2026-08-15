@@ -60,6 +60,11 @@ _INLINE_CODE = re.compile(r"`([^`\n]+)`")
 # The target half of a markdown link, so a citation is never mistaken for a claim about
 # the filesystem.
 _MARKDOWN_TARGET = re.compile(r"\]\([^)\s]+\)")
+# The whole link, with the label as group 1 — one level of nesting inside it, because
+# `[Batch jobs [beta]](docs/…)` is a link a model writes.
+_MD_LINK = re.compile(
+    r"\[((?:[^\[\]]|\[[^\[\]]*\])+)\]\(\s*[^)\s]+(?:\s+\"[^\"]*\")?\s*\)"
+)
 _LONG_FLAG = re.compile(r"--[A-Za-z][\w-]*")
 # The lookbehind is load-bearing. Without it, prose using a slash to mean "or" — "check
 # GPUs/CPUs/memory", "Midway2/3/SSD" — matched as `/CPUs/memory` and `/3/SSD` and was
@@ -313,16 +318,28 @@ def bare_title_citations(text: str, sources: list[dict] | None) -> list[Finding]
     """
     findings = []
     plain = _FENCED.sub("\n", text)
+    # Where a link's *label* sits, and where code spans sit. Asked of this occurrence
+    # rather than of the text before it: the old rule looked back for the nearest `[` and
+    # accepted any `](` within forty characters, so a link anywhere earlier in the line
+    # marked every later bare title as linked — and since answers usually carry a link in
+    # their first sentence, the check was inert. It fired three times in 173 real answers.
+    labels = [match.span(1) for match in _MD_LINK.finditer(plain)]
+    code = _spans(_INLINE_CODE, plain)
     for source in sources or []:
         label = str(source.get("label", "")).strip()
-        if len(label) < 8:
+        # Two words, not eight characters — the same floor `links._source_names` applies
+        # to its inline rule, and for the reason its docstring gives: a one-word title is
+        # also an ordinary noun. `Charliecloud` is a page title *and* the name of a
+        # container runtime, so "RCC supports Singularity and **Charliecloud**" was
+        # reported as a citation three times in 173 answers. A character count let every
+        # long single word through; the app's own rule already knew better.
+        if len(re.findall(r"[^\W_]+", label)) < 2:
             continue
         for match in re.finditer(re.escape(label), plain):
-            before = plain.rfind("[", 0, match.start())
-            linked = before != -1 and "](" in plain[before:match.end() + 40]
-            if not linked:
-                findings.append(Finding("bare-title-citation", label, WARNING))
-                break
+            if _inside(match.start(), labels) or _inside(match.start(), code):
+                continue        # inside the link that cites it, or quoted as a literal
+            findings.append(Finding("bare-title-citation", label, WARNING))
+            break
     return findings
 
 

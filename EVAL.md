@@ -309,7 +309,17 @@ Two more corrections came out of the second run, and the second one matters most
   answer says the thing is not there, and the refusal detector recognises the redirect.
   Eleven reports became five.
 
-And one more from a later pass: **a markdown table counted as an uncited paragraph.**
+Two more from later passes. **`bare-title-citation` was inert**: it looked back for the
+nearest `[` and accepted any `](` within forty characters, so a link anywhere earlier in
+the line marked every later bare title as linked — and answers usually carry a link in
+their first sentence. Asked of the occurrence instead (is it inside a link's *label*, or a
+code span?) it found more than twice as many. Three of the new ones were then false
+positives: `Charliecloud` is a page title *and* the name of a container runtime, so
+"supports Singularity and **Charliecloud**" read as a citation. `links._source_names`
+already documents that trap and floors its inline rule at two *words*; this check was
+counting characters. Four genuine findings remain in 173 answers.
+
+And: **a markdown table counted as an uncited paragraph.**
 Models reach for a table constantly and a table makes no claim in prose, so the check was
 charging them for formatting — 29 of 383 warnings across 173 real answers, measured by
 running the check both ways over the same transcripts.
