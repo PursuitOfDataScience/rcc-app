@@ -172,6 +172,43 @@ class TestNothingUnderSageNamesTheSubject:
             f"{offences[:5]}"
         )
 
+    def test_no_module_names_a_tree_or_a_provider_this_profile_invented(self, profile):
+        """The leak the branded-word list above cannot see.
+
+        `BRANDED` catches a string that *looks* like this deployment. It cannot catch one
+        that is deployment-specific only because the profile says so: `links.resolve`
+        carried `for source in ("docs", "web")` — two ordinary English words that mean the
+        RCC's user guide and the RCC's scraped site, and nothing anywhere else. A second
+        deployment naming its trees anything else silently lost every bare-path citation.
+
+        Registry keys are excluded rather than exempted by name: `reader = "markdown"`,
+        `links = "mkdocs"`, `kind = "mistral"` are all profile values that *must* appear in
+        `sage/`, because that is where the implementation registers itself. What must not
+        appear is a name the deployment chose freely — a tree's name, a provider's name.
+        (`mistral` is both here, which is why the exclusion is a set difference and not a
+        list of pardons.)
+        """
+        chosen = {source.name for source in profile.sources}
+        chosen |= {entry.name for entry in profile.providers}
+        registered = {source.reader for source in profile.sources}
+        registered |= {source.links for source in profile.sources}
+        registered |= {entry.kind for entry in profile.providers}
+        registered.add(profile.retrieval.engine)
+        arbitrary = chosen - registered
+        assert arbitrary, "the profile declares no name of its own to check for"
+        offences = sorted(
+            {
+                (os.path.relpath(path, SAGE), text)
+                for path in self.modules()
+                for text in self.literals(path)
+                if text in arbitrary
+            }
+        )
+        assert not offences, (
+            "these are names this profile chose, hardcoded in the package: "
+            f"{offences[:5]}"
+        )
+
     def test_the_shipped_profile_is_where_it_all_lives(self, profile):
         """…and the counterpart: the profile really does say all of it."""
         text = "\n".join(
