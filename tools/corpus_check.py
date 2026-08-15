@@ -44,6 +44,14 @@ def report(measured: dict) -> None:
             print(f"   {row['kind']} {row['name']!r} at {row['where']}; "
                   f"registered: {', '.join(row['registered'])}")
 
+    braces = measured["unrendered_placeholders"]
+    if braces:
+        print(f"\nUNRENDERED PLACEHOLDERS ({len(braces)}) — sent to the model as literal text")
+        for row in braces:
+            note = "a profile field that is never substituted" if row["is_a_profile_field"] \
+                   else "not a profile field; a typo or an intentional brace"
+            print(f"   {{{row['placeholder']}}}  — {note}")
+
     nothing = measured["indexing_nothing"]
     print(f"\nindexed nothing ({len(nothing)}) — read, and no section came out")
     for page in nothing:

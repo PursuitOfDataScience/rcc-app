@@ -345,10 +345,38 @@ def unregistered_names(profile) -> list[dict]:
     return wrong
 
 
+def unrendered_placeholders(profile) -> list[dict]:
+    """`{placeholder}` left in the rendered system prompt, naming a real profile field.
+
+    `prompts.render` substitutes a fixed list of six names and leaves anything else alone
+    on purpose — a prompt is prose a non-programmer edits, and a stray brace in
+    `${SLURM_JOB_ID}` must read as a brace rather than raise on the first turn. The cost of
+    that choice is silent: six `Identity` fields are never substituted, so a profile author
+    writing `{corpus_name}` — a documented field, and a reasonable thing to want in a
+    prompt — sends a literal `{corpus_name}` to the model on every turn with nothing saying
+    so.
+
+    Both shipped prompts are clean. This is for the second deployment, which is the one
+    that would meet it.
+    """
+    import dataclasses
+    import re
+
+    from sage import prompts
+
+    known = {field.name for field in dataclasses.fields(profile.identity)}
+    rendered = prompts.system_prompt(profile)
+    return [
+        {"placeholder": name, "is_a_profile_field": name in known}
+        for name in sorted(set(re.findall(r"\{(\w+)\}", rendered)))
+    ]
+
+
 def measure(corpus, index) -> dict:
     asked = [case.text for case in questions()] + [case.text for case in identifiers()]
     return {
         "unregistered_names": unregistered_names(_active()),
+        "unrendered_placeholders": unrendered_placeholders(_active()),
         "chunks": index.total,
         "sources": sources(corpus),
         "empty_documents": empty_documents(),

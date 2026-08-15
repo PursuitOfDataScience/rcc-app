@@ -210,6 +210,52 @@ class TestMistralAdapter:
         assert "".join(c.text for c in chunks) == "hi"
         assert managed.entered and managed.exited
 
+    def test_choices_as_an_object_does_not_raise(self):
+        """The same shape that was a `KeyError: 0` in the JSON adapter, in the SDK one.
+
+        A raise from inside this generator is not recoverable by the time it is seen:
+        `Turn.deltas` can only classify it as an unknown failure, and the half-streamed
+        answer already on screen is discarded and replaced with "something went wrong" at
+        the very end of it. Both adapters normalise onto the same `Chunk`, and only one had
+        been taught to distrust its input — this SDK's shapes have moved between 0.x, 1.x
+        and 2.x before.
+        """
+        stream = iter([SimpleNamespace(data=SimpleNamespace(choices={"delta": 1}))])
+        assert list(self._provider(stream).stream("m", [], None)) == []
+
+    def test_choices_as_a_string_does_not_raise(self):
+        stream = iter([SimpleNamespace(data=SimpleNamespace(choices="soon"))])
+        assert list(self._provider(stream).stream("m", [], None)) == []
+
+    def test_a_stream_survives_a_bad_event_in_the_middle(self):
+        stream = iter([
+            self._event("be"),
+            SimpleNamespace(data=SimpleNamespace(choices={"x": 1})),
+            self._event("fore"),
+        ])
+        chunks = list(self._provider(stream).stream("m", [], None))
+        assert "".join(chunk.text for chunk in chunks) == "before"
+
+    def test_a_finish_only_event_carries_no_delta(self):
+        """`delta` is None on the last event of some builds."""
+        stream = iter([SimpleNamespace(
+            data=SimpleNamespace(choices=[SimpleNamespace(delta=None)])
+        )])
+        chunks = list(self._provider(stream).stream("m", [], None))
+        assert [(chunk.text, chunk.tool_calls) for chunk in chunks] == [("", [])]
+
+    def test_content_arriving_as_parts_is_flattened(self):
+        """Mistral's newer content shape is a list of parts rather than a string."""
+        delta = SimpleNamespace(
+            content=[SimpleNamespace(text="a"), SimpleNamespace(text="b")],
+            tool_calls=None,
+        )
+        stream = iter([SimpleNamespace(
+            data=SimpleNamespace(choices=[SimpleNamespace(delta=delta)])
+        )])
+        chunks = list(self._provider(stream).stream("m", [], None))
+        assert "".join(chunk.text for chunk in chunks) == "ab"
+
     def test_malformed_events_are_skipped(self):
         stream = iter([
             SimpleNamespace(data=None),

@@ -1,5 +1,5 @@
 {
- "commit": "f670385",
+ "commit": "12b577c",
  "retrieval": {
   "n": 33,
   "recall@5": 1.0,
@@ -156,9 +156,9 @@
   "tests": {
    "ok": true,
    "code": 0,
-   "tail": "...................................................................      [100%]"
+   "tail": ".                                                                        [100%]"
   },
-  "collected": 931
+  "collected": 937
  },
  "layout": "unmeasured",
  "agents": {

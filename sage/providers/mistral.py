@@ -56,9 +56,18 @@ class MistralProvider:
         try:
             for event in source:
                 data = getattr(event, "data", None)
-                if not data or not getattr(data, "choices", None):
+                choices = getattr(data, "choices", None) if data else None
+                # A list, checked before it is indexed, and the same guard the
+                # OpenAI-compatible adapter carries. Without it `choices` arriving as an
+                # object was a `KeyError: 0` — raised from inside this generator, which
+                # `Turn.deltas` can only classify as an unknown failure: the half-streamed
+                # answer already on screen is discarded and replaced with "something went
+                # wrong" at the very end of it. The two adapters normalise onto the same
+                # `Chunk` and had different amounts of scepticism about their input; this
+                # SDK's shapes have moved between 0.x, 1.x and 2.x before.
+                if not isinstance(choices, (list, tuple)) or not choices:
                     continue
-                delta = data.choices[0].delta
+                delta = getattr(choices[0], "delta", None)
                 yield Chunk(
                     text=flatten(getattr(delta, "content", None)),
                     tool_calls=tool_fragments(getattr(delta, "tool_calls", None)),

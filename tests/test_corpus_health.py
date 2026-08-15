@@ -74,6 +74,22 @@ class TestIntegrity:
         for name, row in measured["sources"].items():
             assert row["chunks"] > 0, f"{name} indexed nothing"
 
+    def test_no_profile_field_is_left_as_a_literal_brace(self, measured):
+        """`prompts.render` substitutes six names and leaves the rest alone by design.
+
+        The cost is silent: a profile author writing `{corpus_name}` — a documented field —
+        sends the braces to the model. Both shipped prompts are clean; this is the check a
+        second deployment needs, and it only fails on a placeholder that names a real field.
+        """
+        missed = [
+            row["placeholder"] for row in measured["unrendered_placeholders"]
+            if row["is_a_profile_field"]
+        ]
+        assert not missed, (
+            "these name profile fields but reach the model as literal text: "
+            + ", ".join(f"{{{name}}}" for name in missed)
+        )
+
     def test_every_registry_name_the_profile_uses_exists(self, measured):
         """A typo caught as one line with the valid names beside it.
 
