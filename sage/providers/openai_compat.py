@@ -184,7 +184,13 @@ def parse_sse(lines: Iterator[str]) -> Iterator[Chunk]:
             return
         try:
             event = json.loads(body)
-        except json.JSONDecodeError:
+        except (json.JSONDecodeError, RecursionError):
+            # `RecursionError`, because that is what `json.loads` raises on deep nesting
+            # instead of a decode error — and this is the third site of the same gap
+            # (`llm._parse` and `files.process` are the others). It matters most here for
+            # the reason the comment below gives about `[DONE]`: a raise escapes this
+            # generator, so `Turn.deltas` can only call it an unknown failure, and a
+            # half-streamed answer already on the reader's screen is discarded.
             logger.warning("Skipping unparseable stream event: %r", body[:200])
             continue
         # Parsed is not the same as shaped. `data: "[DONE]"` — quoted, which some

@@ -312,3 +312,58 @@ def test_truncation_is_the_one_thing_a_chip_still_reports():
     assert error is None
     assert attachment.truncated
     assert attachment.summary == "truncated"
+
+
+class TestNoUploadCanTakeTheAppDown:
+    """`process` promises "(attachment, error). Exactly one of the two is set."
+
+    Anything that raises instead breaks that contract in the worst available place. It is
+    called from `ui/uploads.py` during a page render, and the file stays selected in the
+    widget afterwards — so the next rerun processes it again and raises again. Not one
+    failed upload: a session that cannot be recovered without clearing the uploader.
+
+    `json.loads` recurses once per nesting level and raises `RecursionError`, which is not
+    a `ValueError`, so the `.json` reformat let it straight through. 60 000 brackets is
+    120 KB, comfortably inside the upload limit.
+    """
+
+    DEEP = (b"[" * 60_000) + (b"]" * 60_000)
+
+    def test_deeply_nested_json_is_kept_rather_than_raising(self):
+        attachment, error = files.process("payload.json", self.DEEP)
+        assert error is None
+        assert attachment.kind == "text"
+
+    def test_and_its_content_is_not_lost(self):
+        """Reformatting is a nicety; failing at it means send the file as it came."""
+        attachment, _error = files.process("payload.json", self.DEEP)
+        assert attachment.text.startswith("[[[")
+        assert len(attachment.text) >= config.MAX_FILE_TEXT_CHARS - 100
+
+    def test_a_notebook_gets_the_same_treatment(self):
+        """`.ipynb` goes down the same branch, and a notebook is JSON somebody
+        generated — the shape most likely to be deep by accident."""
+        attachment, error = files.process("run.ipynb", self.DEEP)
+        assert error is None
+        assert attachment.kind == "text"
+
+    def test_ordinary_json_is_still_pretty_printed(self):
+        """The fix must not cost the feature it guards."""
+        attachment, _error = files.process("a.json", b'{"b":1,"a":[2,3]}')
+        assert attachment.text == '{\n  "b": 1,\n  "a": [\n    2,\n    3\n  ]\n}'
+
+    @pytest.mark.parametrize("name,data", [
+        ("deep.json", (b"[" * 60_000) + (b"]" * 60_000)),
+        ("deep.ipynb", (b"{\"a\":" * 20_000) + b"1" + (b"}" * 20_000)),
+        ("truncated.pdf", b"%PDF-1.7\nnot really a pdf"),
+        ("empty-ish.json", b" "),
+        ("bom.txt", b"\xff\xfe" + "hello".encode("utf-16-le")),
+        ("one-line.log", b"x" * 200_000),
+        ("high-bytes.txt", bytes(range(128, 256)) * 4),
+    ])
+    def test_no_hostile_upload_raises(self, name, data):
+        """The contract itself, over the shapes most likely to break it."""
+        attachment, error = files.process(name, data)
+        assert (attachment is None) != (error is None), (
+            "exactly one of attachment and error must be set"
+        )

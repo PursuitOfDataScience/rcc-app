@@ -245,3 +245,27 @@ def test_tool_result_message_shape():
         "name": "read_doc",
         "content": "content here",
     }
+
+
+class TestToolArgumentsAreWhateverTheModelEmitted:
+    """`_parse` is the boundary between a model's free text and a dict the loop assumes.
+
+    A model that has started repeating itself emits exactly `[[[[[…`, and `json.loads`
+    answers deep nesting with `RecursionError` rather than a decode error — so it left
+    `_parse`, which nothing above it expects to raise, and took the turn down as an
+    unknown failure. Arguments this cannot read are already an empty dict, which each tool
+    answers with its own message to the model.
+    """
+
+    def test_deeply_nested_arguments_are_an_empty_dict(self):
+        assert llm._parse("[" * 60_000 + "]" * 60_000) == {}
+
+    def test_a_deeply_nested_object_too(self):
+        assert llm._parse('{"a":' * 20_000 + "1" + "}" * 20_000) == {}
+
+    def test_ordinary_arguments_still_parse(self):
+        assert llm._parse('{"query": "storage quota"}') == {"query": "storage quota"}
+
+    def test_a_json_value_that_is_not_an_object_is_still_an_empty_dict(self):
+        assert llm._parse('"[DONE]"') == {}
+        assert llm._parse("[1, 2]") == {}

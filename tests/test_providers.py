@@ -561,3 +561,17 @@ class TestAStreamThatIsNotShapedLikeAStream:
             {"index": 0, "id": "c1", "name": "search_docs",
              "arguments": '{"query":"gpu"}'}
         ]
+
+    def test_a_deeply_nested_event_is_skipped_not_raised(self):
+        """`json.loads` raises `RecursionError` on deep nesting, not a decode error.
+
+        So the `except json.JSONDecodeError` above it did not catch it, and the raise
+        escaped the generator — the failure this whole class is about. The event after it
+        must still arrive, because that is what a discarded stream costs the reader.
+        """
+        deep = "[" * 60_000 + "]" * 60_000
+        chunks = list(providers.parse_sse(iter([
+            f"data: {deep}",
+            'data: {"choices":[{"delta":{"content":"hi"}}]}',
+        ])))
+        assert [chunk.text for chunk in chunks] == ["hi"]

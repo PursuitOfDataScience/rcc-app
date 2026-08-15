@@ -221,7 +221,13 @@ def _parse(arguments: str) -> dict:
         return {}
     try:
         parsed = json.loads(arguments)
-    except json.JSONDecodeError:
+    except (json.JSONDecodeError, RecursionError):
+        # `RecursionError` is the one `json.loads` raises on deep nesting rather than a
+        # decode error, and tool arguments are a *model's* free text: a model that has
+        # started repeating itself emits exactly `[[[[[…`. Unguarded it left this
+        # function, which the whole tool loop assumes returns a dict, and took the turn
+        # down as an unknown failure. Arguments this cannot read are already an empty
+        # dict, and each tool answers that with its own error message to the model.
         logger.warning("Unparseable tool arguments: %r", arguments[:200])
         return {}
     return parsed if isinstance(parsed, dict) else {}

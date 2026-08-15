@@ -339,8 +339,19 @@ def process(filename: str, data: bytes) -> tuple[Attachment | None, str | None]:
     if lowered.endswith((".json", ".ipynb")):
         try:
             text = json.dumps(json.loads(text), indent=2)
-        except ValueError:
-            pass  # not valid JSON; send it through as-is
+        except (ValueError, RecursionError):
+            # `RecursionError` because `json.loads` recurses per nesting level and
+            # raises it, not a `ValueError`, on something like `[[[[…]]]]` — 60 000
+            # brackets is 120 KB, well inside the upload limit. It escaped `process`,
+            # whose docstring promises a `(attachment, error)` pair, up through
+            # `ui/uploads.py` and out of the script run. The file stays selected in the
+            # widget, so every rerun re-processed it and raised again: not one failed
+            # upload but a session that cannot be recovered without clearing it.
+            #
+            # Reformatting is a nicety — it makes a minified file readable — so any
+            # failure of it means send the file as it came, which is what the
+            # unparseable branch always did.
+            pass
 
     text, truncated = _truncate(text, "File")
     return Attachment(filename, "text", text, 0, truncated), None
