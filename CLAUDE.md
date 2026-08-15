@@ -64,9 +64,10 @@ httpx. Outbound HTTPS works. Chromium is at
 `~/.cache/ms-playwright/chromium-1217/chrome-linux64/chrome`.
 
 - **Lint**: `ruff check .`
-- **Tests**: `python -m pytest -q` — 765 collected, 1 xpass and 6 xfails (the refusal
-  gate's recorded leaks, and one lexical gap in the retrieval eval). Real pytest; no shim
-  is needed.
+- **Tests**: `python -m pytest -q` — all pass. The xfails are the refusal gate's recorded
+  leaks plus one lexical gap in the retrieval eval, and an xpass there is news rather than
+  a failure. No total is written down here: it went stale three times in a week, and the
+  number the suite reports is the one that is true.
 - **Layout**: `SAGE_CHROME=~/.cache/ms-playwright/chromium-1217/chrome-linux64/chrome
   python tools/render_check.py` — ~7 minutes for 660 renders.
 - **Anchors**: `python tools/anchor_check.py` — network-bound, so not in the suite.

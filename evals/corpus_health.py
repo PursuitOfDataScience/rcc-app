@@ -98,7 +98,7 @@ def indexing_nothing(corpus) -> list[str]:
     page excluded on purpose (`exclude_files`, `exclude_hosts` — the publication dumps and
     the radiology scrape) never becomes a Document at all, while a page that was read and
     yielded nothing becomes one with no chunks. A first attempt walked the tree and
-    reported all thirteen deliberate exclusions as problems.
+    reported all twelve deliberate exclusions as problems.
     """
     with_chunks = {f"{chunk.source}/{chunk.path}" for chunk in corpus.chunks}
     return sorted(page for page in corpus.documents if page not in with_chunks)

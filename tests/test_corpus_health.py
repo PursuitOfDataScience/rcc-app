@@ -111,7 +111,7 @@ class TestPagesThatYieldNothing:
 
     A page excluded on purpose never becomes a Document; a page that was read and produced
     nothing becomes one with no chunks. A first version of this walked the tree and
-    reported all thirteen deliberate exclusions — the publication dumps and the radiology
+    reported all twelve deliberate exclusions — the publication dumps and the radiology
     scrape — as problems.
     """
 

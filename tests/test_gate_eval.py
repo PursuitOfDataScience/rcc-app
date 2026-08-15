@@ -32,7 +32,7 @@ from evals import gate
 # `tools/gate_check.py --sweep` showed no pair could — but telling an unfamiliar word
 # that *names* something from one that carries a value. See EVAL.md.
 MINIMUM_CAVEAT_RECALL = 0.84    # measured 0.867 (39 of 45)
-MAXIMUM_OVER_REFUSAL = 0.04     # measured 0.026 (2 of 77)
+MAXIMUM_OVER_REFUSAL = 0.04     # measured 0.026 (2 of 78)
 MINIMUM_RECALL_AT_5 = 0.96      # measured 0.985
 
 

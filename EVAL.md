@@ -51,6 +51,14 @@ already worked this way and it is the right instinct.
 | `tools/render_check.py` | UI | Chrome | 660 renders (predates this) |
 | `tools/palette_check.py` | UI | — | declared colours against the baseline (predates this) |
 
+`tests/test_documented_numbers.py` closes the loop on this file: the set sizes and the
+gate's three rates stated below are checked against a live measurement, because six passes
+of edits left this document claiming 77 answerable questions over a set of 78, and a ratchet
+comment quoting the same stale denominator. Only figures that move when the *datasets or the
+gate* move are pinned — a test total changes on every commit that adds a test, so gating one
+would teach people to edit the number rather than read the failure. That total is no longer
+written down anywhere.
+
 Under `pytest`, and therefore in CI: `test_gate_eval.py` (the gate, ratcheted),
 `test_answer_checks.py` (every answer check, in both directions),
 `test_bench_harness.py` (the instrument, calibrated), `test_corpus_health.py` (Axis C),
@@ -91,7 +99,7 @@ six-character floor because `boot` appears 27 times), and a term the **profile's
 synonym table** names is vocabulary the deployment declared — `scavenge` is in the RCC
 groups and in none of its pages, because the documentation says preemptible.
 
-Result on 45 labelled negatives and 77 answerable questions: **caveat recall 36.8% →
+Result on 45 labelled negatives and 78 answerable questions: **caveat recall 36.8% →
 86.7%, over-refusal unchanged at 2.6%, recall@5 unchanged at 98.5%.** `tests/test_retrieval.py::TestNamingAnUnknownThing` pins every signal in both
 directions — one test per rule, and one per case it must not fire on.
 
