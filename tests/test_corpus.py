@@ -274,6 +274,44 @@ class TestABlockWithNoParagraphBreak:
         _doc, chunks = self.read(f"# T\n\n{body}")
         assert len(chunks) == 1
 
+    def scraped(self, body: str):
+        from sage.corpus.readers import read as read_file
+        from sage.profile import active
+
+        head = "URL: https://rcc.uchicago.edu/x\nTitle: X | RCC\n" + "=" * 40 + "\n"
+        return read_file(active().source("web"), "p.txt", head + body)
+
+    def test_the_scraped_windower_has_the_same_bound(self):
+        """The same hole, in the reader more likely to meet it.
+
+        The windowing loop only cuts when a buffer is already open, so a paragraph longer
+        than the window arriving on an empty buffer is kept whole: one unbroken line became
+        one 100 KB window against a 2 400 cap. This source is machine-generated — one
+        HTML-to-text pass that flattens a table onto one line produces exactly that page.
+        """
+        for body in ("word " * 20000, "x" * 30000, "sentence. " * 5000):
+            _doc, chunks = self.scraped(body)
+            assert chunks
+            assert max(len(chunk.text) for chunk in chunks) <= config.WEB_CHUNK_CHARS
+
+    def test_ordinary_scraped_paragraphs_are_untouched(self):
+        body = "\n\n".join("para " + "word " * 40 for _ in range(20))
+        _doc, chunks = self.scraped(body)
+        assert len(chunks) == 2
+        assert max(len(chunk.text) for chunk in chunks) <= config.WEB_CHUNK_CHARS
+
+    def test_the_windows_are_still_numbered_from_one(self):
+        """Ids are `#1..#n` over the pieces, which is what `read_doc` resolves."""
+        _doc, chunks = self.scraped("word " * 20000)
+        assert [chunk.id.rsplit("#", 1)[-1] for chunk in chunks[:3]] == ["1", "2", "3"]
+
+    def test_no_web_chunk_in_the_real_corpus_exceeds_its_window(self, real_corpus):
+        over = [
+            chunk.id for chunk in real_corpus.chunks
+            if chunk.source == "web" and len(chunk.text) > config.WEB_CHUNK_CHARS
+        ]
+        assert not over, f"{len(over)} web chunks over the window cap: {over[:3]}"
+
     def test_no_chunk_in_the_real_corpus_exceeds_the_cap(self, real_corpus):
         over = [
             chunk.id for chunk in real_corpus.chunks

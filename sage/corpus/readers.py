@@ -267,6 +267,24 @@ def read_scraped(
     if buffer.strip():
         windows.append(buffer)
 
+    # The same bound the heading-split reader needs, for the same reason and by the same
+    # helper: a paragraph longer than the window is never cut by the loop above, because
+    # the `and buffer` guard means an oversized paragraph arriving on an empty buffer is
+    # simply kept. One unbroken line became one 100 KB window against a 2 400 cap.
+    #
+    # It matters more here than there. This source is machine-generated: `refresh-docs.sh`
+    # re-scrapes the site, and one HTML-to-text pass that emits a page without paragraph
+    # breaks — a flattened table, a minified block — produces exactly that page. Nothing
+    # downstream would bound it either, since `gather_context` puts whole chunk texts into
+    # a system message that `history.build` has already finished trimming.
+    #
+    # Inert on the bundled scrape: 83 windows, the largest 2 399 characters.
+    windows = [
+        piece
+        for window in windows
+        for piece in _hard_split(window, config.WEB_CHUNK_CHARS)
+    ]
+
     chunks = [
         Chunk(
             id=f"{source.name}/{rel_path}#{index + 1}",

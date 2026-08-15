@@ -23,6 +23,7 @@ from ..profile import Retrieval, active
 from .base import Assessment, Result, engines
 from .text import (
     _ALNUM_SPLIT,
+    STOPWORDS,
     Vocabulary,
     mentions,
     names_a_thing,
@@ -205,6 +206,13 @@ class Index:
             if weight < 1.0:
                 continue          # a synonym the reader never typed
             if self._knows(term):
+                continue
+            if term in STOPWORDS or surface.get(term, term) in STOPWORDS:
+                # A corpus not containing "how" says nothing about what it covers, and an
+                # unseen stopword has never been why a question was unanswerable. On a
+                # corpus whose prose is all declarative — most machine-generated
+                # documentation — "how", "do" and "I" are all unseen, and three unseen
+                # words against strong evidence refused every question asked of it.
                 continue
             versioned = self._versioned_unknown(term)
             if any(character.isdigit() for character in term) and not versioned:

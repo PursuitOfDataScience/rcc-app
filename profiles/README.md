@@ -107,11 +107,26 @@ engines.register("embeddings", lambda corpus, retrieval, documentation="": MyInd
 It needs `corpus`, `search(query, limit)` and `assess(query, results)`. Nothing else
 in the app has to change.
 
+### The two confidence numbers do not travel with the code
+
+`SAGE_MIN_CONFIDENT_SCORE` (20) and `SAGE_STRONG_SCORE` (26) decide when retrieval admits
+it is too weak to answer, and they are **measured against the corpus that ships**. BM25
+scores are unnormalised sums whose IDF term grows with the number of documents, so the same
+question scores lower on a smaller corpus: on a 61-page test manual an on-topic question
+whose every word is in the documentation scores about 15 and is caveated by the floor alone.
+
+A new deployment that is much smaller than the RCC User Guide will look as though it knows
+nothing. Lower the floor for it, and measure rather than guess — `tools/gate_check.py`
+reports both sides of the trade against your own question sets, and `--sweep` prints what
+every threshold pair would cost. `evals/README.md` explains the two files it reads.
+
 ## Checking a new profile
 
 ```bash
 python -c "from sage import runtime; r = runtime.build(); print(r.summary())"
 python tools/metrics.py          # retrieval quality against tests/test_retrieval_eval.py
+python tools/gate_check.py       # when it admits it cannot answer, and when it should
+python tools/corpus_check.py     # empty pages, duplicates, unusable citation URLs
 python tools/anchor_check.py     # every citation anchor resolves on the live site
 ```
 

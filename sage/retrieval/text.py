@@ -209,6 +209,31 @@ def mentions(query: str, stemmer=None) -> list[Mention]:
     return found
 
 
+# The one English word that is capitalised wherever it stands, so its capital says nothing
+# about whether it names anything. A corpus whose prose never uses the pronoun — most
+# machine-generated documentation — made `I` an unknown term, and a capital `I` away from a
+# sentence boundary then read as the name of a system the documentation had never heard of,
+# which refused every "how do I …" question outright. The RCC corpus contains it, in FAQ
+# headings like "I accidentally deleted a file", which is exactly why this never showed here.
+ALWAYS_CAPITAL = frozenset({"i"})
+
+# Words that discriminate nothing: a corpus not containing "how" says nothing about what the
+# corpus covers. `links._STOPWORDS` exists for the same reason and on the same grounds; an
+# unseen *stopword* has never been why a question was unanswerable — "how do I submit to the
+# turbo partition" is unanswerable because of `turbo`, not because of `how`.
+STOPWORDS = frozenset({
+    "a", "an", "the", "and", "or", "but", "if", "then", "than", "so", "as", "at", "by",
+    "for", "from", "in", "into", "of", "on", "onto", "to", "with", "without", "up",
+    "down", "out", "over", "under", "about", "is", "are", "was", "were", "be", "been",
+    "being", "am", "do", "does", "did", "doing", "done", "have", "has", "had", "having",
+    "can", "could", "will", "would", "shall", "should", "may", "might", "must",
+    "i", "me", "my", "mine", "we", "our", "ours", "you", "your", "yours", "it", "its",
+    "this", "that", "these", "those", "there", "here", "what", "which", "who", "whom",
+    "whose", "when", "where", "why", "how", "not", "no", "any", "some", "all", "each",
+    "get", "got", "use", "using", "used", "make", "made", "want", "need", "please",
+})
+
+
 # Prepositions that introduce the thing a question is about: "submit a job **with
 # qsub**", "load modules **on Perlmutter**". Deliberately short, and deliberately
 # without "by": "my job was killed **by slurmstepd**" reports what happened rather than
@@ -265,6 +290,8 @@ def names_a_thing(mention: Mention, *, versioned: bool) -> bool:
     """
     if versioned:
         return True
+    if mention.word.lower() in ALWAYS_CAPITAL:
+        return False
     if mention.capitalized and not (mention.after_boundary or mention.shouting):
         return True
     return mention.previous in NAMING_PREPOSITIONS
