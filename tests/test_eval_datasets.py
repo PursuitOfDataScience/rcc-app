@@ -50,6 +50,92 @@ class TestShape:
         assert evals.questions("asked")
 
 
+class TestTheGoldLabels:
+    """The answerable sets' own labels, which only the conversation set was holding.
+
+    `TestConversations.test_every_gold_page_is_indexed` does this for
+    `conversations.toml` and stops there — so the 78 labels that produce the recall
+    figure on the card were unchecked. Each failure here is silent in the direction that
+    reads as a pass:
+
+    A gold page with a typo in it can never be matched, so that question is a permanent
+    miss and recall@5 is understated forever with nothing to show why. A `must_mention`
+    token that appears nowhere on its own gold pages is a requirement no correct answer
+    can meet, so every model is charged a `missing-required-token` defect it had no way
+    to avoid — the dataset's version of a check that always fires. And a question in two
+    sets at once is labelled both answerable and unanswerable, and scored both ways.
+    """
+
+    def answerable(self):
+        return [*evals.questions(), *evals.identifiers()]
+
+    def test_every_gold_page_is_indexed(self, real_corpus):
+        known = {chunk.path for chunk in real_corpus.chunks}
+        missing = [
+            f"{case.text[:48]!r} -> {page}"
+            for case in self.answerable()
+            for page in getattr(case, "pages", ()) or ()
+            if page not in known
+        ]
+        assert not missing, "gold pages that are not indexed: " + "; ".join(missing)
+
+    def test_every_required_token_is_obtainable_from_its_own_gold_pages(
+        self, real_corpus
+    ):
+        by_page: dict[str, list[str]] = {}
+        for chunk in real_corpus.chunks:
+            by_page.setdefault(chunk.path, []).append(chunk.text)
+
+        unobtainable = []
+        for case in self.answerable():
+            required = getattr(case, "must_mention", ()) or ()
+            pages = getattr(case, "pages", ()) or ()
+            if not required or not pages:
+                continue
+            blob = " ".join(
+                text for page in pages for text in by_page.get(page, [])
+            ).lower()
+            unobtainable += [
+                f"{token!r} is on none of {list(pages)} ({case.text[:40]!r})"
+                for token in required
+                if token.lower() not in blob
+            ]
+        assert not unobtainable, (
+            "required tokens no correct answer could produce: " + "; ".join(unobtainable)
+        )
+
+    def test_no_question_is_in_two_sets_at_once(self):
+        """Across the sets, not within one — which is what `TestShape` already covers.
+
+        A question in both `questions.toml` and `negatives.toml` is labelled answerable
+        and unanswerable, counts in both denominators, and is scored both ways.
+        """
+        def normalise(text: str) -> str:
+            return " ".join(text.lower().split()).rstrip("?.")
+
+        sets = {
+            "questions": evals.questions(),
+            "negatives": evals.negatives(),
+            "identifiers": evals.identifiers(),
+        }
+        texts = {name: {normalise(case.text) for case in cases}
+                 for name, cases in sets.items()}
+        for first in sorted(texts):
+            for second in sorted(texts):
+                if first >= second:
+                    continue
+                shared = texts[first] & texts[second]
+                assert not shared, (
+                    f"in both {first} and {second}: {sorted(shared)[:3]}"
+                )
+
+    # A fourth test was written here and deleted: "no negative carries a gold page".
+    # `Negative` has no `pages` field, so `replace(case, pages=...)` is a TypeError and
+    # nothing could ever make it fail — which is the exact failure mode named at the top
+    # of this file, written into the file that warns about it. The dataclass is the
+    # guarantee; a test restating it would read as coverage and be none.
+
+
 class TestConversations:
     def test_every_case_has_at_least_two_turns(self):
         """One turn is not a conversation, and this set exists for the follow-up."""
