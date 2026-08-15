@@ -71,6 +71,24 @@ class TestStopping:
         assert answer["text"] == "Your /home quota is 30 G"
         assert answer["stopped"] is True
 
+    def test_a_stopped_answer_is_redacted_the_same_way_a_finished_one_is(
+        self, monkeypatch
+    ):
+        """The one path that could skip `redact.apply` is the one still being read.
+
+        A stop lands mid-sentence and the half-written text is stored and rendered
+        exactly as it arrived, so it needs the same swap `turn.run` makes.
+        """
+        stub, _module = run_app(
+            monkeypatch,
+            client=ScriptedProvider([]),
+            session=self.session(partial=["I looked it up with `search_docs` and t"]),
+        )
+        answer = stub.session_state["messages"][-1]
+        assert answer["text"] == "I looked it up with `search` and t"
+        assert answer["redacted"] == ["search_docs"]
+        assert answer["stopped"] is True
+
     def test_a_stop_before_the_first_token_still_leaves_something_on_screen(
         self, monkeypatch
     ):

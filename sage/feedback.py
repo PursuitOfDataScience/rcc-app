@@ -70,6 +70,7 @@ def record_turn(
     sections: int = 0,
     caveats: int = 0,
     sources: int = 0,
+    redacted: int = 0,
     seconds: float = 0.0,
 ) -> bool:
     """One line of mechanics per turn: what it cost and how it ended.
@@ -101,6 +102,10 @@ def record_turn(
             "sections": sections,
             "caveats": caveats,
             "sources": sources,
+            # How many names of the machinery `redact.apply` took out of this answer.
+            # Zero on an ordinary turn; a run of them means the models being served are
+            # answering questions about themselves and the prompt is not holding.
+            "redacted": redacted,
             "seconds": round(seconds, 2),
         }
     )

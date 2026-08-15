@@ -14,7 +14,7 @@ import time
 
 import streamlit as st
 
-from .. import config, limits
+from .. import config, limits, redact
 from .access import whoami
 
 logger = logging.getLogger(__name__)
@@ -245,7 +245,7 @@ def request_stop() -> None:
     st.session_state.stop_requested = True
 
 
-def finish_stopped_turn(model_key: str) -> None:
+def finish_stopped_turn(model_key: str, names: dict[str, str] | None = None) -> None:
     """Keep what arrived before the reader pressed stop, and end the turn there.
 
     The half-written answer is kept rather than thrown away. It is what was on the
@@ -274,6 +274,15 @@ def finish_stopped_turn(model_key: str) -> None:
         return
 
     text = "".join(st.session_state.partial).strip()
+    # The same swap `turn.run` makes on a finished answer. A stop lands mid-sentence and
+    # this text is stored and rendered exactly as it arrived, so without it the one path
+    # that skips `redact.apply` is the one where the reader is still reading.
+    text, removed = redact.apply(text, names or {})
+    if removed:
+        logger.info(
+            "removed internal name(s) from a stopped answer: %s",
+            ", ".join(sorted(set(removed))),
+        )
     st.session_state.partial = []
     st.session_state.processing = False
     # A failover in flight is off too. Without this the pending switch fires on the
@@ -291,6 +300,7 @@ def finish_stopped_turn(model_key: str) -> None:
             "sources": [],
             "rating": None,
             "model": model_key,
+            "redacted": sorted(set(removed)),
             "stopped": True,
         }
     )

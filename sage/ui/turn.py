@@ -8,7 +8,7 @@ import time
 
 import streamlit as st
 
-from .. import config, feedback, history, links, llm, prompts
+from .. import config, feedback, history, links, llm, prompts, redact
 from ..tools import READ_DOC, SEARCH_DOCS, gather_context
 from .access import get_provider
 from .state import get_limiter
@@ -364,6 +364,20 @@ def run(view: View) -> None:
             logger.warning("%s returned an empty answer", model.key)
             raise llm.AssistantError("empty")
 
+        # The names of the tools, out of the prose and replaced by what a reader would
+        # call them — see `sage/redact.py`. Before the citation strip, so the strip's own
+        # diff stays about the strip: `evals/harness.py` records the text at that seam,
+        # and a word swapped here would otherwise read as the stripper eating a sentence.
+        final_text, redacted = redact.apply(final_text, runtime.toolset.public_names)
+        if redacted:
+            # Worth a line in the log even though the reader is unaffected: it is the
+            # model declining an instruction, and a deployment tuning its prompt wants
+            # to know how often that happens.
+            logger.info(
+                "%s named the machinery; removed %s from the answer",
+                model.key, ", ".join(sorted(set(redacted))),
+            )
+
         sources = citations(runner.sources)
 
         # Re-render once with links resolved, so a raw `docs/...md` target never flashes.
@@ -389,6 +403,11 @@ def run(view: View) -> None:
                 "sources": sources,
                 "rating": None,
                 "model": model.key,
+                # What `redact.apply` took out, kept with the turn rather than only
+                # logged. `tools/agent_bench.py` scores the model on what it *tried* to
+                # say, and a fix that blinded the instrument measuring it would be the
+                # worst outcome available. Nothing in `sage/ui/` reads this.
+                "redacted": sorted(set(redacted)),
             }
         )
         st.session_state.failed_over = False
@@ -408,6 +427,7 @@ def run(view: View) -> None:
             question=question, outcome="answered", model=model.key, rounds=rounds,
             searches=len(runner.queries), sections=len(runner.sources),
             caveats=runner.caveats, sources=len(sources),
+            redacted=len(set(redacted)),
             seconds=time.monotonic() - started,
         )
         if runner.queries and not sources:
