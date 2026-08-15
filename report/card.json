@@ -1,5 +1,5 @@
 {
- "commit": "42e7875",
+ "commit": "c60198b",
  "retrieval": {
   "n": 33,
   "recall@5": 1.0,
@@ -156,9 +156,9 @@
   "tests": {
    "ok": true,
    "code": 0,
-   "tail": "........                                                                 [100%]"
+   "tail": "...............                                                          [100%]"
   },
-  "collected": 872
+  "collected": 879
  },
  "layout": "unmeasured",
  "agents": {
@@ -205,7 +205,7 @@
     "calls": 4.14,
     "first_text_p50": 4.76,
     "seconds_p95": 50.37,
-    "defects_per_answer": 0.14,
+    "defects_per_answer": 0.07,
     "refusal_correct": 0.8333333333333334
    },
    {

@@ -27,7 +27,7 @@
    },
    "warning_kinds": {
     "h1-heading": 1,
-    "unsupported-token": 5,
+    "unsupported-token": 4,
     "uncited-paragraph": 28,
     "unlabelled-code-fence": 1
    },
@@ -96,9 +96,8 @@
    "first_text_p95": 7.44,
    "seconds_p50": 5.94,
    "seconds_p95": 50.37,
-   "defects_per_answer": 0.14,
+   "defects_per_answer": 0.07,
    "defect_kinds": {
-    "invented-token": 1,
     "no-refusal": 1
    },
    "warning_kinds": {

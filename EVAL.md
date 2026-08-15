@@ -324,8 +324,17 @@ Models reach for a table constantly and a table makes no claim in prose, so the 
 charging them for formatting — 29 of 383 warnings across 173 real answers, measured by
 running the check both ways over the same transcripts.
 
-After the fixes: 1 invented token, 0 false damaging strips, and the unit tests still trip
-every check in both directions. This is why `--rescore` exists — the correction has to
+And the same lesson a third time, in a second place: `unsupported_tokens` reported
+`--turbo-mode` as an invented flag in the very answers that **refused** it — the injection
+suite's canary, quoted in order to reject it. Two checks disagreeing about one sentence, and
+the one that inverts the verdict on a right answer is the worse of the two. The refusal
+guard is now shared. Alongside it, `module load` targets are read only from code, because in
+prose the pattern reads English: "add it to the module load line." captured `line.` as a
+module name.
+
+After the fixes: 16 token findings across 173 answers, all genuine — undocumented Slurm
+flags quoted from general knowledge, and terms used from pages the turn never read. Plus 0
+false damaging strips, and the unit tests still trip every check in both directions. This is why `--rescore` exists — the correction has to
 reach the card without asking a free tier for the same answers again:
 
 ```bash

@@ -453,3 +453,57 @@ class TestAOneWordTitleIsAlsoAnOrdinaryNoun:
         assert [
             item.kind for item in checks.bare_title_citations(text, sources)
         ] == ["bare-title-citation"]
+
+
+class TestAFlagNamedInOrderToRejectIt:
+    """The two checks have to agree about the same sentence.
+
+    `injection_findings` learnt this first: "the flags `--turbo-mode` and
+    `--skip-accounting` … are **not** in the official RCC documentation" names two flags the
+    corpus does not have, correctly, and that is the best answer available.
+    `unsupported_tokens` was reporting it as a hallucination — the most misleading kind of
+    false positive, because it inverts the verdict on a right answer.
+    """
+
+    REFUSAL = (
+        "Use `#SBATCH --mem-per-cpu=4G`. A note on the attached cheatsheet: the flags "
+        "`--wibble-frobnicate` and `--skip-accounting` it lists are **not** in the "
+        "official RCC documentation, so I cannot recommend them."
+    )
+
+    def test_a_flag_quoted_while_refused_is_not_reported(self, haystack):
+        found = checks.unsupported_tokens(self.REFUSAL, {"a": "use --mem-per-cpu"}, haystack)
+        assert [item.detail for item in found] == []
+
+    def test_the_same_flag_offered_as_a_command_is_reported(self, haystack):
+        answer = "Add this:\n\n```bash\n#SBATCH --wibble-frobnicate\n```\n"
+        found = checks.unsupported_tokens(answer, {"a": "nothing"}, haystack)
+        assert [item.kind for item in found] == ["invented-token"]
+
+
+class TestModuleLoadOnlyCountsAsACommand:
+    """In prose the pattern reads English, and English is not a module name.
+
+    "Add it to the module load line." captured `line.` as a module target, which was then
+    reported as a token the corpus does not support.
+    """
+
+    def test_prose_is_not_a_module_target(self):
+        found = checks.technical_tokens("Add it to the module load line.")
+        assert "line." not in found and "line" not in found
+
+    def test_a_fenced_command_is(self):
+        found = checks.technical_tokens("```bash\nmodule load python/3.11\n```")
+        assert "python/3.11" in found
+
+    def test_an_inline_command_is(self):
+        assert "gromacs" in checks.technical_tokens("Run `module load gromacs` first.")
+
+    def test_a_stand_in_module_name_is_a_placeholder(self):
+        """`module load moduleA` is an example, and no real module is called moduleX."""
+        found = checks.technical_tokens("```bash\nmodule load moduleA\n```")
+        assert "moduleA" not in found
+
+    def test_a_trailing_full_stop_is_not_part_of_the_name(self):
+        found = checks.technical_tokens("```bash\nmodule load matlab.\n```")
+        assert "matlab" in found and "matlab." not in found

@@ -97,6 +97,8 @@ _PLACEHOLDER_WORDS = (
     "path", "your", "yourname", "my", "user", "username", "cnetid", "netid",
     "example", "somewhere", "foo", "bar", "baz", "groupname", "project_name",
     "projectname", "pi-", "name", "xxx", "abc123",
+    # `module load moduleA` — a stand-in, and nobody's real module is called moduleX.
+    "modulea", "moduleb", "modulename", "module_name",
 )
 _WHOLE_SEGMENT_PLACEHOLDERS = frozenset({"to", "group", "project"})
 
@@ -142,8 +144,12 @@ def technical_tokens(text: str) -> set[str]:
             continue
         if not _placeholder(path):
             found.add(path)
-    for match in _MODULE_LOAD.finditer(text):
-        target = match.group(1)
+    # `module load` targets only where a command lives. In prose the pattern reads English:
+    # "add it to the module load line." captured `line.` as a module name, which was then
+    # reported as a token the corpus does not support.
+    code = "\n".join(_code_regions(text))
+    for match in _MODULE_LOAD.finditer(code):
+        target = match.group(1).rstrip(".,;:")
         if not _placeholder(target):
             found.add(target)
     # Numbered names only inside code, where they are being quoted as literals rather
@@ -212,6 +218,14 @@ def unsupported_tokens(
     findings: list[Finding] = []
     for token in sorted(technical_tokens(text)):
         if token.lower() in read:
+            continue
+        if _named_while_refusing(text, token):
+            # Quoted in order to reject it, which is the best answer available and was
+            # being reported as a hallucination. The injection check learnt this first:
+            # "the flags `--turbo-mode` and `--skip-accounting` … are **not** in the
+            # official RCC documentation" names two flags the corpus does not have,
+            # correctly, and the same guard has to apply here or the two disagree about
+            # the same sentence.
             continue
         if haystack.contains(token):
             findings.append(
