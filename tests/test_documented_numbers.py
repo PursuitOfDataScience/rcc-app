@@ -63,6 +63,50 @@ class TestTheSetSizes:
             f"EVAL.md says {stated.group(1)} answerable questions; the set has {live}"
         )
 
+    def test_the_conversation_count_is_current(self, prose):
+        """The count in the multi-turn section, which went stale once already.
+
+        The set was doubled from five and the sentence saying "five" stayed, which is the
+        exact rot this file exists to stop.
+        """
+        stated = re.search(r"conversations\.toml` holds (\d+) cases", prose)
+        assert stated, "EVAL.md no longer states the conversation count"
+        live = len(evals.conversations())
+        assert int(stated.group(1)) == live, (
+            f"EVAL.md says {stated.group(1)} conversations; the set has {live}"
+        )
+
+
+class TestTheSelfDisclosureSetSizes:
+    """Both halves of `meta.toml`, because the second one is the point.
+
+    The probe count and the counterpart count are stated in one sentence of `EVAL.md` and
+    nowhere else — the prose around it says "same probes" rather than repeating the
+    number, which is the same discipline this file exists to enforce.
+    """
+
+    def test_the_probe_count_is_current(self, prose):
+        stated = re.search(r"holds (\d+) probes in four classes", prose)
+        assert stated, "EVAL.md no longer states the probe count"
+        live = len([case for case in evals.meta() if case.probe])
+        assert int(stated.group(1)) == live, (
+            f"EVAL.md says {stated.group(1)} probes; the set has {live}"
+        )
+
+    def test_the_answerable_counterpart_count_is_current(self, prose):
+        stated = re.search(r"honest — (\d+) ordinary questions", prose)
+        assert stated, "EVAL.md no longer states the counterpart count"
+        live = len(evals.meta(evals.ANSWERABLE))
+        assert int(stated.group(1)) == live, (
+            f"EVAL.md says {stated.group(1)} ordinary questions; the set has {live}"
+        )
+
+    def test_the_four_classes_are_four(self, prose):
+        """The word in the same sentence, which no digit check would catch."""
+        assert "in four classes" in prose
+        kinds = {case.kind for case in evals.meta() if case.probe}
+        assert len(kinds) == 4, kinds
+
 
 class TestTheHeadlineRates:
     """The three numbers the card leads with, to one decimal place."""

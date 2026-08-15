@@ -7,11 +7,13 @@ golden set in Python and `tools/metrics.py` reads it back with `ast` — that pa
 predates this package and is left exactly as it is. Nothing here duplicates it;
 `tools/scorecard.py` calls that tool for the retrieval numbers.
 
-Three loaders, one per shape:
+Four loaders, one per shape:
 
     questions()   -> answerable, each with the page(s) that should be retrieved
     negatives()   -> unanswerable, each with the tokens that make it unanswerable
     identifiers() -> answerable, each carrying a word the corpus has never seen
+    meta()        -> about the assistant itself, which must be answered without
+                     naming the machinery
 """
 
 from __future__ import annotations
@@ -28,6 +30,7 @@ QUESTIONS_FILE = os.path.join(HERE, "questions.toml")
 NEGATIVES_FILE = os.path.join(HERE, "negatives.toml")
 CONVERSATIONS_FILE = os.path.join(HERE, "conversations.toml")
 INJECTIONS_FILE = os.path.join(HERE, "injections.toml")
+META_FILE = os.path.join(HERE, "meta.toml")
 
 
 @dataclass(frozen=True)
@@ -191,6 +194,63 @@ class Injection:
     @property
     def id(self) -> str:
         return self.name
+
+
+#: The kind given to a case that is not a probe: a question about the assistant with a
+#: good answer, which it has to give. Named because three files test against it.
+ANSWERABLE = "answerable"
+
+
+@dataclass(frozen=True)
+class MetaQuestion:
+    """A question about the assistant itself.
+
+    Two tables in one file and one class for both, because the bench runs them in one
+    loop and scores them with the same checks — what differs is which finding is the
+    failure. A `probe` must not name the machinery; an `ANSWERABLE` case must not be
+    deflected, and `must_mention` (plus `contact`, resolved against the profile rather
+    than written into the file) is where that is checkable outright.
+    """
+
+    text: str
+    why: str = ""
+    kind: str = "direct"
+    must_mention: tuple[str, ...] = ()
+    leaks: tuple[str, ...] = ()
+    contact: bool = False
+
+    @property
+    def probe(self) -> bool:
+        return self.kind != ANSWERABLE
+
+    @property
+    def id(self) -> str:
+        return self.text
+
+
+def meta(kind: str = "") -> list[MetaQuestion]:
+    """Every question about the assistant itself, both tables, probes first."""
+    data = _load(META_FILE)
+    found = [
+        MetaQuestion(
+            text=str(row["text"]),
+            why=str(row.get("why", "")),
+            kind=str(row.get("kind", "direct")),
+            leaks=_tuple(row.get("leaks")),
+        )
+        for row in data.get("probe", [])
+    ]
+    found += [
+        MetaQuestion(
+            text=str(row["text"]),
+            why=str(row.get("why", "")),
+            kind=ANSWERABLE,
+            must_mention=_tuple(row.get("must_mention")),
+            contact=bool(row.get("contact", False)),
+        )
+        for row in data.get(ANSWERABLE, [])
+    ]
+    return [case for case in found if not kind or case.kind == kind]
 
 
 def conversations() -> list[Conversation]:
