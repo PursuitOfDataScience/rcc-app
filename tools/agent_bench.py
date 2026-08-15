@@ -99,6 +99,14 @@ def query_quality(index, records: list[dict]) -> dict:
 
 def summarise(model: str, records: list[dict], index) -> dict:
     total = len(records) or 1
+    # Which of the app's two answering paths these turns went down. Recorded rather than
+    # assumed, and computed from the records rather than passed in, so a row that somehow
+    # covers both says so instead of averaging them: `srch 50%  rnd 2.0` over three tool
+    # turns and three grounded ones is true of neither, and reads as a model that searches
+    # half the time. Missing on transcripts written before the field existed, and those
+    # were all tool-path runs.
+    paths = {str(row.get("path") or "tools") for row in records}
+    arm = next(iter(paths)) if len(paths) == 1 else "mixed"
     answered = [row for row in records if row["outcome"] == "answered"]
     positives = [row for row in answered if row["expect"] == "answer"]
     negatives = [row for row in answered if row["expect"] == "caveat"]
@@ -124,6 +132,7 @@ def summarise(model: str, records: list[dict], index) -> dict:
     with_gold = [row for row in positives if row["pages"]]
     return {
         "model": model,
+        "path": arm,
         "n": len(records),
         "answered": len(answered) / total,
         "empty": sum(1 for row in records if row["error_kind"] == "empty") / total,
@@ -165,7 +174,8 @@ def summarise(model: str, records: list[dict], index) -> dict:
     }
 
 
-def crashed_record(question, model, expect, must, pages, exc, started) -> dict:
+def crashed_record(question, model, expect, must, pages, exc, started,
+                   toolless=False) -> dict:
     """A turn that took the harness down with it. Recorded, not raised.
 
     One model in seven does something no other does, and a benchmark that stops on the
@@ -174,6 +184,10 @@ def crashed_record(question, model, expect, must, pages, exc, started) -> dict:
     return {
         "question": question, "model": model, "expect": expect,
         "outcome": "crashed", "fatal": f"{type(exc).__name__}: {exc}",
+        # The arm asked for, not the arm observed — the only record where those can
+        # differ, because a crash may come before any request reached the provider.
+        # Absent entirely, a crashed grounded turn would be summarised as a tool one.
+        "path": "grounded" if toolless else "tools",
         "unfinished": False,
         "error": "", "error_kind": "", "text": "", "raw": "",
         "sources": [], "source_pages": [], "evidence": {},
@@ -194,7 +208,9 @@ def one_turn(question, model, expect, must, pages, sage, haystack, contact,
             toolless=toolless,
         )
     except BaseException as exc:  # noqa: BLE001 — one bad turn is data, not an exit
-        record = crashed_record(question, model, expect, must, pages, exc, started)
+        record = crashed_record(
+            question, model, expect, must, pages, exc, started, toolless=toolless
+        )
 
     found = checks.inspect(record, sage.corpus, haystack, contact=contact)
     record["findings"] = [item.kind for item in found]
@@ -446,17 +462,23 @@ def rescore(path: str) -> dict:
                 else talks if record.get("conversation")
                 else single
             )
-            bucket.setdefault(record["model"], []).append(record)
+            # Keyed by arm as well as model. `transcripts.jsonl` is opened in append
+            # mode, so one file accumulates every run written to that directory — and
+            # once two of them are different paths through the app, one row averaged
+            # over both is a number about nothing.
+            key = (record["model"], str(record.get("path") or "tools"))
+            bucket.setdefault(key, []).append(record)
 
     summary: dict = {"models": [], "conversations": [], "injections": []}
-    for model, records in single.items():
+    for (model, _arm), records in single.items():
         summary["models"].append(summarise(model, records, index))
-    for model, records in talks.items():
-        summary["conversations"].append(_conversation_summary(model, records))
-    for model, records in uploads.items():
+    for (model, arm), records in talks.items():
+        summary["conversations"].append(_conversation_summary(model, records) | {"path": arm})
+    for (model, arm), records in uploads.items():
         summary["injections"].append(
             {
                 "model": model,
+                "path": arm,
                 "n": len(records),
                 "obeyed": sum(
                     1 for row in records if "obeyed-injection" in row["findings"]
@@ -486,7 +508,11 @@ def report(summary: dict) -> None:
           f"{'p95':>6s} {'def':>5s} {'refus':>6s}")
     print("-" * 118)
     for row in rows:
-        print(f"{row['model'][:34]:34s} {row['n']:3d} {row['answered']:5.0%} "
+        # The arm, only when it is not the tool loop, so a run of the default path prints
+        # exactly what it printed before there was a second path to confuse it with.
+        arm = str(row.get("path") or "tools")
+        label = row["model"] if arm == "tools" else f"{row['model']} [{arm}]"
+        print(f"{label[:34]:34s} {row['n']:3d} {row['answered']:5.0%} "
               f"{row['empty']:5.0%} {row['searched']:4.0%} {row['read']:4.0%} "
               f"{row['cited_gold']:4.0%} {row['rounds']:4.1f} {row['calls']:5.1f} "
               f"{str(row['first_text_p50'] or '-'):>6s} "

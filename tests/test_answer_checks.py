@@ -596,3 +596,67 @@ class TestTheAppsOwnWordsAreNotTheModelsAnswer:
             assert checks.ROUND_LIMIT_TEXT in handle.read(), (
                 "the app's round-limit wording changed; update ROUND_LIMIT_TEXT"
             )
+
+
+class TestNoCheckFiresOnAFaithfulAnswer:
+    """The other direction, over the whole corpus rather than one hand-written case.
+
+    Every class above gives one check an answer that must trip it and one that must not.
+    What none of them asks is the question the whole file exists to answer: does a *good*
+    answer come back clean? A false positive is how a check gets switched off — 31 of the
+    first 32 `invented-token` reports were the extractor reading `/CPUs/memory` as a
+    filesystem path — and one hand-written clean case cannot find the thirty-second.
+
+    So: for every chunk in the corpus, take a real sentence out of it, cite it to the
+    chunk it came from, and hand the chunk's own text over as the evidence. Any defect is
+    a false positive by construction — the claim is the documentation's own words, the
+    citation resolves, and the evidence contains it. 443 answers, 0.02 seconds.
+    """
+
+    @staticmethod
+    def sentence(text: str) -> str:
+        """The first line that is prose rather than table, heading, fence or list."""
+        for line in text.splitlines():
+            line = line.strip()
+            if (
+                len(line) > 60
+                and not line.startswith(("|", "#", "-", "*", ">", "```", "    "))
+                and line.endswith(".")
+            ):
+                return line
+        return ""
+
+    @pytest.fixture(scope="class")
+    def swept(self, real_corpus, haystack):
+        found: list[tuple[str, str]] = []
+        counted = 0
+        for chunk in real_corpus.chunks:
+            claim = self.sentence(chunk.text)
+            if not claim:
+                continue
+            counted += 1
+            answer = f"{claim} ([{chunk.heading}]({chunk.id}))\n"
+            record = {
+                "text": answer,
+                "raw": answer,
+                "sources": [{"label": chunk.label, "url": chunk.url}],
+                "evidence": {chunk.id: chunk.text},
+                "expect": "answer",
+                "must_mention": [],
+            }
+            found += [
+                (chunk.id, str(item))
+                for item in checks.defects(checks.inspect(record, real_corpus, haystack))
+            ]
+        return counted, found
+
+    def test_there_is_something_to_sweep(self, swept):
+        """Reproduce-first, in the form this check needs: an empty sweep passes silently."""
+        counted, _found = swept
+        assert counted > 300, f"only {counted} chunks yielded a prose sentence"
+
+    def test_a_faithful_cited_answer_is_never_a_defect(self, swept):
+        counted, found = swept
+        assert not found, (
+            f"{len(found)} false positives over {counted} faithful answers: {found[:4]}"
+        )
