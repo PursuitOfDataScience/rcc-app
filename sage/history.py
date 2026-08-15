@@ -84,7 +84,14 @@ def build(messages: list[dict], system: str, *, vision: bool = False) -> list[di
         for index, message in enumerate(messages)
         if message.get("role") == "user" and message.get("attachments")
     ]
-    inline = set(attachment_positions[-config.ATTACHMENT_FULL_TEXT_TURNS :])
+    # Guarded, because `xs[-0:]` is `xs[0:]` — the whole list. `config.py` documents
+    # "set it to 0 to stub every attachment" and permits it (`minimum=0`), and what 0
+    # actually did was inline every attachment in the conversation: the maximum where the
+    # minimum was asked for, and 2.4x the payload of the default on three files. That is
+    # precisely the accumulation this module's docstring says it exists to remove — a PDF
+    # re-sent on every follow-up — reachable by setting the dial that turns it off.
+    keep = config.ATTACHMENT_FULL_TEXT_TURNS
+    inline = set(attachment_positions[-keep:]) if keep > 0 else set()
 
     built: list[dict] = []
     for index, message in enumerate(messages):

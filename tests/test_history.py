@@ -69,6 +69,76 @@ def test_only_the_most_recent_attachment_is_inlined():
     assert "FIRST-BODY" not in joined
 
 
+class TestTheDialThatTurnsAttachmentTextOff:
+    """`SAGE_ATTACHMENT_FULL_TEXT_TURNS=0` did the opposite of what it says.
+
+    `config.py` documents "set it to 0 to stub every attachment" and permits it
+    (`minimum=0`). The implementation was `positions[-config.ATTACHMENT_FULL_TEXT_TURNS:]`,
+    and `xs[-0:]` is `xs[0:]` — the whole list. So the value that turns the feature off
+    inlined *every* attachment in the conversation: the maximum where the minimum was
+    asked for, 2.4x the default's payload over three files, and exactly the accumulation
+    this module's docstring says it was written to remove.
+    """
+
+    def conversation(self):
+        body = "SECRET-FILE-BODY"
+        return [
+            user("about A", Attachment("a.txt", "text", f"{body}-A")),
+            assistant("Answer A."),
+            user("about B", Attachment("b.txt", "text", f"{body}-B")),
+            assistant("Answer B."),
+            user("about C", Attachment("c.txt", "text", f"{body}-C")),
+        ]
+
+    def inlined(self, monkeypatch, turns: int) -> int:
+        monkeypatch.setattr(config, "ATTACHMENT_FULL_TEXT_TURNS", turns)
+        built = history.build(self.conversation(), "S")
+        joined = "\n".join(str(message["content"]) for message in built)
+        return joined.count("SECRET-FILE-BODY")
+
+    def test_zero_inlines_nothing(self, monkeypatch):
+        assert self.inlined(monkeypatch, 0) == 0
+
+    def test_zero_still_names_the_files_it_stubbed(self, monkeypatch):
+        """Stubbed, not silently dropped: the model has to know a file was attached."""
+        monkeypatch.setattr(config, "ATTACHMENT_FULL_TEXT_TURNS", 0)
+        built = history.build(self.conversation(), "S")
+        joined = "\n".join(str(message["content"]) for message in built)
+        assert joined.count("content is omitted here") == 3
+        assert "c.txt" in joined
+        assert "about C" in joined, "the question itself always survives"
+
+    def test_one_inlines_only_the_newest(self, monkeypatch):
+        assert self.inlined(monkeypatch, 1) == 1
+
+    def test_two_inlines_the_two_newest(self, monkeypatch):
+        assert self.inlined(monkeypatch, 2) == 2
+
+    def test_zero_is_the_smallest_payload_and_not_the_largest(self, monkeypatch):
+        """The property the bug inverted, stated as the ordering it must obey."""
+        sizes = []
+        for turns in (0, 1, 2, 3):
+            monkeypatch.setattr(config, "ATTACHMENT_FULL_TEXT_TURNS", turns)
+            built = history.build(self.conversation(), "S")
+            sizes.append(sum(len(str(item["content"])) for item in built))
+        assert sizes == sorted(sizes), f"more turns must never send less: {sizes}"
+        assert sizes[0] < sizes[-1]
+
+    def test_the_documented_meaning_still_matches_the_config_comment(self):
+        """The comment is the specification here, so it is pinned to the behaviour."""
+        import os
+
+        path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            "sage", "config.py",
+        )
+        with open(path, encoding="utf-8") as handle:
+            # Matched on the fragment that sits on one line, because the sentence wraps.
+            assert "Set it to 0 to stub every" in handle.read(), (
+                "config.py no longer documents what 0 means; keep the two in step"
+            )
+
+
 def test_oldest_turns_are_dropped_when_over_budget():
     big = "x" * (config.HISTORY_CHAR_BUDGET // 3)
     messages = [user(f"{big}-{n}") for n in range(6)]
