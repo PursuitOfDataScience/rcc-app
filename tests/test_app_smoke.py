@@ -610,6 +610,37 @@ class TestToollessModels:
         assert answer["text"] == "Your quota is 30 GB."
         assert answer["sources"], "retrieved sections should become the Sources strip"
 
+    def test_a_question_that_retrieves_nothing_still_reaches_the_model_caveated(
+        self, monkeypatch
+    ):
+        """The path with no second round, on the query with nothing to go on.
+
+        `gather_context` returned an empty string for a zero-result query, `grounded()`
+        returned the messages untouched, and the model received the system prompt and the
+        question with nothing between them — no sections, no caveat, no instruction to
+        decline. What it does then is answer from memory. `sbatchh` is one keystroke off a
+        real command and retrieves nothing here, so a typo was enough to reach it.
+        """
+        monkeypatch.setattr(config, "TOOLLESS_MODELS", ("big-pickle",))
+        zen = ScriptedProvider(
+            [[event("I could not find that in the documentation.")]],
+            name="opencode", models=("big-pickle",),
+        )
+        mistral = ScriptedProvider([], name="mistral", models=("m1",))
+        session = self.session("opencode:big-pickle")
+        session["messages"][0]["text"] = "sbatchh"
+        stub, _m = run_app(monkeypatch, client=mistral, extra={"opencode": zen},
+                           session=session, opencode=True)
+        sent = "\n".join(m["content"] for m in zen.sent[0])
+        assert "No matching RCC documentation was found" in sent
+        assert "help@rcc.uchicago.edu" in sent
+        assert "Try different or broader keywords" not in sent, (
+            "a model that cannot call tools cannot search again"
+        )
+        answer = stub.session_state["messages"][-1]
+        assert answer["text"] == "I could not find that in the documentation."
+        assert not answer["sources"], "nothing was retrieved, so nothing to cite"
+
     def test_a_provider_rejecting_tools_falls_back_automatically(self, monkeypatch):
         monkeypatch.setattr(config, "TOOLLESS_MODELS", ())
 

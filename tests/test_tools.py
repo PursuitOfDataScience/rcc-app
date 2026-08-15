@@ -51,6 +51,88 @@ def test_a_long_page_returns_an_outline_instead_of_being_silently_cut(real_index
     assert "read_doc again" in out
 
 
+class TestTheToollessPathIsToldTheSameThing:
+    """Zero results reached two paths and only one of them said so.
+
+    `search_docs` returns "No matching documentation was found …". `gather_context`
+    inserted its caveat under `if caveat and blocks`, so a query matching *nothing*
+    returned an empty string, `grounded()` saw no context and passed the question to the
+    model with the system prompt and nothing else. The model then answered from its own
+    memory, with no caveat and no sources — on the one path that has no second round in
+    which to notice.
+
+    `sbatchh` is the demonstration: one keystroke off a real command, zero results here.
+    """
+
+    QUERY = "sbatchh"
+
+    def test_the_query_really_does_retrieve_nothing(self, real_index):
+        """Reproduce first: without this, the two tests below cannot fail."""
+        assert real_index.search(self.QUERY) == []
+
+    def test_the_tool_path_says_so(self, real_index):
+        out = runner(real_index).run(tools.SEARCH_DOCS, {"query": self.QUERY})
+        assert "No matching RCC documentation was found" in out
+
+    def test_the_toolless_path_says_so_too(self, real_index, profile):
+        context, chunks = tools.gather_context(
+            real_index, self.QUERY, identity=profile.identity
+        )
+        assert "No matching RCC documentation was found" in context
+        assert chunks == []
+
+    def test_it_is_not_told_to_search_again(self, real_index, profile):
+        """The one clause that differs, because it is the one it cannot act on."""
+        context, _chunks = tools.gather_context(
+            real_index, self.QUERY, identity=profile.identity
+        )
+        assert "keywords" not in context
+        assert "Try different" in runner(real_index).run(
+            tools.SEARCH_DOCS, {"query": self.QUERY}
+        )
+
+    def test_both_still_hand_over_the_contact(self, real_index, profile):
+        context, _chunks = tools.gather_context(
+            real_index, self.QUERY, identity=profile.identity
+        )
+        assert profile.identity.contact in context
+
+    def test_a_weak_but_non_empty_retrieval_still_carries_its_caveat(
+        self, real_index, profile
+    ):
+        """The case that already worked, held down while the empty one was fixed."""
+        context, chunks = tools.gather_context(
+            real_index,
+            "wie beantrage ich mehr Speicher fuer meinen Job",
+            identity=profile.identity,
+        )
+        assert chunks, "expected a weak-but-non-empty retrieval to test against"
+        assert context.startswith(tools.RETRIEVAL_WARNING)
+
+    def test_a_good_query_is_untouched(self, real_index, profile):
+        context, chunks = tools.gather_context(
+            real_index, "how do I submit a batch job", identity=profile.identity
+        )
+        assert len(chunks) > 1
+        assert tools.RETRIEVAL_WARNING not in context
+        assert "No matching" not in context
+
+    def test_the_sentence_is_built_once(self, profile):
+        """Both callers, one function: the wording cannot drift between them."""
+        with_retry = tools.nothing_found(profile.identity)
+        without = tools.nothing_found(profile.identity, retry=False)
+        assert with_retry == without.replace(
+            "was found.", "was found. Try different or broader keywords.", 1
+        )
+
+    def test_a_deployment_with_no_contact_offers_no_pointer(self):
+        from sage.profile import Identity  # noqa: PLC0415
+
+        plain = tools.nothing_found(Identity(), retry=False)
+        assert "point the user at" not in plain
+        assert plain.startswith("No matching documentation was found.")
+
+
 class TestPathSafety:
     """Reads resolve against the index, so a filesystem path cannot be reached."""
 

@@ -234,7 +234,9 @@ def run(view: View) -> None:
 
     def grounded(messages: list[dict]) -> list[dict]:
         """Retrieve up front, for models that cannot call tools."""
-        context, chunks = gather_context(runtime.retriever, question)
+        context, chunks = gather_context(
+            runtime.retriever, question, identity=runtime.identity
+        )
         for chunk in chunks:
             runner.sources.append(chunk)
         if not context:

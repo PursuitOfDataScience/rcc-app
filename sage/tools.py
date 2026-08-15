@@ -79,6 +79,35 @@ def _outline(document) -> str:
 # --- search ----------------------------------------------------------------
 
 
+def nothing_found(identity: Identity, *, retry: bool = True) -> str:
+    """"No matching documentation was found" — the sentence, built once.
+
+    Two paths reach zero results and only one of them used to say so. `search_docs`
+    returned this; the tool-less path returned an empty context and `grounded()` handed
+    the model the system prompt and the question with nothing between them, so a reader
+    who typed `sbatchh` — one keystroke off a real command, and zero results on this
+    corpus — got an answer from the model's own memory, with no caveat and no sources.
+    That is the refusal gate missing exactly where it matters most: the tool loop can
+    search again, and this path has no second round. `gather_context`'s own docstring
+    already said so, and handled only the *weak* case, not the empty one.
+
+    `retry` is the one clause that differs, because it is the one thing that depends on
+    the caller: telling a model that cannot call tools to try different keywords is
+    telling it to do something it has no way of doing.
+    """
+    again = " Try different or broader keywords." if retry else ""
+    pointer = (
+        f" and point the user at the {identity.contact_label} ({identity.contact})"
+        if identity.has_contact
+        else ""
+    )
+    return (
+        f"No matching {identity.qualifier}documentation was found.{again} If the topic "
+        f"genuinely is not covered, say so plainly{pointer} rather than guessing "
+        "specifics."
+    )
+
+
 class SearchDocs:
     """Rank the corpus for a query and describe the best sections."""
 
@@ -123,17 +152,7 @@ class SearchDocs:
         }
 
     def no_results(self) -> str:
-        pointer = (
-            f" and point the user at the {self.identity.contact_label} "
-            f"({self.identity.contact})"
-            if self.identity.has_contact
-            else ""
-        )
-        return (
-            f"No matching {self.identity.qualifier}documentation was found. Try "
-            "different or broader keywords. If the topic genuinely is not covered, "
-            f"say so plainly{pointer} rather than guessing specifics."
-        )
+        return nothing_found(self.identity)
 
     def format(self, results, caveat: str = "") -> str:
         if not results:
@@ -323,7 +342,12 @@ class ToolRunner:
         return result
 
 
-def gather_context(retriever: Retriever, query: str, limit: int | None = None):
+def gather_context(
+    retriever: Retriever,
+    query: str,
+    limit: int | None = None,
+    identity: Identity | None = None,
+):
     """One-shot retrieval for models that cannot call tools.
 
     Returns (context_text, chunks). The chunks become the answer's Sources strip,
@@ -332,13 +356,22 @@ def gather_context(retriever: Retriever, query: str, limit: int | None = None):
     The caveat matters more here than in the tool loop: a model that cannot call tools
     cannot search again when the context is wrong, so if retrieval was weak, being told
     so is the only thing between it and an invented answer.
+
+    Which is why the empty case is a sentence and not an empty string. `if caveat and
+    blocks` meant a query matching *nothing* — the one case where the model has least to
+    go on — was the one case that travelled with no warning at all: `grounded()` saw an
+    empty context and passed the question through untouched. Both paths now say the same
+    thing when there is nothing to say.
     """
     results = retriever.search(query, limit or config.SEARCH_RESULTS)
+    who = identity or _active().identity
+    if not results:
+        return nothing_found(who, retry=False), []
     blocks = [
         f"=== {result.chunk.breadcrumb} ({result.chunk.id}) ===\n{result.chunk.text}"
         for result in results
     ]
     caveat = retriever.assess(query, results).caveat()
-    if caveat and blocks:
+    if caveat:
         blocks.insert(0, f"{RETRIEVAL_WARNING} {caveat}")
     return "\n\n".join(blocks), [result.chunk for result in results]
