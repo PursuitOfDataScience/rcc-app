@@ -144,6 +144,73 @@ class TestTheGateTravels:
         ).confident
 
 
+class TestCitationsResolveOnForeignTreeNames:
+    """Two trees, cited by a bare filename, under names that are not the RCC's.
+
+    `links.resolve` fell back to `corpus.document("docs/" + path)` and then
+    `corpus.document("web/" + path)` — the RCC profile's two source names, as literals, in
+    a module that has no business knowing them. The preference they encode is real (prefer
+    the maintained guide to the scraped mirror when a bare `guide.md` could be either) but
+    it is *declaration order*, not those two words.
+
+    The cost was invisible because it degrades politely: `resolve` returns None,
+    `fix_links` unlinks rather than guessing, and the answer reads as a section named
+    without a link. So a second deployment lost citations this one keeps, and nothing
+    said so.
+    """
+
+    @pytest.fixture(scope="class")
+    def two_trees(self, tmp_path_factory):
+        root = tmp_path_factory.mktemp("two")
+        for tree in ("manual", "notes"):
+            (root / tree).mkdir()
+            (root / tree / "guide.md").write_text(
+                f"# The {tree} guide\n\n## Pressing\n\n"
+                + f"In the {tree}, press the lever twice. " * 15
+            )
+        return runtime.build(
+            profile_mod.Profile(
+                sources=(
+                    profile_mod.Source(
+                        name="manual", path=str(root / "manual"),
+                        links="direct", base_url="https://m.test/",
+                    ),
+                    profile_mod.Source(
+                        name="notes", path=str(root / "notes"),
+                        links="direct", base_url="https://n.test/",
+                    ),
+                ),
+            )
+        )
+
+    def test_a_bare_path_resolves_to_the_first_declared_tree(self, two_trees):
+        from sage import links  # noqa: PLC0415
+
+        assert links.resolve("guide.md", two_trees.corpus) == "https://m.test/guide.md"
+
+    def test_an_anchor_survives_that_resolution(self, two_trees):
+        from sage import links  # noqa: PLC0415
+
+        assert links.resolve("guide.md#pressing", two_trees.corpus) == (
+            "https://m.test/guide.md#pressing"
+        )
+
+    def test_the_citation_stays_a_link_in_the_rendered_answer(self, two_trees):
+        from sage import links  # noqa: PLC0415
+
+        assert links.fix_links("See [Pressing](guide.md#pressing).", two_trees.corpus) == (
+            "See [Pressing](https://m.test/guide.md#pressing)."
+        )
+
+    def test_a_fully_qualified_path_was_never_the_broken_case(self, two_trees):
+        """It resolves directly, which is why this went unnoticed for so long."""
+        from sage import links  # noqa: PLC0415
+
+        assert links.resolve("notes/guide.md", two_trees.corpus) == (
+            "https://n.test/guide.md"
+        )
+
+
 class TestTheThresholdsDoNotTravel:
     """What a second deployment inherits that it should re-measure, recorded as a fact.
 

@@ -60,6 +60,33 @@ class TestIntegrity:
         bad = measured["malformed_urls"]
         assert not bad, f"{len(bad)} unusable citation URLs: {bad[:3]}"
 
+    def test_the_two_url_checks_partition_rather_than_overlap(self, real_corpus):
+        """Absent is one finding, present-but-unusable is the other. Not both.
+
+        `malformed_urls` reported the empty URL as "no http scheme", so every finding was
+        doubled in a report that prints the two side by side — and on a corpus using
+        `links = "none"`, the default scheme, for a corpus with nowhere to send the reader,
+        it called every chunk an unusable citation URL. A check that fires on the app
+        working as designed is a check nobody can read.
+        """
+        urlless = set(corpus_health.chunks_without_url(real_corpus))
+        malformed = {row["id"] for row in corpus_health.malformed_urls(real_corpus)}
+        assert not (urlless & malformed)
+
+    def test_a_corpus_with_nowhere_to_link_reports_no_unusable_urls(self, tmp_path):
+        """The `links = "none"` deployment, which the check used to condemn wholesale."""
+        from sage import runtime  # noqa: PLC0415
+        from sage.profile import Profile, Source  # noqa: PLC0415
+
+        page = tmp_path / "a.md"
+        page.write_text("# A\n\n## Doing the thing\n\n" + "Press the lever twice. " * 20)
+        built = runtime.build(
+            Profile(sources=(Source(name="private", path=str(tmp_path)),))
+        ).corpus
+        assert built.chunks
+        assert corpus_health.malformed_urls(built) == []
+        assert len(corpus_health.chunks_without_url(built)) == len(built.chunks)
+
     def test_every_source_the_profile_declares_contributed(self, measured, profile):
         """Derived from the profile rather than a hardcoded pair.
 

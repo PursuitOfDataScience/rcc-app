@@ -281,10 +281,20 @@ def malformed_urls(corpus) -> list[dict]:
     character or no scheme is a link that lands nowhere — and unlike a wrong *page*,
     nothing downstream notices: `tools/anchor_check.py` validates against the live site
     but is network-bound and out of the suite.
+
+    Having *no* URL is `chunks_without_url` above, and this used to report it too, as "no
+    http scheme". The two are printed side by side, so every finding was doubled — and
+    worse than doubled on a corpus where the empty URL is correct. `links = "none"` is a
+    supported scheme and the default one, for a corpus with nowhere to send the reader; a
+    deployment using it saw every chunk it owns listed as an unusable citation URL, which
+    is a check crying wolf about the app working as designed. The two now partition:
+    absent is reported once, present-but-unusable is reported here.
     """
     found = []
     for chunk in corpus.chunks:
         url = chunk.url
+        if not url:
+            continue
         why = ""
         if not url.startswith(("http://", "https://")):
             why = "no http scheme"

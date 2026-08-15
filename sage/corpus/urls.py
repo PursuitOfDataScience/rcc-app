@@ -36,7 +36,21 @@ def mkdocs(source: Source, rel_path: str, anchor: str = "", page_url: str = "") 
     `software/index.md` at `software/` — so citing it to `software/index/` is a 404,
     and it was: 16 indexed sections across `software/index.md` and
     `tutorials/gis/index.md` pointed at a dead page.
+
+    With no `base_url` there is no URL, which is what `direct` below has always said
+    and this did not: it returned `/slurm/sbatch/#gpu-jobs`, a root-relative href that
+    the reader's browser resolves against *this app's* host. Every citation in such a
+    deployment then pointed at a page Streamlit does not serve — a link that looks
+    right, leaves the app, and 404s, which is precisely the confident wrong citation
+    the `none` scheme's docstring says this module exists to prevent. An empty
+    `base_url` is not a deployment's decision to serve links from its own origin; it
+    is a profile that has not said where its documents are published, and the honest
+    answer to "what should the browser open?" is nothing. A base URL that *is* set
+    stays honoured however it is written, so a genuinely same-origin `/docs/` keeps
+    working.
     """
+    if not source.base_url:
+        return ""
     slug = re.sub(r"\.md$", "", rel_path, flags=re.IGNORECASE).strip("/")
     slug = re.sub(r"(?:^|/)index$", "", slug).strip("/")
     url = source.base_url if not slug else f"{_base(source)}/{slug}/"

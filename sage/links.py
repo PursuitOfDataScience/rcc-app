@@ -68,8 +68,16 @@ def resolve(target: str, corpus: Corpus) -> str | None:
 
     document = corpus.document(base)
     if document is None:
-        for source in ("docs", "web"):
-            document = corpus.document(f"{source}/{base}")
+        # Declaration order is the preference, which is what the two literals that used
+        # to be here — `("docs", "web")` — were really saying: prefer the maintained user
+        # guide to the scraped site when a bare `guide.md` could be either. Written as
+        # the RCC's own tree names, that preference belonged to one deployment. Two
+        # sources named anything else got no preference and no link: `resolve` returned
+        # None, `fix_links` did the honest thing and unlinked the citation, and a second
+        # deployment quietly lost working links that this one gets. The docstring six
+        # lines down already complains about this pattern in six other places.
+        for source in corpus.sources:
+            document = corpus.document(f"{source.name}/{base}")
             if document is not None:
                 break
 

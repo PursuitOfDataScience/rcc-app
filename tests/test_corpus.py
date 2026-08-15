@@ -79,6 +79,34 @@ class TestUrlSchemes:
         source = Source(name="private", path="./private", links="none")
         assert corpus_mod.url_for(source, "a/b.md", "top") == ""
 
+    def test_a_directly_served_tree_with_no_base_url_declines_too(self):
+        source = Source(name="notes", path="./notes", links="direct")
+        assert corpus_mod.url_for(source, "a/b.md", "top") == ""
+
+    def test_mkdocs_with_no_base_url_declines_rather_than_going_relative(self):
+        """The scheme that did not do what the other three do.
+
+        It returned `/a/b/#top`, which a browser resolves against the app's own host: a
+        citation that looks right, leaves the app and 404s on Streamlit. An unset
+        `base_url` is a profile that has not said where its documents are published, not
+        a decision to serve them from here.
+        """
+        source = Source(name="notes", path="./notes", links="mkdocs")
+        assert corpus_mod.url_for(source, "a/b.md", "top") == ""
+
+    def test_every_scheme_declines_an_unset_base_url(self):
+        """Stated over the registry, so a fifth scheme has to answer the question too."""
+        for name in urls.schemes.names():
+            source = Source(name="x", path=".", links=name)
+            assert urls.build(source, "a/b.md", "top") == "", (
+                f"the {name} scheme invents a citation target with no base_url"
+            )
+
+    def test_a_base_url_that_is_set_is_honoured_however_it_is_written(self):
+        """Including a same-origin one, which is a deployment's decision to make."""
+        source = Source(name="notes", path="./notes", links="mkdocs", base_url="/docs/")
+        assert corpus_mod.url_for(source, "a/b.md", "top") == "/docs/a/b/#top"
+
     def test_an_unregistered_scheme_says_so(self, docs_source):
         import pytest
 
