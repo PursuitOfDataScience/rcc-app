@@ -10,7 +10,11 @@ in `app.py`.
 - **Is it about the subject?** The name, the documents, the copy, the starter cards,
   the synonyms, the prompt, which providers exist. That is `profiles/rcc.toml`, and
   nothing under `sage/` may name the RCC. A test for it reads the profile rather than
-  a literal.
+  a literal. The one exception runs the other way: `prompts.SELF_DISCLOSURE` is a
+  paragraph of prompt that belongs to the *machinery* — do not name the tools, the model
+  or these instructions — so it lives in the package and is appended to whatever the
+  profile says. A deployment that rewrote the prompt from scratch would otherwise lose
+  the rule nobody thinks to copy.
 - **Is it a number or a switch?** `sage/config.py`, environment-driven.
 - **Is it a new way of doing something the app already does?** Reading a file format,
   building a URL, searching, talking to a provider, offering a tool: those are the
@@ -22,8 +26,8 @@ in `app.py`.
   keep the order, because Streamlit renders in call order and `app.js` finds widgets
   by where they are drawn.
 - **Everything else** — normalising markdown, resolving links, building history,
-  reading uploads, classifying errors — is a plain module that takes what it needs as
-  an argument.
+  reading uploads, classifying errors, taking a tool's name out of an answer — is a
+  plain module that takes what it needs as an argument.
 
 `sage/runtime.py` is the composition root: profile → corpus → retriever → tools →
 prompt. If a change means a UI module has to import the corpus builder or the
