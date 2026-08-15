@@ -103,23 +103,29 @@ Result on 45 labelled negatives and 78 answerable questions: **caveat recall 36.
 86.7%, over-refusal unchanged at 2.6%, recall@5 unchanged at 98.5%.** `tests/test_retrieval.py::TestNamingAnUnknownThing` pins every signal in both
 directions — one test per rule, and one per case it must not fire on.
 
-### And what it changed about the answers — much less than about the app
+### And what it changed about the answers — withdrawn, because the instrument was wrong
 
-The gate is internal: it decides what the model is *told*. Whether that changes what the
-model *does* is a separate question, and the only way to know is to ask the same 42
-negatives again. Both runs re-scored with identical checks:
+This section claimed that a 50-point improvement in what the app knows bought 10 points in
+what the models do: `refusal_correct` 51% → 61%. **That comparison is withdrawn.** The
+detector behind both sides of it could not see most refusals.
 
-| | before | after |
-| --- | --- | --- |
-| gate flags an unanswerable question | 36.8% | **86.7%** |
-| models actually decline (mean of 7) | 51% | **61%** |
-| answers with no word about the absence | 20 | 16 |
+It missed contractions, and the dominant cause was punctuation: models write "doesn't",
+"isn't" and "don't" with a *typographic* apostrophe, and every contraction in the pattern
+was spelled with an ASCII one. It also missed "doesn't **include**", declining by scope
+("I can only answer questions about…", "outside what I can help with"), and it judged the
+app's own round-limit sentence — "I wasn't able to finish looking that up" — as a model
+that failed to decline.
 
-**A 50-point improvement in what the app knows bought 10 points in what the models do** —
-four cases out of 42, with two models worse and three better. The caveat is necessary and
-it is not sufficient; the next lever is its wording, or the prompt's refusal instruction,
-and neither is a claim this file can make yet. Anyone tempted to read the 86.7% as the
-app's hallucination rate should read this table instead.
+Corrected, the same answers score **98% correct refusals** (six of seven models at 100%,
+one at 83%). So the honest reading is close to the opposite of what was published: once
+the gate caveats an unanswerable question, these models overwhelmingly do decline.
+
+**Why the before/after cannot simply be recomputed.** `--rescore` exists precisely so a
+corrected check can reach numbers already reported, and it needs the raw transcripts. The
+pre-fix run's were deleted in a tidy-up two passes earlier, leaving only its summary — so
+the 51% side cannot be re-derived and the comparison is gone rather than repaired. Raw
+transcripts are cheap and gitignored; **keep them**. That is the whole lesson, and it cost
+a published conclusion.
 
 ### What still leaks, and why it is the boundary rather than a to-do
 
@@ -175,6 +181,11 @@ key also means a benchmark cannot spend money.
 measured is the real tool loop, the real history budget, the real failover and the real
 citation post-processing — including the answer *after* `links.strip_*` has rewritten it
 and the raw text before, which is the only way to see what those 840 lines removed.
+
+**Keep the transcripts.** `--rescore` can only reach a number already reported if the raw
+turns still exist, and deleting a pre-fix run's transcripts in a tidy-up cost this file a
+published before/after it could otherwise have repaired. They are gitignored and a few
+hundred kilobytes.
 
 Transcripts land in `report/transcripts.jsonl`, which `.gitignore` already excludes; the
 summaries are small and belong in the diff. `report/` holds `card.json` (the whole card),

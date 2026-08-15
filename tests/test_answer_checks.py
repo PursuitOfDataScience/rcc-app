@@ -507,3 +507,92 @@ class TestModuleLoadOnlyCountsAsACommand:
     def test_a_trailing_full_stop_is_not_part_of_the_name(self):
         found = checks.technical_tokens("```bash\nmodule load matlab.\n```")
         assert "matlab" in found and "matlab." not in found
+
+
+class TestRefusalsInTheIdiomsModelsActuallyUse:
+    """The gap that made `refusal_correct` wrong, not merely noisy.
+
+    Ten of the twelve answers scored `no-refusal` across 173 real turns were refusals the
+    check could not see, and the dominant cause was punctuation: models write "doesn't",
+    "isn't", "don't" with a typographic apostrophe, and every contraction in the pattern was
+    spelled with an ASCII one. Corrected, the same answers score 98% correct refusals rather
+    than 61% — the published figure was an artefact of the detector.
+    """
+
+    CONTACT = "help@rcc.uchicago.edu"
+
+    def declines(self, text: str) -> bool:
+        return "no-refusal" not in [
+            item.kind for item in checks.refusal_shape(text, self.CONTACT)
+        ]
+
+    @pytest.mark.parametrize("text", [
+        "The RCC documentation doesn’t include instructions for Frontera.",
+        "The RCC documentation doesn't include instructions for Frontera.",
+        "I don’t have any RCC documentation for Frontera.",
+        "This topic isn’t covered in the RCC's research computing documentation.",
+        "No — the RCC documentation doesn’t mention a managed Kubernetes cluster.",
+        "I couldn’t find anything about that in the documentation.",
+    ])
+    def test_a_contraction_is_a_refusal(self, text):
+        assert self.declines(text), text
+
+    @pytest.mark.parametrize("text", [
+        "I can only answer questions about University of Chicago RCC services.",
+        "That's outside what I can help with — I'm the RCC assistant.",
+        "I can’t answer that — it’s outside the scope of the RCC documentation.",
+    ])
+    def test_declining_by_scope_counts_as_declining(self, text):
+        """To a reader, "outside what I can help with" and "not covered" are one thing."""
+        assert self.declines(text), text
+
+    @pytest.mark.parametrize("text", [
+        "The RCC clusters use **Slurm**, so the command is `squeue`, not `bjobs`.",
+        "The press uses a lever, not a pedal.",
+        "This manual uses metric units, not imperial.",
+    ])
+    def test_a_redirect_counts_as_declining(self, text):
+        """And not by naming this deployment's scheduler in the pattern."""
+        assert self.declines(text), text
+
+    @pytest.mark.parametrize("text", [
+        "The cluster uses shared storage and does not back it up nightly.",
+        "The cluster uses shared storage, which is fast, but the backup is not nightly.",
+        "Submit the job with sbatch and then check it with squeue.",
+        "Let me also check the examples section for more detail.",
+    ])
+    def test_an_answer_that_does_not_decline_is_still_caught(self, text):
+        """The half that keeps the fix honest: a preamble is not a refusal, and neither is
+        an answer that merely contains the word "not"."""
+        assert not self.declines(text), text
+
+
+class TestTheAppsOwnWordsAreNotTheModelsAnswer:
+    """`MAX_TOOL_ROUNDS` exhausted is an app outcome, and it was charged to the model.
+
+    Four of 173 turns ended on the app's canned round-limit sentence, and every one was
+    scored as a model that failed to decline — the same mistake `unfinished` exists to
+    prevent in the harness.
+    """
+
+    def test_the_round_limit_text_is_not_judged_as_an_answer(self, real_corpus, haystack):
+        record = {
+            "text": "I wasn't able to finish looking that up. Please try rephrasing "
+                    "your question.",
+            "raw": "", "sources": [], "evidence": {}, "expect": "caveat",
+        }
+        kinds = [item.kind for item in checks.inspect(record, real_corpus, haystack)]
+        assert kinds == ["round-limit-reached"]
+
+    def test_the_phrase_still_exists_in_the_app(self):
+        """Pinned to its source, so it cannot drift into a phrase that matches nothing."""
+        import os
+
+        path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            "sage", "ui", "turn.py",
+        )
+        with open(path, encoding="utf-8") as handle:
+            assert checks.ROUND_LIMIT_TEXT in handle.read(), (
+                "the app's round-limit wording changed; update ROUND_LIMIT_TEXT"
+            )

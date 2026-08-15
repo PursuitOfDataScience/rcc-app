@@ -20,18 +20,18 @@
    "first_text_p95": 7.33,
    "seconds_p50": 5.66,
    "seconds_p95": 9.86,
-   "defects_per_answer": 0.29,
+   "defects_per_answer": 0.07,
    "defect_kinds": {
-    "no-refusal": 3,
     "footer-survived": 1
    },
    "warning_kinds": {
     "h1-heading": 1,
     "unsupported-token": 4,
-    "uncited-paragraph": 28,
+    "uncited-paragraph": 27,
+    "round-limit-reached": 2,
     "unlabelled-code-fence": 1
    },
-   "refusal_correct": 0.5,
+   "refusal_correct": 1.0,
    "n_negatives_answered": 6,
    "query_quality": {
     "better": 2,
@@ -59,16 +59,15 @@
    "first_text_p95": 8.03,
    "seconds_p50": 4.88,
    "seconds_p95": 9.15,
-   "defects_per_answer": 0.64,
-   "defect_kinds": {
-    "no-refusal": 5,
-    "commands-for-uncovered-question": 4
-   },
+   "defects_per_answer": 0.0,
+   "defect_kinds": {},
    "warning_kinds": {
     "h1-heading": 1,
-    "uncited-paragraph": 23
+    "uncited-paragraph": 21,
+    "round-limit-reached": 3,
+    "refused-without-contact": 1
    },
-   "refusal_correct": 0.16666666666666666,
+   "refusal_correct": 1.0,
    "n_negatives_answered": 6,
    "query_quality": {
     "better": 2,
@@ -96,15 +95,14 @@
    "first_text_p95": 7.44,
    "seconds_p50": 5.94,
    "seconds_p95": 50.37,
-   "defects_per_answer": 0.07,
-   "defect_kinds": {
-    "no-refusal": 1
-   },
+   "defects_per_answer": 0.0,
+   "defect_kinds": {},
    "warning_kinds": {
-    "uncited-paragraph": 29,
-    "unsupported-token": 1
+    "uncited-paragraph": 28,
+    "unsupported-token": 1,
+    "round-limit-reached": 2
    },
-   "refusal_correct": 0.8333333333333334,
+   "refusal_correct": 1.0,
    "n_negatives_answered": 6,
    "query_quality": {
     "better": 2,
@@ -132,17 +130,16 @@
    "first_text_p95": 8.79,
    "seconds_p50": 6.16,
    "seconds_p95": 10.33,
-   "defects_per_answer": 0.36,
+   "defects_per_answer": 0.07,
    "defect_kinds": {
-    "invented-token": 1,
-    "no-refusal": 3,
     "footer-survived": 1
    },
    "warning_kinds": {
     "h1-heading": 3,
-    "uncited-paragraph": 29
+    "uncited-paragraph": 28,
+    "round-limit-reached": 2
    },
-   "refusal_correct": 0.5,
+   "refusal_correct": 1.0,
    "n_negatives_answered": 6,
    "query_quality": {
     "better": 2,
@@ -170,15 +167,13 @@
    "first_text_p95": 10.27,
    "seconds_p50": 7.94,
    "seconds_p95": 19.58,
-   "defects_per_answer": 0.07,
-   "defect_kinds": {
-    "no-refusal": 1
-   },
+   "defects_per_answer": 0.0,
+   "defect_kinds": {},
    "warning_kinds": {
     "uncited-paragraph": 18,
     "h1-heading": 2
    },
-   "refusal_correct": 0.8333333333333334,
+   "refusal_correct": 1.0,
    "n_negatives_answered": 6,
    "query_quality": {
     "better": 2,
@@ -206,16 +201,16 @@
    "first_text_p95": 8.06,
    "seconds_p50": 12.85,
    "seconds_p95": 18.55,
-   "defects_per_answer": 0.14,
+   "defects_per_answer": 0.07,
    "defect_kinds": {
-    "no-refusal": 2
+    "no-refusal": 1
    },
    "warning_kinds": {
     "uncited-paragraph": 26,
     "unsupported-token": 1,
-    "refused-without-contact": 2
+    "refused-without-contact": 3
    },
-   "refusal_correct": 0.6666666666666666,
+   "refusal_correct": 0.8333333333333334,
    "n_negatives_answered": 6,
    "query_quality": {
     "better": 2,
@@ -243,20 +238,18 @@
    "first_text_p95": 29.18,
    "seconds_p50": 15.78,
    "seconds_p95": 37.9,
-   "defects_per_answer": 0.33,
+   "defects_per_answer": 0.17,
    "defect_kinds": {
     "invented-token": 1,
-    "footer-survived": 1,
-    "no-refusal": 1,
-    "commands-for-uncovered-question": 1
+    "footer-survived": 1
    },
    "warning_kinds": {
     "unsupported-token": 2,
     "uncited-paragraph": 22,
     "h1-heading": 13,
-    "refused-without-contact": 2
+    "refused-without-contact": 3
    },
-   "refusal_correct": 0.75,
+   "refusal_correct": 1.0,
    "n_negatives_answered": 4,
    "query_quality": {
     "better": 2,
@@ -274,7 +267,7 @@
    "answered": 1.0,
    "question_always_sent": true,
    "peak_request_chars": 26758,
-   "defects": 1
+   "defects": 0
   },
   {
    "model": "opencode:hy3-free",
@@ -284,7 +277,7 @@
    "answered": 1.0,
    "question_always_sent": true,
    "peak_request_chars": 27603,
-   "defects": 1
+   "defects": 0
   },
   {
    "model": "opencode:big-pickle",
@@ -294,7 +287,7 @@
    "answered": 1.0,
    "question_always_sent": true,
    "peak_request_chars": 27517,
-   "defects": 3
+   "defects": 1
   }
  ],
  "injections": [

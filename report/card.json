@@ -1,5 +1,5 @@
 {
- "commit": "7ff40e7",
+ "commit": "06d773d",
  "retrieval": {
   "n": 33,
   "recall@5": 1.0,
@@ -156,9 +156,9 @@
   "tests": {
    "ok": true,
    "code": 0,
-   "tail": "..........................................                               [100%]"
+   "tail": "............................................................             [100%]"
   },
-  "collected": 906
+  "collected": 924
  },
  "layout": "unmeasured",
  "agents": {
@@ -175,8 +175,8 @@
     "calls": 3.43,
     "first_text_p50": 4.29,
     "seconds_p95": 9.86,
-    "defects_per_answer": 0.29,
-    "refusal_correct": 0.5
+    "defects_per_answer": 0.07,
+    "refusal_correct": 1.0
    },
    {
     "model": "opencode:deepseek-v4-flash-free",
@@ -190,8 +190,8 @@
     "calls": 4.36,
     "first_text_p50": 4.03,
     "seconds_p95": 9.15,
-    "defects_per_answer": 0.64,
-    "refusal_correct": 0.16666666666666666
+    "defects_per_answer": 0.0,
+    "refusal_correct": 1.0
    },
    {
     "model": "opencode:big-pickle",
@@ -205,8 +205,8 @@
     "calls": 4.14,
     "first_text_p50": 4.76,
     "seconds_p95": 50.37,
-    "defects_per_answer": 0.07,
-    "refusal_correct": 0.8333333333333334
+    "defects_per_answer": 0.0,
+    "refusal_correct": 1.0
    },
    {
     "model": "opencode:mimo-v2.5-free",
@@ -220,8 +220,8 @@
     "calls": 4.43,
     "first_text_p50": 4.22,
     "seconds_p95": 10.33,
-    "defects_per_answer": 0.36,
-    "refusal_correct": 0.5
+    "defects_per_answer": 0.07,
+    "refusal_correct": 1.0
    },
    {
     "model": "opencode:hy3-free",
@@ -235,8 +235,8 @@
     "calls": 2.71,
     "first_text_p50": 6.05,
     "seconds_p95": 19.58,
-    "defects_per_answer": 0.07,
-    "refusal_correct": 0.8333333333333334
+    "defects_per_answer": 0.0,
+    "refusal_correct": 1.0
    },
    {
     "model": "opencode:laguna-s-2.1-free",
@@ -250,8 +250,8 @@
     "calls": 2.93,
     "first_text_p50": 5.17,
     "seconds_p95": 18.55,
-    "defects_per_answer": 0.14,
-    "refusal_correct": 0.6666666666666666
+    "defects_per_answer": 0.07,
+    "refusal_correct": 0.8333333333333334
    },
    {
     "model": "opencode:nemotron-3-ultra-free",
@@ -265,8 +265,8 @@
     "calls": 2.86,
     "first_text_p50": 8.72,
     "seconds_p95": 37.9,
-    "defects_per_answer": 0.33,
-    "refusal_correct": 0.75
+    "defects_per_answer": 0.17,
+    "refusal_correct": 1.0
    }
   ],
   "conversations": [
@@ -278,7 +278,7 @@
     "answered": 1.0,
     "question_always_sent": true,
     "peak_request_chars": 26758,
-    "defects": 1
+    "defects": 0
    },
    {
     "model": "opencode:hy3-free",
@@ -288,7 +288,7 @@
     "answered": 1.0,
     "question_always_sent": true,
     "peak_request_chars": 27603,
-    "defects": 1
+    "defects": 0
    },
    {
     "model": "opencode:big-pickle",
@@ -298,7 +298,7 @@
     "answered": 1.0,
     "question_always_sent": true,
     "peak_request_chars": 27517,
-    "defects": 3
+    "defects": 1
    }
   ],
   "injections": [

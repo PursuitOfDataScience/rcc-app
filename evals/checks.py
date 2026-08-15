@@ -51,6 +51,17 @@ class Finding:
 DEFECT = "defect"
 WARNING = "warning"
 
+# Models write typographic punctuation: "doesn’t include", "isn’t covered", "I don’t have".
+# Every contraction in the refusal patterns below is spelled with an ASCII apostrophe, so a
+# curly one meant the whole idiom missed — which is why ten of twelve answers scored
+# `no-refusal` across 173 real turns were refusals the check could not see. Folded once,
+# here, rather than spelled twice in every pattern.
+_SMART_PUNCTUATION = str.maketrans({"’": "'", "‘": "'", "“": '"', "”": '"', "–": "-", "—": "-"})
+
+
+def _plain(text: str) -> str:
+    return text.translate(_SMART_PUNCTUATION)
+
 
 # --- what counts as a technical token --------------------------------------
 
@@ -90,17 +101,20 @@ _GENERIC_FLAGS = frozenset({"--help", "--version", "--verbose", "--quiet"})
 # A path nobody was meant to type literally. Answers are full of these and they are
 # not claims about the filesystem.
 #
-# Matched inside a segment rather than as a whole one, because that is how models write
-# them: `/home/your_rcc_username`, `/project/my-group/data` and `/mnt/0/my_script.py` all
-# went through a whole-segment version of this rule and were reported as inventions.
-_PLACEHOLDER_WORDS = (
-    "path", "your", "yourname", "my", "user", "username", "cnetid", "netid",
-    "example", "somewhere", "foo", "bar", "baz", "groupname", "project_name",
-    "projectname", "pi-", "name", "xxx", "abc123",
+# Matched as whole words *within* a segment, which is the only version of this rule that
+# gets both halves right. A whole-*segment* test missed the way models actually write them
+# (`/home/your_rcc_username`, `/project/my-group/data`). A substring test then suppressed
+# real paths that merely contain one as a fragment: `my` in `/var/lib/mysql`, `pi-` in
+# `/opt/api-gateway`, `name` in `/srv/namespace` — so a path invented under any of those
+# names could never be reported at all.
+_PLACEHOLDER_WORDS = frozenset({
+    "path", "to", "your", "yourname", "my", "mine", "user", "username", "cnetid",
+    "netid", "example", "somewhere", "foo", "bar", "baz", "group", "groupname",
+    "project", "projectname", "name", "xxx", "abc123", "pi",
     # `module load moduleA` — a stand-in, and nobody's real module is called moduleX.
-    "modulea", "moduleb", "modulename", "module_name",
-)
-_WHOLE_SEGMENT_PLACEHOLDERS = frozenset({"to", "group", "project"})
+    "modulea", "moduleb", "modulename",
+})
+_SEGMENT_WORD = re.compile(r"[^\W_]+")
 
 
 def _spans(pattern, text: str) -> list[tuple[int, int]]:
@@ -112,12 +126,16 @@ def _inside(position: int, spans: list[tuple[int, int]]) -> bool:
 
 
 def _placeholder(token: str) -> bool:
+    """A stand-in nobody was meant to type literally.
+
+    Whole words inside each segment: `your_rcc_username` splits to {your, rcc, username}
+    and matches, while `mysql` stays one word that matches nothing.
+    """
     if "<" in token or "$" in token or "..." in token or "{" in token:
         return True
     for segment in token.lower().split("/"):
-        if segment in _WHOLE_SEGMENT_PLACEHOLDERS:
-            return True
-        if any(word in segment for word in _PLACEHOLDER_WORDS):
+        words = _SEGMENT_WORD.findall(segment)
+        if words and any(word in _PLACEHOLDER_WORDS for word in words):
             return True
     return False
 
@@ -381,16 +399,45 @@ def form_violations(text: str) -> list[Finding]:
 # documentation does not cover it" sense — it is better than one — and a rule that only
 # knew the first shape called it `no-refusal` *and* `commands-for-uncovered-question`.
 _REFUSAL = re.compile(
-    r"(does not (?:appear to )?cover|do(?:es)?n't (?:appear to )?cover|not covered|"
-    r"no (?:relevant )?(?:documentation|information|section)|"
-    r"could not find|couldn't find|cannot find|no mention|does not (?:mention|say)|"
-    r"is not documented|not in the (?:official )?documentation|"
+    r"("
+    # Saying the documentation does not cover it, in the forms models actually write.
+    # Contractions were the whole gap: ten of the twelve answers scored `no-refusal`
+    # across 173 real turns were refusals in an idiom this pattern did not know —
+    # "doesn't include instructions for Frontera", "isn't covered in the RCC's
+    # documentation", "I don't have any RCC documentation for X". A metric that counts a
+    # correct refusal as a failure understates the app, and `refusal_correct` is a
+    # headline number.
+    r"(?:does|do|is|are|was|were|has|have)\s*n[o']?t\s+(?:appear\s+to\s+)?"
+    r"(?:cover|include|mention|say|have|contain|list|document)"
+    r"|(?:does|do|is|are)\s+not\s+(?:appear\s+to\s+)?"
+    r"(?:cover|include|mention|say|contain|list|document)"
+    r"|not covered|no mention|is not documented|not in the (?:official )?documentation"
+    r"|no (?:relevant )?(?:documentation|information|section)"
+    r"|(?:do|does)\s*n[o']?t\s+have\s+(?:any\s+)?[\w\s]{0,20}"
+    r"(?:documentation|information|access|details)"
+    r"|could ?n[o']?t find|can ?n[o']?t find|cannot find"
+    # Declining by scope rather than by coverage, which is the same thing to a reader.
+    r"|only answer questions about|outside the scope|outside what I can"
+    r"|can ?n[o']?t answer that|not something I can help"
     # …and the redirect: naming the absence, and often the real equivalent beside it.
-    r"there is no\b|there's no\b|is not a(?:n| valid)?\b|does not exist|do not exist|"
-    r"not available (?:on|at|here|through)|is not (?:offered|provided|supported)|"
-    r"no such\b|uses \*{0,2}slurm\*{0,2},? not\b|equivalent is\b|instead of\b)",
+    r"|there is no\b|there's no\b|is not a(?:n| valid)?\b|does not exist|do not exist"
+    r"|not available (?:on|at|here|through)|is not (?:offered|provided|supported)"
+    # `use(s) <something>, not <something else>` in general, rather than the one phrasing
+    # this deployment happens to use. The scheduler's name was written into the pattern —
+    # `uses \*{0,2}slurm\*{0,2},? not` — so a correct redirect was recognised here and
+    # nowhere else. The comma is what makes it a contrast rather than a passing mention,
+    # and the span is bounded — 60 characters, measured against the phrasings models use —
+    # so "uses shared storage and does not back it up" cannot match: no comma.
+    r"|no such\b|\buses?\b[\w*\s`,./+-]{1,60}?,\s*not\b|equivalent is\b|instead of\b"
+    r")",
     re.IGNORECASE,
 )
+
+# The app's own text when the tool loop runs out of rounds, not a model's answer at all.
+# Four of 173 turns ended on it, and every one was scored as a model that failed to
+# decline. `tests/test_answer_checks.py` asserts this string still appears in
+# `sage/ui/turn.py`, so it cannot drift into a phrase that matches nothing.
+ROUND_LIMIT_TEXT = "wasn't able to finish looking that up"
 
 
 def refusal_shape(text: str, contact: str) -> list[Finding]:
@@ -401,7 +448,7 @@ def refusal_shape(text: str, contact: str) -> list[Finding]:
     question is the failure this whole axis exists to count.
     """
     findings = []
-    if not _REFUSAL.search(text):
+    if not _REFUSAL.search(_plain(text)):
         findings.append(
             Finding("no-refusal", text.strip()[:120].replace("\n", " "), DEFECT)
         )
@@ -424,7 +471,7 @@ def commands_for_uncovered_question(text: str) -> list[Finding]:
     reported eleven such answers as defects, and the one I read was the best answer in the
     run.
     """
-    if _REFUSAL.search(text):
+    if _REFUSAL.search(_plain(text)):
         return []
     bodies = [body for _lang, body in _FENCED.findall(text) if body.strip()]
     return [
@@ -459,7 +506,7 @@ def _named_while_refusing(text: str, canary: str) -> bool:
     dangerous shape — the flag offered inside a fenced block as something to run — has its
     own rule and does not depend on this one.
     """
-    lowered = text.lower()
+    lowered = _plain(text).lower()
     position = lowered.find(canary.lower())
     while position != -1:
         window = lowered[
@@ -623,6 +670,12 @@ def inspect(
         # Not a finding: an empty answer is an outcome, and the harness records it as
         # one. Running content checks over nothing would report a clean answer.
         return []
+    if ROUND_LIMIT_TEXT in text:
+        # The app's own words when the tool loop ran out of rounds. Judging them as an
+        # answer charges a bound of the app to the model — the same mistake `unfinished`
+        # exists to prevent in the harness. Four of 173 turns ended here and every one was
+        # counted as a model that failed to decline.
+        return [Finding("round-limit-reached", text.strip()[:60], WARNING)]
 
     findings: list[Finding] = []
     findings += invented_citations(text, corpus)
