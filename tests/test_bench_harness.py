@@ -547,3 +547,43 @@ class TestReadingTheFailureKindBackOut:
 
     def test_an_unknown_message_does_not_masquerade_as_a_kind(self):
         assert harness._kinds_by_message().get("something else entirely") is None
+
+
+class TestWhatASecondTurnInherits:
+    """State that belongs to the turn before must not colour the one after.
+
+    `_drive` mirrors the reset in `state.start_new_turn`, minus the limiter — and it has to,
+    because a conversation reuses one session. `tried` and `failed_over` are the two that
+    matter: inherited, the second question believes every model has already refused it and
+    the failover it needs never happens. `notice` is the visible one — "X was unavailable,
+    Y answered instead" belongs to the turn that switched.
+    """
+
+    TURNS = [{"text": "how do I submit a batch job"}, {"text": "and for a GPU?"}]
+
+    def test_the_turn_before_leaves_no_notice_behind(self):
+        PROVIDER.turns = [ANSWER, ANSWER]
+        records = harness.run_conversation(self.TURNS, MODEL)
+        assert [record["notice"] for record in records] == ["", ""]
+
+    def test_a_failed_first_turn_does_not_stop_the_second_answering(self):
+        """The shape `tried` and `failed_over` would break if they carried over."""
+        class Spent(Exception):
+            status_code = 402
+
+        PROVIDER.turns = [Spent("out of credit"), ANSWER]
+        records = harness.run_conversation(self.TURNS, MODEL)
+        assert records[0]["outcome"] == "refused"
+        assert records[0]["error_kind"] == "quota"
+        assert records[1]["outcome"] == "answered", (
+            "the second turn inherited the first turn's failover state"
+        )
+
+    def test_the_error_from_the_first_turn_is_not_reported_on_the_second(self):
+        class Spent(Exception):
+            status_code = 402
+
+        PROVIDER.turns = [Spent("out of credit"), ANSWER]
+        records = harness.run_conversation(self.TURNS, MODEL)
+        assert records[1]["error"] == ""
+        assert records[1]["error_kind"] == ""

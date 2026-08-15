@@ -36,6 +36,14 @@ def report(measured: dict) -> None:
     for row in empty:
         print(f"   {row['bytes']:5d} bytes  {row['source']}/{row['path']}")
 
+    wrong = measured["unregistered_names"]
+    if wrong:
+        print(f"\nUNREGISTERED NAMES ({len(wrong)}) — a typo the five seams fail on "
+              "differently, and only two of them loudly")
+        for row in wrong:
+            print(f"   {row['kind']} {row['name']!r} at {row['where']}; "
+                  f"registered: {', '.join(row['registered'])}")
+
     nothing = measured["indexing_nothing"]
     print(f"\nindexed nothing ({len(nothing)}) — read, and no section came out")
     for page in nothing:

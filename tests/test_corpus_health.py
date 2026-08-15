@@ -60,10 +60,34 @@ class TestIntegrity:
         bad = measured["malformed_urls"]
         assert not bad, f"{len(bad)} unusable citation URLs: {bad[:3]}"
 
-    def test_both_sources_are_indexed(self, measured):
-        assert set(measured["sources"]) == {"docs", "web"}
+    def test_every_source_the_profile_declares_contributed(self, measured, profile):
+        """Derived from the profile rather than a hardcoded pair.
+
+        `corpus.build` skips a source whose `reader` nothing registered — deliberately, so
+        one misconfigured tree cannot take a multi-source deployment down. The cost is that
+        the app boots looking healthy with a whole tree missing, and CI's own check only
+        asserts that *some* chunks exist. A third source added to the profile is now
+        required to contribute the day it is added, rather than the day somebody notices.
+        """
+        declared = {source.name for source in profile.sources}
+        assert set(measured["sources"]) == declared
         for name, row in measured["sources"].items():
             assert row["chunks"] > 0, f"{name} indexed nothing"
+
+    def test_every_registry_name_the_profile_uses_exists(self, measured):
+        """A typo caught as one line with the valid names beside it.
+
+        A bad `links` scheme or `retrieval.engine` raises at boot with the registry's own
+        list, which is right. A bad `reader` is skipped with a log line, so a single-source
+        deployment boots and answers every question with "the documentation does not appear
+        to cover it" — this app's worst state, and the one hardest to notice.
+        """
+        wrong = measured["unregistered_names"]
+        assert not wrong, "names nothing registered: " + "; ".join(
+            f"{row['kind']} {row['name']!r} at {row['where']} "
+            f"(registered: {', '.join(row['registered'])})"
+            for row in wrong
+        )
 
 
 class TestWhatTheCorpusCannotAnswer:

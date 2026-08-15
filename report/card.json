@@ -1,5 +1,5 @@
 {
- "commit": "bfcbd78",
+ "commit": "42e7875",
  "retrieval": {
   "n": 33,
   "recall@5": 1.0,
@@ -156,9 +156,9 @@
   "tests": {
    "ok": true,
    "code": 0,
-   "tail": "....                                                                     [100%]"
+   "tail": "........                                                                 [100%]"
   },
-  "collected": 868
+  "collected": 872
  },
  "layout": "unmeasured",
  "agents": {

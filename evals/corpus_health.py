@@ -299,9 +299,56 @@ def malformed_urls(corpus) -> list[dict]:
     return found
 
 
+def unregistered_names(profile) -> list[dict]:
+    """Names the profile hands to a registry that nothing has registered.
+
+    Each of the five seams fails differently on a typo, and only two of them fail in a way
+    anybody would notice. A bad `links` scheme or `retrieval.engine` raises at boot with the
+    registry's own list of valid names, which is the right behaviour. A bad `reader` is
+    deliberate the other way: `corpus.build` logs it and skips that source, so a
+    multi-source deployment keeps working — and a single-source one boots looking healthy
+    and answers every question with "the documentation does not appear to cover it", which
+    is this app's worst state.
+
+    So the names are checked directly, before anything is built, where a typo is one line
+    with the valid names next to it rather than an empty corpus.
+    """
+    # `sage.corpus.readers` the *name* is the registry, not the module — the package
+    # rebinds it. The URL schemes keep theirs inside the module.
+    from sage.corpus import readers as reader_registry
+    from sage.corpus.urls import schemes as url_registry
+    from sage.providers import adapters
+    from sage.retrieval import engines
+    from sage.tools import factories
+
+    wrong = []
+
+    def check(kind: str, where: str, name: str, registry) -> None:
+        if name and name not in registry:
+            wrong.append(
+                {
+                    "kind": kind,
+                    "where": where,
+                    "name": name,
+                    "registered": list(registry.names()),
+                }
+            )
+
+    for source in profile.sources:
+        check("reader", f"sources.{source.name}", source.reader, reader_registry)
+        check("url scheme", f"sources.{source.name}", source.links, url_registry)
+    check("retrieval engine", "retrieval", profile.retrieval.engine, engines)
+    for entry in profile.providers:
+        check("provider kind", f"providers.{entry.name}", entry.kind, adapters)
+    for name in ("search_docs", "read_doc"):
+        check("tool", "tools", name, factories)
+    return wrong
+
+
 def measure(corpus, index) -> dict:
     asked = [case.text for case in questions()] + [case.text for case in identifiers()]
     return {
+        "unregistered_names": unregistered_names(_active()),
         "chunks": index.total,
         "sources": sources(corpus),
         "empty_documents": empty_documents(),
