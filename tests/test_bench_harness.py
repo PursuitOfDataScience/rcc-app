@@ -587,3 +587,113 @@ class TestWhatASecondTurnInherits:
         records = harness.run_conversation(self.TURNS, MODEL)
         assert records[1]["error"] == ""
         assert records[1]["error_kind"] == ""
+
+
+class TestAStreamThatIsMostlyEmpty:
+    """The shape a real stream actually has, which the mock did not model.
+
+    Measured against `nemotron-3.5-lightning-free` on a tool round: 46 chunks, 44 of them
+    carrying neither text nor a tool call. `tools/mock_provider.py` sent one, so nothing
+    offline exercised the shape the live path gets on every turn — and two behaviours depend
+    on it. `llm.start` pulls the first chunk so an auth failure surfaces where it can still
+    be retried, and `clearing` holds the status row until a chunk with *text* arrives, not
+    until the first chunk of any kind.
+    """
+
+    def test_forty_empty_deltas_then_an_answer_still_answers(self):
+        PROVIDER.turns = [[event()] * 40 + ANSWER]
+        record = turn()
+        assert record["outcome"] == "answered"
+        assert "30 GB" in record["text"]
+
+    def test_the_status_row_is_not_cleared_by_an_empty_delta(self):
+        """An empty delta must not count as the answer starting: `first_text` is what a
+        reader waits for, and it is not the same as the first byte."""
+        PROVIDER.turns = [[event()] * 40 + ANSWER]
+        record = turn()
+        assert record["first_byte"] is not None
+        assert record["first_text"] is not None
+        assert record["first_byte"] <= record["first_text"]
+
+    def test_a_stream_of_nothing_but_empty_deltas_is_an_empty_answer(self):
+        PROVIDER.turns = [[event()] * 40]
+        record = turn()
+        assert record["outcome"] == "refused"
+        assert record["error_kind"] == "empty"
+
+    def test_empty_deltas_do_not_count_as_streamed_chunks(self):
+        """`write_stream` sees only text, so a quiet lead cannot fake a streaming answer."""
+        PROVIDER.turns = [[event()] * 40 + ANSWER]
+        assert max(turn()["stream_chunks"]) == len(ANSWER)
+
+
+class TestAnAttachmentAcrossTwoTurns:
+    """A file's text must reach the model once, not on every following turn.
+
+    `history.py` records the cost bug this prevents: attachment text used to be re-sent on
+    every subsequent turn, so three follow-ups about a PDF shipped it four times.
+    `tests/test_history.py` holds the rule at the function level; nothing had watched it
+    happen through the real loop, which is where `ATTACHMENT_FULL_TEXT_TURNS` is actually
+    applied.
+    """
+
+    CONTENT = "The lever must be pressed twice before the chime sounds. XYZZY-FILE-0002"
+
+    def attachment(self):
+        from sage.files import Attachment
+
+        return Attachment(filename="notes.txt", kind="text", text=self.CONTENT)
+
+    def sent(self, index: int) -> str:
+        return "\n".join(
+            str(message.get("content", "")) for message in PROVIDER.sent[index]
+        )
+
+    def test_the_file_arrives_in_full_on_the_turn_it_is_attached_to(self):
+        PROVIDER.turns = [ANSWER, ANSWER]
+        harness.run_conversation(
+            [
+                {"text": "what does this say?", "attachments": [self.attachment()]},
+                {"text": "and what about the chime?"},
+            ],
+            MODEL,
+        )
+        assert "XYZZY-FILE-0002" in self.sent(0)
+
+    def test_it_is_still_readable_on_the_next_turn(self):
+        """It has to be. `ATTACHMENT_FULL_TEXT_TURNS = 1` keeps the *most recent*
+        attachment in full, and while a file is still the most recent one a follow-up about
+        it needs its text: stub it and "what does page 3 say?" has nothing to read."""
+        PROVIDER.turns = [ANSWER, ANSWER]
+        harness.run_conversation(
+            [
+                {"text": "what does this say?", "attachments": [self.attachment()]},
+                {"text": "and what about the chime?"},
+            ],
+            MODEL,
+        )
+        assert "XYZZY-FILE-0002" in self.sent(-1)
+
+    def test_a_newer_attachment_collapses_the_older_one_to_a_stub(self):
+        """What the bound actually removes: the accumulation. Two files, one turn each, and
+        only the newer one rides along in full."""
+        from sage.files import Attachment
+
+        newer = Attachment(
+            filename="second.txt", kind="text",
+            text="A different note entirely. XYZZY-FILE-0003",
+        )
+        PROVIDER.turns = [ANSWER, ANSWER]
+        harness.run_conversation(
+            [
+                {"text": "what does this say?", "attachments": [self.attachment()]},
+                {"text": "and this one?", "attachments": [newer]},
+            ],
+            MODEL,
+        )
+        second = self.sent(-1)
+        assert "XYZZY-FILE-0003" in second, "the newest file must arrive in full"
+        assert "XYZZY-FILE-0002" not in second, (
+            "the older file's text rode along — the accumulation history.py bounds"
+        )
+        assert "notes.txt" in second, "the model should still know it was attached"

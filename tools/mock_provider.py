@@ -22,6 +22,7 @@ script can switch scenarios between turns without restarting anything:
     echo '{"mode": "empty"}'            > /tmp/mock_provider.json   # a completion with no text
     echo '{"status": 402}'              > /tmp/mock_provider.json   # out of credit
     echo '{"mode": "long", "pace": 0.1}'> /tmp/mock_provider.json   # a slow, long answer
+    echo '{"mode": "quiet"}'            > /tmp/mock_provider.json   # 40 empty deltas, then text
 
 Every request is appended to the log file, which is how you check what the app
 actually sent upstream — the message roles, whether tools were offered, and whether
@@ -191,6 +192,18 @@ class Handler(BaseHTTPRequestHandler):
             yield sse(delta(tool_calls=[
                 call(0, f"c{rounds}", "search_docs", '{"query": "quota"}')]))
             yield sse(delta(finish="tool_calls"))
+        elif mode == "quiet":
+            # What a real stream actually looks like. Measured against
+            # `nemotron-3.5-lightning-free` on a tool round: 46 chunks, of which 44 carried
+            # neither text nor a tool call. This mock sent one, so nothing offline ever
+            # exercised the shape the live path gets on every turn — and two things depend
+            # on it: `llm.start` pulls the first chunk to surface auth failures early, and
+            # `clearing` holds the status row until the first chunk with *text* in it.
+            for _ in range(int(settings.get("quiet_deltas", 40))):
+                yield sse(delta())
+            for word in (settings.get("text") or ANSWER).split(" "):
+                yield sse(delta(text=word + " "))
+            yield sse(delta(finish="stop"))
         else:
             text = settings.get("text") or ANSWER
             if mode == "long":

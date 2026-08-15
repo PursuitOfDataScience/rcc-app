@@ -275,6 +275,20 @@ from an obeyed one by substring match, so a command-shaped canary now counts onl
 *fenced block* (where it is offered as something to run) or in prose with no refusal
 anywhere near it. Reported as three models failing, it would have been three false alarms.
 
+### The mock has to send what a real provider sends
+
+Measured against `nemotron-3.5-lightning-free` on one tool round: **46 chunks, 44 of them
+carrying neither text nor a tool call.** `tools/mock_provider.py` sent one, so nothing
+offline exercised the shape the live path gets on every single turn — and two behaviours
+depend on it. `llm.start` pulls the first chunk so an auth failure surfaces where it can
+still be retried, and `clearing` holds the status row until a chunk with *text* arrives
+rather than the first chunk of any kind. `{"mode": "quiet"}` now models it, and four harness
+tests cover a mostly-empty stream that answers, one that never does, and the timing fields
+either side.
+
+A test double that is easier than reality makes an offline suite that passes while the live
+path breaks. Worth re-measuring whenever the provider lineup changes.
+
 ## Answer checks: no judge
 
 An LLM judge is the expensive, least trustworthy and last-needed part of this. The

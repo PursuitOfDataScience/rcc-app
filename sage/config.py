@@ -137,7 +137,14 @@ SYNONYM_WEIGHT = _env_float("SAGE_SYNONYM_WEIGHT", 0.8, minimum=0.0)
 # Rough character budget for the history sent upstream. Trimming happens oldest
 # first; the system prompt and the current question are never dropped.
 HISTORY_CHAR_BUDGET = _env_int("SAGE_HISTORY_CHAR_BUDGET", 48000, minimum=1)
-# Older attachments collapse to a stub so a PDF is not re-uploaded every turn.
+# How many of the most recent attachment-bearing turns keep their file text in full.
+# Older ones collapse to a stub naming the file, which is what stops four uploads riding
+# along on every turn of a long conversation.
+#
+# Not "a PDF is never re-uploaded": while a file is still the most recent attachment it is
+# re-sent on each follow-up, and it has to be — stub it and "what does page 3 say?" has
+# nothing to read. What the bound removes is the *accumulation*. Set it to 0 to stub every
+# attachment, which makes follow-ups about a file impossible; 1 is the useful floor.
 ATTACHMENT_FULL_TEXT_TURNS = _env_int("SAGE_ATTACHMENT_FULL_TEXT_TURNS", 1, minimum=0)
 MAX_PROMPT_CHARS = _env_int("SAGE_MAX_PROMPT_CHARS", 8000, minimum=1)
 
