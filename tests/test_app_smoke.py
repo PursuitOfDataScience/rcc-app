@@ -253,6 +253,52 @@ class TestTurnLoop:
         assert stub.session_state["processing"] is False
 
 
+class TestTheMachineryIsNotNamedToTheReader:
+    """`sage/redact.py`, in the app, on the answer that is actually stored.
+
+    The prompt asks the model not to name the tools it calls, and over the sixteen probes
+    in `evals/meta.toml` the default free model named them in four answers anyway. The
+    tool names are in every request as schemas — the provider API has nowhere else to put
+    them — so this is the half that does not depend on the model.
+    """
+
+    LEAK = [event(
+        "Every answer is pulled from the RCC documentation via the `search_docs` and "
+        "`read_doc` tools."
+    )]
+
+    def session(self):
+        return {
+            "messages": [
+                {"role": "user", "text": "did you make that up?", "attachments": []}
+            ],
+            "processing": True,
+        }
+
+    def test_the_stored_answer_says_search_and_read_instead(self, monkeypatch):
+        client = ScriptedProvider([self.LEAK])
+        stub, _module = run_app(monkeypatch, client=client, session=self.session())
+        stored = stub.session_state["messages"][-1]
+        assert "search_docs" not in stored["text"]
+        assert "read_doc" not in stored["text"]
+        assert "`search` and `read` tools" in stored["text"]
+
+    def test_what_was_removed_is_recorded_on_the_turn(self, monkeypatch):
+        """Not silent: `tools/agent_bench.py` scores the model on what it tried to say."""
+        client = ScriptedProvider([self.LEAK])
+        stub, _module = run_app(monkeypatch, client=client, session=self.session())
+        assert stub.session_state["messages"][-1]["redacted"] == [
+            "read_doc", "search_docs"
+        ]
+
+    def test_an_ordinary_answer_is_untouched_and_records_nothing(self, monkeypatch):
+        client = ScriptedProvider([[event("Your /home quota is 30 GB.")]])
+        stub, _module = run_app(monkeypatch, client=client, session=self.session())
+        stored = stub.session_state["messages"][-1]
+        assert stored["text"] == "Your /home quota is 30 GB."
+        assert stored["redacted"] == []
+
+
 class TestModelPicker:
     """Switching provider mid-session is the way round a spent API quota."""
 

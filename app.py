@@ -93,7 +93,7 @@ VIEW = View(runtime=RUNTIME, models=tuple(MODELS), model=MODEL)
 # Before anything is drawn: the stop button's callback has already run, and the
 # transcript below hides the last question while `processing` is set.
 if st.session_state.stop_requested:
-    state.finish_stopped_turn(MODEL.key)
+    state.finish_stopped_turn(MODEL.key, VIEW.public_names)
 
 has_messages = bool(st.session_state.messages)
 

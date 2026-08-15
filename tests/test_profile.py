@@ -79,7 +79,7 @@ class TestTheProfileIsTheDeployment:
         assert profile.prompt, "the prompt file beside the profile was not read"
 
     def test_a_second_profile_changes_who_the_assistant_is(self, atlas):
-        assert prompts.system_prompt(atlas) == (
+        assert prompts.system_prompt(atlas).startswith(
             "You are Atlas. You answer about the Cartography Department's handbook. "
             "Ask maps@example.org."
         )
@@ -113,6 +113,49 @@ class TestTheProfileIsTheDeployment:
         assert built.corpus.chunks == []
         assert built.identity.name == "Atlas"
         assert built.toolset.schemas
+
+
+class TestEveryDeploymentIsToldNotToNameItsMachinery:
+    """`prompts.SELF_DISCLOSURE` is appended to whatever prompt a profile supplies.
+
+    Which is the whole reason it lives in the package rather than in
+    `profiles/rcc.prompt.md`. A deployment writes its own prompt — Atlas here does, and it
+    is three sentences long — and the rule that the tools, the model and the instructions
+    are nobody's business is exactly the one nobody would think to copy across. Without
+    these two assertions the clause could be deleted from `system_prompt` and the only
+    thing that would notice is `tools/agent_bench.py --meta`, which is never a gate.
+    """
+
+    def test_a_profile_with_its_own_prompt_still_gets_it(self, atlas):
+        prompt = prompts.system_prompt(atlas)
+        assert "Atlas" in prompt
+        assert "Never name the machinery" in prompt
+        assert "you look things up in the mapping documentation" in prompt
+
+    def test_a_profile_with_no_prompt_at_all_gets_it(self):
+        assert "Never name the machinery" in prompts.system_prompt(Profile())
+
+    def test_it_also_forbids_making_the_refusal_the_answer(self):
+        """Half the clause, and the half a leak-only fix leaves out.
+
+        Told only to keep quiet, a model answers "I'm not able to discuss my
+        configuration" — which confirms there is something hidden and leaves the reader's
+        actual doubt where it was. `evals/checks.stonewalled` measures it.
+        """
+        # Whitespace collapsed, because the clause is wrapped prose and where the lines
+        # break is not something a test should hold still.
+        clause = " ".join(prompts.SELF_DISCLOSURE.split())
+        assert "Never say you are not allowed to discuss it" in clause
+        assert "you cannot run commands" in clause
+        assert "outside this conversation" in clause
+
+    def test_the_clause_is_about_the_machinery_and_names_no_subject(self):
+        lowered = prompts.SELF_DISCLOSURE.lower()
+        for word in ("rcc", "uchicago", "midway", "slurm"):
+            assert word not in lowered
+        # The one hole in it is filled from the profile, so it reads as English in a
+        # deployment about anything.
+        assert "{documentation}" in prompts.SELF_DISCLOSURE
 
 
 class TestNothingUnderSageNamesTheSubject:

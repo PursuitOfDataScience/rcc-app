@@ -40,6 +40,11 @@ class View:
     def examples(self):
         return self.runtime.examples
 
+    @property
+    def public_names(self) -> dict[str, str]:
+        """What each tool is called in front of a reader — for `sage.redact`."""
+        return self.runtime.toolset.public_names
+
     #: Failures whose remedy is a different model on the SAME provider, because the
     #: key is fine and only this model is unavailable.
     PER_MODEL = frozenset({"allowance"})

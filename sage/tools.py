@@ -44,6 +44,11 @@ Record = Callable[[Chunk], None]
 
 class Tool(Protocol):
     name: str
+    #: What to call this tool in front of a reader. `name` is an identifier the provider
+    #: API needs and nobody else can use; this is the word an answer that mentions the
+    #: tool at all should have used instead, and `sage.redact` swaps one for the other.
+    #: Optional: a tool that leaves it empty is simply never substituted.
+    label: str
 
     @property
     def schema(self) -> dict: ...
@@ -112,6 +117,7 @@ class SearchDocs:
     """Rank the corpus for a query and describe the best sections."""
 
     name = SEARCH_DOCS
+    label = "search"
 
     def __init__(self, retriever: Retriever, identity: Identity) -> None:
         self.retriever = retriever
@@ -194,6 +200,7 @@ class ReadDoc:
     """Return one indexed section, or a long page's outline, in full."""
 
     name = READ_DOC
+    label = "read"
 
     def __init__(self, retriever: Retriever, identity: Identity) -> None:
         self.retriever = retriever
@@ -289,6 +296,21 @@ class Toolset:
     @property
     def schemas(self) -> list[dict]:
         return [tool.schema for tool in self.tools]
+
+    @property
+    def public_names(self) -> dict[str, str]:
+        """Internal name -> reader-facing name, for `sage.redact`.
+
+        Built from the tools themselves rather than written down anywhere, so a
+        deployment that registers a third tool has it covered by giving that tool a
+        `label` — and a tool with none is left out, which is the same as saying "this
+        name may appear in an answer".
+        """
+        return {
+            tool.name: getattr(tool, "label", "")
+            for tool in self.tools
+            if getattr(tool, "label", "")
+        }
 
     def runner(self) -> ToolRunner:
         return ToolRunner(self)
