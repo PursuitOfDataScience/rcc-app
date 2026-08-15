@@ -41,7 +41,7 @@ if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
 import stub_streamlit  # noqa: E402
-from sage import links, llm, providers, runtime  # noqa: E402
+from sage import links, llm, providers, redact, runtime  # noqa: E402
 from sage import tools as tools_module  # noqa: E402
 from sage.profile import active as _active  # noqa: E402
 
@@ -63,6 +63,12 @@ class Trace:
     first_byte: float | None = None
     first_text: float | None = None
     raw_answers: list[str] = field(default_factory=list)
+    #: The model's own words, before `redact.apply` took the machinery's names out of
+    #: them. `raw_answers` is captured one step later, at the citation strip, so without
+    #: this the benchmark could not see what the model actually wrote — and a check that
+    #: looks for a recited line of the prompt would miss the ones that name a tool,
+    #: because the delivered answer has the name swapped for a plain word.
+    said: list[str] = field(default_factory=list)
     #: Every tool result verbatim. This — not the chunks behind the Sources strip — is
     #: what the model actually read: `read_doc` on a path with no anchor returns the whole
     #: page but records only its first chunk, so evidence rebuilt from `sources` was
@@ -141,7 +147,7 @@ _ORIGINALS: dict[str, object] = {}
 
 
 def restore() -> None:
-    """Put the four patched seams back.
+    """Put the five patched seams back.
 
     Not housekeeping: these are patches on modules the whole process shares, so a test
     that prepared the harness and did not restore it would hand `sage.providers.build`
@@ -154,17 +160,18 @@ def restore() -> None:
     runtime.build = _ORIGINALS["runtime.build"]
     tools_module.ToolRunner.run = _ORIGINALS["ToolRunner.run"]
     links.strip_inline_citations = _ORIGINALS["strip_inline_citations"]
+    redact.apply = _ORIGINALS["redact.apply"]
     _ORIGINALS.clear()
     _PROVIDERS.clear()
 
 
 def prepare(build_provider=None, *, fresh: bool = False) -> runtime.Runtime:
-    """Patch the four seams and build the index once. Idempotent unless `fresh`.
+    """Patch the five seams and build the index once. Idempotent unless `fresh`.
 
     Every patch is on a module `stub_streamlit.forget_importers()` leaves alone
-    (`sage.providers`, `sage.runtime`, `sage.tools`, `sage.links`), which is why they
-    survive the re-import that each script run performs. Patching anything under
-    `sage.ui` would silently come undone on the second question.
+    (`sage.providers`, `sage.runtime`, `sage.tools`, `sage.links`, `sage.redact`), which
+    is why they survive the re-import that each script run performs. Patching anything
+    under `sage.ui` would silently come undone on the second question.
     """
     global _RUNTIME
 
@@ -184,6 +191,7 @@ def prepare(build_provider=None, *, fresh: bool = False) -> runtime.Runtime:
             "runtime.build": runtime.build,
             "ToolRunner.run": tools_module.ToolRunner.run,
             "strip_inline_citations": links.strip_inline_citations,
+            "redact.apply": redact.apply,
         }
     )
     make = build_provider or _ORIGINALS["providers.build"]
@@ -230,6 +238,17 @@ def prepare(build_provider=None, *, fresh: bool = False) -> runtime.Runtime:
         return inner_strip(text, sources)
 
     links.strip_inline_citations = strip
+
+    inner_redact = redact.apply
+
+    def apply(text, names):
+        # One step earlier still. What the strip sees has already had the machinery's
+        # names taken out of it, and "did this model recite a line of its prompt?" is a
+        # question about what the model wrote, not about what survived.
+        _TRACE.said.append(text)
+        return inner_redact(text, names)
+
+    redact.apply = apply
 
     return _RUNTIME
 
@@ -470,6 +489,13 @@ def _drive(
         "fatal": fatal,
         "text": text,
         "raw": _TRACE.raw_answers[-1] if _TRACE.raw_answers else "",
+        # The model's own words, one step before `raw`.
+        "said": _TRACE.said[-1] if _TRACE.said else "",
+        # Names of the machinery `redact.apply` took out before the reader saw them. The
+        # answer above is therefore clean whatever the model said, so without this the
+        # benchmark would score every model as discreet the day the redaction shipped —
+        # a fix hiding the measurement of itself.
+        "redacted": list(reply.get("redacted") or []),
         "sources": sources,
         "source_pages": sorted(cited_pages),
         "evidence": evidence,

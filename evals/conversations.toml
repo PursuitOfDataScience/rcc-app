@@ -160,3 +160,17 @@ text = "how do I add a package to it?"
 pages = ["software/apps-and-envs/python.md"]
 must_mention = ["conda"]
 carries = "which environment the package goes into"
+
+[[conversation]]
+name = "doubted after an answer"
+why = "where the real leak arrived — not on a probe, but from a reader doubting the answer he had just been given. The same message is in meta.toml as a single turn; here it has an answer in front of it to be doubted, which is the shape that produced 'via the search_docs and read_doc tools'."
+
+[[conversation.turn]]
+text = "how do I submit a batch job"
+pages = ["slurm/sbatch.md"]
+must_mention = ["sbatch"]
+
+[[conversation.turn]]
+text = "not sure if all your answers have gone through your brain or you just bs"
+expect = "self"
+carries = "the answer being doubted, which is the turn before it"

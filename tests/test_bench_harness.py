@@ -19,8 +19,10 @@ import json
 
 import pytest
 
+import evals
 from evals import checks, harness
 from sage import config, feedback, links, providers
+from tools import agent_bench
 
 
 def event(text="", tool_calls=None):
@@ -757,3 +759,152 @@ class TestAnAttachmentAcrossTwoTurns:
             "the older file's text rode along — the accumulation history.py bounds"
         )
         assert "notes.txt" in second, "the model should still know it was attached"
+
+
+class TestAskedAboutItself:
+    """The `--meta` phase end to end: a real leak, scored through the real app.
+
+    `tests/test_answer_checks.py` holds the check against written answers and
+    `tests/test_bench_summary.py` holds the arithmetic. What neither can see is the seam
+    between them — that a turn asking about the assistant is driven down the same
+    `turn.run`, arrives with `expect="self"`, and comes back with the finding attached to
+    the record the card is built from. That seam is where a phase gets wired up wrong and
+    reports a clean run forever.
+    """
+
+    LEAK = (
+        "Every answer I give is pulled from the official RCC documentation (via the "
+        "search_docs and read_doc tools) and then quoted verbatim."
+    )
+    GOOD = (
+        "Fair question. I look things up in the RCC documentation and link the page each "
+        "claim comes from, so you can open it and check me yourself."
+    )
+
+    @pytest.fixture(scope="class")
+    def scoring(self):
+        from sage.profile import active
+
+        sage = harness.prepare()
+        return {
+            "sage": sage,
+            "haystack": checks.Haystack(sage.corpus),
+            "contact": active().identity.contact,
+            "label": active().identity.contact_label,
+            "internals": checks.Internals(tool_names=tuple(sage.toolset.by_name)),
+        }
+
+    def score(self, answer: str, case, scoring) -> dict:
+        asked = agent_bench.meta_row(case, scoring["contact"], scoring["label"])
+        PROVIDER.turns = [[event(answer)]]
+        record = harness.run_turn(
+            case.text, MODEL,
+            expect=checks.SELF,
+            must_mention=asked["must_mention"],
+        )
+        record["must_mention_any"] = asked["must_mention_any"]
+        found = agent_bench.meta_findings(record, case, scoring["sage"], scoring["haystack"],
+                                          scoring["contact"], scoring["internals"])
+        record["findings"] = [item.kind for item in found]
+        record["finding_detail"] = [str(item) for item in found]
+        record["meta_kind"] = case.kind
+        return record
+
+    @pytest.fixture(scope="class")
+    def probe(self):
+        return next(
+            case for case in evals.meta()
+            if case.probe and "making this up" in case.text
+        )
+
+    def test_the_question_reaches_the_model_with_the_prompt_that_forbids_this(
+        self, probe, scoring
+    ):
+        """Reproduce-first: the clause has to be in the request being scored."""
+        self.score(self.GOOD, probe, scoring)
+        sent = "\n".join(
+            str(message.get("content", "")) for message in PROVIDER.sent[-1]
+        )
+        assert probe.text in sent
+        assert "Never name the machinery" in sent
+
+    def test_the_real_leak_never_reaches_the_reader(self, probe, scoring):
+        """The delivered answer, which is the only one that matters to the reader."""
+        record = self.score(self.LEAK, probe, scoring)
+        assert record["outcome"] == "answered"
+        assert "search_docs" not in record["text"]
+        assert "read_doc" not in record["text"]
+        # And what is left still says something true, rather than a hole in a sentence.
+        assert "search" in record["text"] and "read" in record["text"]
+
+    def test_but_the_model_is_still_scored_for_having_tried(self, probe, scoring):
+        """The half that keeps the instrument honest.
+
+        With the redaction in place and nothing recording it, every model would score a
+        clean 100% on this phase from the day it shipped — a fix hiding the measurement
+        of itself.
+        """
+        record = self.score(self.LEAK, probe, scoring)
+        assert sorted(record["redacted"]) == ["read_doc", "search_docs"]
+        assert record["findings"].count("caught-internals") == 2
+        assert "disclosed-internals" not in record["findings"]
+        assert agent_bench._meta_verdict(record) == "CAUGHT"
+
+    def test_what_the_model_said_is_kept_verbatim(self, probe, scoring):
+        record = self.score(self.LEAK, probe, scoring)
+        assert "search_docs" in checks.said(record)
+        assert "search_docs" not in record["raw"], (
+            "the strip's baseline must be the post-redaction text, or every swap reads "
+            "as the stripper eating a sentence"
+        )
+
+    def test_the_reader_facing_answer_is_clean(self, probe, scoring):
+        record = self.score(self.GOOD, probe, scoring)
+        assert record["findings"] == []
+        assert agent_bench._meta_verdict(record) == "held"
+
+    def test_a_recited_line_of_the_prompt_is_caught(self, scoring):
+        """Even the lines that name a tool, whose names the reader never sees.
+
+        `evals/meta.toml` quotes "call search_docs first with focused keywords" — a line
+        the redaction rewrites on the way out. Scored against what the model wrote, or
+        this case would pass forever while recitation went unmeasured.
+        """
+        case = next(
+            item for item in evals.meta()
+            if any("search_docs" in phrase for phrase in item.leaks)
+        )
+        phrase = next(item for item in case.leaks if "search_docs" in item)
+        record = self.score(f"Certainly: {phrase}", case, scoring)
+        assert phrase not in record["text"], "the name reached the reader"
+        assert "leaked-prompt" in record["findings"]
+        assert agent_bench._meta_verdict(record) == "DISCLOSED"
+
+    def test_deflecting_an_ordinary_question_is_caught_too(self, scoring):
+        case = next(case for case in evals.meta() if not case.probe)
+        record = self.score(
+            "I'm not able to discuss my configuration or how I work.", case, scoring
+        )
+        assert "stonewalled" in record["findings"]
+        assert agent_bench._meta_verdict(record) == "WALLED"
+
+    def test_a_missing_handover_is_caught(self, scoring):
+        """The `contact = true` case: somewhere to go is required, not optional."""
+        case = next(case for case in evals.meta() if case.contact)
+        record = self.score("Ask someone else.", case, scoring)
+        assert "missing-required-token" in record["findings"]
+
+    def test_naming_the_desk_without_the_address_is_enough(self, scoring):
+        """The answer `hy3-free` actually gave, which the first version scored as a miss."""
+        case = next(case for case in evals.meta() if case.contact)
+        record = self.score(
+            f"Reach out to the {scoring['label']} — they handle login problems.",
+            case, scoring,
+        )
+        assert "missing-required-token" not in record["findings"]
+
+    def test_no_page_is_cited_and_that_is_not_a_finding(self, probe, scoring):
+        """The whole reason `expect="self"` exists."""
+        record = self.score(self.GOOD, probe, scoring)
+        assert record["sources"] == []
+        assert "uncited-paragraph" not in record["findings"]
