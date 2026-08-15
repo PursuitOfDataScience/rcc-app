@@ -196,8 +196,16 @@ def parse_sse(lines: Iterator[str]) -> Iterator[Chunk]:
         # JSONDecodeError branch above already decided.
         if not isinstance(event, dict):
             continue
-        choices = event.get("choices") or []
-        if not choices or not isinstance(choices[0], dict):
+        # `isinstance` before the subscript, not after it. `{"choices": {"delta": {}}}`
+        # is a dict, which is truthy, so `choices[0]` raised `KeyError: 0` before the
+        # shape check below could run — and a raise here escapes the generator, so
+        # `Turn.deltas` classified it as an unknown failure and threw away a
+        # half-streamed answer to show "something went wrong" at the end of it. The
+        # same failure the quoted-`[DONE]` note above describes, one line lower down.
+        choices = event.get("choices")
+        if not isinstance(choices, list) or not choices:
+            continue
+        if not isinstance(choices[0], dict):
             continue
         delta = choices[0].get("delta")
         if not isinstance(delta, dict):

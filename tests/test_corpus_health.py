@@ -71,6 +71,26 @@ class TestWhatTheCorpusCannotAnswer:
         )
 
 
+class TestPagesThatYieldNothing:
+    """Asked by outcome, not by file size, and read off the corpus rather than the disk.
+
+    A page excluded on purpose never becomes a Document; a page that was read and produced
+    nothing becomes one with no chunks. A first version of this walked the tree and
+    reported all thirteen deliberate exclusions — the publication dumps and the radiology
+    scrape — as problems.
+    """
+
+    def test_only_the_known_empty_page_yields_nothing(self, measured):
+        assert measured["indexing_nothing"] == [
+            "docs/data_transfer/cloud/rclone.md"
+        ], measured["indexing_nothing"]
+
+    def test_deliberate_exclusions_are_not_reported(self, measured):
+        reported = " ".join(measured["indexing_nothing"])
+        for excluded in ("publications", "learn-radiology", "vislab"):
+            assert excluded not in reported
+
+
 class TestDuplication:
     def test_no_new_page_is_indexed_twice(self, measured):
         groups = measured["duplicates"]["same_page_twice"]

@@ -466,3 +466,52 @@ def test_a_model_label_is_just_the_model_name():
         "mistral-small-latest"
     )
     assert "Zen" not in providers.Model("opencode", "big-pickle").label
+
+
+class TestAStreamThatIsNotShapedLikeAStream:
+    """Events an OpenAI-compatible gateway really sends, and the app really got wrong.
+
+    A raise inside `parse_sse` escapes the generator, so `Turn.deltas` classifies it as an
+    unknown failure: the half-streamed answer already on screen is thrown away and
+    replaced with "something went wrong" at the very end of it. That is the failure the
+    quoted-`[DONE]` note in the parser describes, and two more shapes reached it.
+    """
+
+    def test_choices_as_an_object_does_not_raise(self):
+        """`{"choices": {"delta": {}}}` is a dict, which is truthy, so `choices[0]` was
+        a `KeyError: 0` before the shape check could run."""
+        assert list(providers.parse_sse(iter(['data: {"choices":{"delta":{}}}']))) == []
+
+    def test_choices_as_a_string_does_not_raise(self):
+        assert list(providers.parse_sse(iter(['data: {"choices":"soon"}']))) == []
+
+    def test_a_stream_survives_a_bad_event_in_the_middle(self):
+        """The point of skipping rather than raising: the answer either side arrives."""
+        chunks = list(providers.parse_sse(iter([
+            'data: {"choices":[{"delta":{"content":"be"}}]}',
+            'data: {"choices":{"delta":{}}}',
+            'data: {"choices":[{"delta":{"content":"fore"}}]}',
+            'data: [DONE]',
+        ])))
+        assert "".join(chunk.text for chunk in chunks) == "before"
+
+    def test_tool_calls_as_a_string_is_not_four_tool_calls(self):
+        """A string is iterable, so `tool_fragments` made one fragment per character."""
+        chunks = list(providers.parse_sse(iter([
+            'data: {"choices":[{"delta":{"tool_calls":"nope"}}]}'
+        ])))
+        assert [chunk.tool_calls for chunk in chunks] == [[]]
+
+    def test_tool_calls_as_an_object_is_not_a_tool_call(self):
+        assert providers.tool_fragments({"function": {"name": "search_docs"}}) == []
+
+    def test_a_real_tool_call_still_parses(self):
+        """The guard must not cost the shape that works."""
+        fragments = providers.tool_fragments(
+            [{"index": 0, "id": "c1", "function": {"name": "search_docs",
+                                                   "arguments": '{"query":"gpu"}'}}]
+        )
+        assert fragments == [
+            {"index": 0, "id": "c1", "name": "search_docs",
+             "arguments": '{"query":"gpu"}'}
+        ]

@@ -85,6 +85,25 @@ def empty_documents() -> list[dict]:
     return found
 
 
+def indexing_nothing(corpus) -> list[str]:
+    """Pages the builder accepted and got no chunks out of.
+
+    `empty_documents` asks how big a file is; this asks what came out of it, which is the
+    question that matters and the one that survives a change to the reader. A 5 KB page
+    that indexes to nothing — a reader that stops recognising a heading style, a section
+    below `MIN_CHUNK_CHARS` after normalisation — is caught only here, and `self_reachability`
+    cannot see it either, because a page with no chunks never enters the list to check.
+
+    Read off the corpus rather than by walking the disk, which is what makes it exact: a
+    page excluded on purpose (`exclude_files`, `exclude_hosts` — the publication dumps and
+    the radiology scrape) never becomes a Document at all, while a page that was read and
+    yielded nothing becomes one with no chunks. A first attempt walked the tree and
+    reported all thirteen deliberate exclusions as problems.
+    """
+    with_chunks = {f"{chunk.source}/{chunk.path}" for chunk in corpus.chunks}
+    return sorted(page for page in corpus.documents if page not in with_chunks)
+
+
 def duplicates(corpus) -> dict:
     """Sections that say the same thing twice.
 
@@ -260,6 +279,7 @@ def measure(corpus, index) -> dict:
         "chunks": index.total,
         "sources": sources(corpus),
         "empty_documents": empty_documents(),
+        "indexing_nothing": indexing_nothing(corpus),
         "duplicates": duplicates(corpus),
         "reachability": reachability(index, asked),
         "self_reachability": self_reachability(index, corpus),

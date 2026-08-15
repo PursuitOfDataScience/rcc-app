@@ -36,6 +36,14 @@ def report(measured: dict) -> None:
     for row in empty:
         print(f"   {row['bytes']:5d} bytes  {row['source']}/{row['path']}")
 
+    nothing = measured["indexing_nothing"]
+    print(f"\nindexed nothing ({len(nothing)}) — read, and no section came out")
+    for page in nothing:
+        print(f"   {page}")
+    if nothing:
+        print("   -> asked by outcome rather than by file size, so a reader that stops "
+              "recognising a heading style shows up here rather than nowhere.")
+
     duplicated = measured["duplicates"]
     near = duplicated["near"]
     across = sum(1 for row in near if row["cross_source"])

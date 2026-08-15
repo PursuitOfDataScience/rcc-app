@@ -144,7 +144,39 @@ def _split_oversized(body: str, limit: int) -> list[str]:
             buffer = candidate
     if buffer.strip():
         parts.append(buffer)
-    return [part for part in parts if part.strip()]
+    kept = [part for part in parts if part.strip()]
+    return [piece for part in kept for piece in _hard_split(part, limit)]
+
+
+def _hard_split(part: str, limit: int) -> list[str]:
+    """The last resort: a block with no blank line anywhere in it.
+
+    Splitting on paragraphs cannot bound a block that contains no paragraph break, and
+    such a block was returned whole however long it was — one unbroken 100 KB line became
+    one 100 KB chunk against a 6 000 limit. No page in the bundled corpus does that, so
+    this never fires here; a scrape is one HTML-to-text pass away from doing it, and
+    `gather_context` puts whole chunk texts in a system message that `history.build` has
+    already finished trimming, so nothing downstream would have caught it.
+
+    A line break is preferred, then a space, then the limit itself. The docstring above
+    promises never to cut inside a fence and this may have to — an unbalanced fence in a
+    retrieval chunk is text the model reads, where an unbounded one is a request that
+    cannot be sent at all.
+    """
+    if len(part) <= limit:
+        return [part]
+    pieces: list[str] = []
+    while len(part) > limit:
+        cut = part.rfind("\n", 0, limit)
+        if cut <= limit // 2:
+            cut = part.rfind(" ", 0, limit)
+        if cut <= limit // 2:
+            cut = limit
+        pieces.append(part[:cut])
+        part = part[cut:].lstrip("\n")
+    if part.strip():
+        pieces.append(part)
+    return pieces
 
 
 def read_markdown(

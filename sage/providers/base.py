@@ -91,9 +91,18 @@ def family_of(model_id: str) -> str:
 
 
 def tool_fragments(raw) -> list[dict]:
-    """Normalise a delta's tool_calls, whether objects (SDK) or dicts (JSON)."""
+    """Normalise a delta's tool_calls, whether objects (SDK) or dicts (JSON).
+
+    A sequence, and checked for it: `{"tool_calls": "nope"}` is iterable, so a malformed
+    event produced one nameless fragment per *character* — four phantom tool calls from a
+    four-letter string. Nothing downstream ran them, because `Turn.deltas` keeps only
+    fragments that carry a name, but they still counted as tool calls in everything that
+    measures a turn.
+    """
+    if isinstance(raw, (str, bytes, dict)) or raw is None:
+        return []
     fragments = []
-    for index, call in enumerate(raw or []):
+    for index, call in enumerate(raw):
         if isinstance(call, dict):
             function = call.get("function") or {}
             fragments.append(

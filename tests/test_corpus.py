@@ -230,3 +230,53 @@ class TestRealCorpus:
         assert "{:target" not in joined
         assert "!!! note" not in joined
         assert "{: class" not in joined
+
+
+class TestABlockWithNoParagraphBreak:
+    """A section that cannot be split on paragraphs must still be bounded.
+
+    `_split_oversized` breaks on blank lines, so a block containing none was returned
+    whole however long it was: one unbroken 100 KB line became one 100 KB chunk against a
+    6 000-character limit. No page in the bundled corpus does that — which is why nothing
+    caught it — and a scrape is one HTML-to-text pass away from doing it. What would have
+    failed is a model that cannot call tools: `gather_context` puts whole chunk texts into
+    a system message that `history.build` has already finished trimming.
+    """
+
+    def read(self, text: str):
+        from sage.corpus.readers import read as read_file
+        from sage.profile import active
+
+        return read_file(active().source("docs"), "probe.md", text)
+
+    def test_one_unbroken_line_is_split(self):
+        _doc, chunks = self.read("# T\n\n" + "word " * 20000)
+        assert len(chunks) > 1
+        assert max(len(chunk.text) for chunk in chunks) <= config.MAX_CHUNK_CHARS
+
+    def test_one_unbroken_word_is_split(self):
+        """No line break and no space either, so the cut is the limit itself."""
+        _doc, chunks = self.read("# T\n\n" + "x" * 40000)
+        assert max(len(chunk.text) for chunk in chunks) <= config.MAX_CHUNK_CHARS
+
+    def test_a_giant_fence_is_split_rather_than_left_unbounded(self):
+        """The reader promises never to cut inside a fence; here it has to.
+
+        An unbalanced fence in a retrieval chunk is text the model reads. An unbounded
+        chunk is a request that cannot be sent at all.
+        """
+        _doc, chunks = self.read("# T\n\n```\n" + "y" * 30000 + "\n```")
+        assert max(len(chunk.text) for chunk in chunks) <= config.MAX_CHUNK_CHARS
+
+    def test_ordinary_sections_are_untouched(self):
+        """The bound must be inert on anything that was already within it."""
+        body = "\n\n".join(f"paragraph {index} " + "word " * 20 for index in range(5))
+        _doc, chunks = self.read(f"# T\n\n{body}")
+        assert len(chunks) == 1
+
+    def test_no_chunk_in_the_real_corpus_exceeds_the_cap(self, real_corpus):
+        over = [
+            chunk.id for chunk in real_corpus.chunks
+            if len(chunk.text) > config.MAX_CHUNK_CHARS
+        ]
+        assert not over, f"{len(over)} chunks over the cap: {over[:3]}"
