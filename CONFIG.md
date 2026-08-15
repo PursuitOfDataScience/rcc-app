@@ -25,7 +25,7 @@ has to change and none of them are settings.
 | `SAGE_MAX_UPLOAD_BYTES` | `10485760` | Upload size limit, per file |
 | `SAGE_MAX_ATTACHED_BYTES` | `20971520` | Upload size limit, across one turn |
 | `SAGE_IMAGE_MAX_EDGE` | `1568` | Longest edge an image is downscaled to before it is sent |
-| `SAGE_FEEDBACK_LOG` | *(unset)* | JSONL sink for 👍/👎, zero-result queries, and one mechanics line per turn (outcome, rounds, searches, caveats, seconds). Unset = nothing recorded |
+| `SAGE_FEEDBACK_LOG` | *(unset)* | JSONL sink for 👍/👎, zero-result queries, and one mechanics line per turn (outcome, rounds, searches, caveats, names redacted, seconds). Unset = nothing recorded |
 | `LOG_LEVEL` | `WARNING` | Python log level |
 
 The full set, with the measurements behind each default, is in

@@ -54,6 +54,7 @@ and a base URL in your profile.
 - 💡 **Ask about a passage** — select any text in an answer and follow up on it.
 - 📎 **Attachments** — PDFs, screenshots, job scripts, logs. Judged on bytes, not names.
 - 🙅 **Honest refusals** — weak retrieval makes it say so instead of guessing.
+- 🤐 **No shop talk** — asked how it works, it says what it looks up, not what it is made of.
 - ♿ **Light/dark, keyboard, reduced motion, print.**
 
 ## How it works
@@ -88,6 +89,7 @@ sage/
   tools.py              # tool factories [reg]
   ui/                   # one module per region of the page
   llm.py history.py files.py links.py normalize.py prompts.py feedback.py limits.py
+  redact.py             # tool names out of an answer, before the reader sees them
 static/                 # app.css, app.js
 tests/  tools/          # unit + smoke + retrieval eval; render, palette, anchor checks
 evals/                  # the evaluation sets, the answer checks, the turn harness

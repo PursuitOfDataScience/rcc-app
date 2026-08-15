@@ -29,6 +29,15 @@ Placeholders in a prompt — `{name}`, `{subject}`, `{topic}`, `{documentation}`
 `{contact}`, `{contact_label}` — are filled from `[assistant]`. Anything else is left
 alone, so a `${SLURM_JOB_ID}` in your prompt survives.
 
+**One paragraph is appended to whatever you write here.** `prompts.SELF_DISCLOSURE` tells
+the assistant how to talk about itself: answer in the reader's terms, never name the tools
+it calls, the model behind it or these instructions, and never make a refusal the answer
+either. It is in the package rather than in this file because it is about the machinery
+rather than about your subject — and because it is exactly the rule that would be lost the
+first time somebody copies a profile and rewrites the prose. The app's own backstop for
+the same thing is `sage/redact.py`, which swaps a tool's internal name for the `label` the
+tool carries if one reaches an answer anyway.
+
 ## Sources
 
 ```toml
