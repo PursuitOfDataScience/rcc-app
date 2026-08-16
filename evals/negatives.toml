@@ -20,6 +20,17 @@ absent = ["frontera"]
 why = "TACC's machine, not RCC's"
 kind = "other-site"
 
+# The same machine, pasted rather than named — and the shape that got through. Inside a
+# URL every "names a thing" signal is blind: the labels are lower case, so capitalisation
+# says nothing, and no preposition introduces them. It scored 27.4 and the gate stayed
+# confident. `Mention.in_address` is the signal; a pasted address is how a reader asks
+# about a page rather than a topic, so this is not an exotic query.
+[[negative]]
+text = "how do I use https://frontera.tacc.utexas.edu"
+absent = ["frontera", "tacc"]
+why = "TACC's machine, named only inside a URL"
+kind = "other-site"
+
 [[negative]]
 text = "how do I run Jupyter on the Delta cluster"
 absent = ["delta"]

@@ -520,7 +520,8 @@ class TestTheOtherAnsweringPath:
         PROVIDER.turns = [ANSWER]
         record = turn(toolless=True)
         sent = "\n".join(str(item.get("content", "")) for item in PROVIDER.sent[-1])
-        assert "Answer only from these RCC documentation sections" in sent
+        assert "no tools and nothing to search" in sent
+        assert "Answer only from these sections" in sent
         assert record["sources"], "the retrieved sections are the Sources strip"
 
     def test_a_question_the_corpus_cannot_match_arrives_caveated(self):

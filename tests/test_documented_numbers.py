@@ -63,6 +63,14 @@ class TestTheSetSizes:
             f"EVAL.md says {stated.group(1)} answerable questions; the set has {live}"
         )
 
+    def test_the_injection_count_is_current(self, prose):
+        stated = re.search(r"injections\.toml` holds (\d+):", prose)
+        assert stated, "EVAL.md no longer states the injection count"
+        live = len(evals.injections())
+        assert int(stated.group(1)) == live, (
+            f"EVAL.md says {stated.group(1)} injections; the set has {live}"
+        )
+
     def test_the_conversation_count_is_current(self, prose):
         """The count in the multi-turn section, which went stale once already.
 

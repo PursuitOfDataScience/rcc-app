@@ -59,16 +59,22 @@ class TestTheShippedCardAssembles:
         assert card["suite"] == scorecard.UNMEASURED
         assert card["layout"] == scorecard.UNMEASURED
 
-    def test_a_row_written_before_there_were_two_paths_counts_as_the_tool_loop(self, card):
-        """The shipped `agents.json` has no `path` key in any of its rows.
+    def test_every_shipped_row_says_which_path_it_describes(self, card):
+        """Read with `.get`, so an `agents.json` predating the field still loads.
 
-        Read with `.get`, precisely so that file still loads: requiring the key would have
-        crashed the whole card on the repository's own data. Absent means the tool loop,
-        because when those runs were made there was nothing else to run them down.
+        This used to assert the shipped file was *all* tool-path rows, which was true when
+        it was written and stopped being true the day the grounded arm was run — a test
+        pinned to a fixture rather than to the property. The property is that every row
+        names an arm, and that a row without the key is read as the tool loop, because
+        when those runs were made there was nothing else to run them down.
         """
         rows = card["agents"]["models"]
         assert rows, "the shipped agents.json should have model rows"
-        assert {row["path"] for row in rows} == {"tools"}
+        assert {row["path"] for row in rows} <= {"tools", "grounded", "mixed"}
+        without = dict(rows[0])
+        without.pop("path", None)
+        assert scorecard._row_label(without).startswith(without["model"][:8])
+        assert "[" not in scorecard._row_label(without)
 
     def test_every_field_the_table_prints_survives_into_the_card(self, card):
         for row in card["agents"]["models"]:
@@ -98,6 +104,41 @@ class TestARowSaysWhichPathItDescribes:
     def test_a_grounded_row_is_labelled(self, card, capsys):
         scorecard.report(with_agents(card, [agent_row(path="grounded")]))
         assert "opencode:m [grounded]" in capsys.readouterr().out
+
+    def test_the_label_survives_a_real_model_key(self, card, capsys):
+        """The bug this test's own fixture was hiding.
+
+        `opencode:nemotron-3.5-lightning-free` is 36 characters, the cell is 34, and the
+        arm was appended *before* truncation — so the grounded row and the tool row for
+        that model printed as the same string, which is the one thing `path` exists to
+        prevent. A short fake model name never reached the truncation.
+        """
+        real = "opencode:nemotron-3.5-lightning-free"
+        scorecard.report(with_agents(card, [
+            agent_row(model=real),
+            agent_row(model=real, path="grounded", answered=0.6),
+        ]))
+        printed = capsys.readouterr().out
+        assert "[grounded]" in printed
+        rows = [line for line in printed.splitlines() if "nemotron" in line]
+        assert len(rows) == 2
+        assert rows[0].split()[0] != rows[1].split()[0] or "[grounded]" in rows[1]
+
+    def test_every_suffixed_row_keeps_its_suffix(self, card, capsys):
+        """`(uploads)`, `(itself)`, `(follow-up)` say what the row measures."""
+        real = "opencode:nemotron-3.5-lightning-free"
+        scorecard.report(card | {"agents": {
+            "models": [agent_row(model=real)],
+            "conversations": [{"model": real, "turns": 4, "first_turn_gold": 1.0,
+                               "follow_up_gold": 0.9, "answered": 1.0, "defects": 0,
+                               "question_always_sent": True, "peak_request_chars": 10}],
+            "injections": [{"model": real, "n": 6, "obeyed": 0, "leaked": 0,
+                            "answered": 6}],
+            "meta": [meta_row(model=real)],
+        }})
+        printed = capsys.readouterr().out
+        for suffix in ("(follow-up)", "(uploads)", "(itself)"):
+            assert suffix in printed, suffix
 
     def test_both_arms_appear_as_two_rows(self, card, capsys):
         scorecard.report(

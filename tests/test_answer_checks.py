@@ -12,6 +12,9 @@ network, and this file has to hold in CI.
 
 from __future__ import annotations
 
+import ast
+import os
+
 import pytest
 
 from evals import checks
@@ -61,11 +64,14 @@ class TestUnsupportedTokens:
         assert found[0].severity == checks.DEFECT
 
     def test_a_flag_in_the_corpus_but_not_in_what_was_read_is_a_warning(self, haystack):
+        """Two findings, not one: the flag and the partition it names are both real, and
+        neither is in what this turn read — see `TestTheValueOfAResourceFlag`."""
         found = checks.unsupported_tokens(
             "Pass `--partition=caslake`.", {"a": "nothing relevant"}, haystack
         )
-        assert [item.kind for item in found] == ["unsupported-token"]
-        assert found[0].severity == checks.WARNING
+        assert {item.kind for item in found} == {"unsupported-token"}
+        assert {item.detail.split(" ")[0] for item in found} == {"--partition", "caslake"}
+        assert all(item.severity == checks.WARNING for item in found)
 
     def test_a_flag_in_the_evidence_is_clean(self, haystack):
         found = checks.unsupported_tokens(
@@ -1018,3 +1024,320 @@ class TestMissingAny:
         record["text"] = "Ask someone else."
         kinds = [item.kind for item in checks.inspect(record, real_corpus, haystack)]
         assert kinds == ["missing-required-token"]
+
+
+class TestAShellCommentIsNotAHeading:
+    """`#` inside a ```bash block is a comment, and 69 of 514 answers were reported for one.
+
+    Five times more often than the rule fired on a real `# heading`, which makes the
+    number it produced about markdown fences rather than about headings.
+    """
+
+    def test_a_comment_inside_a_fenced_block(self):
+        answer = (
+            "Write the script:\n\n```bash\n#!/bin/bash\n# Optional: constrain the GPU\n"
+            "#SBATCH --gres=gpu:1\n```\n"
+        )
+        assert [item.kind for item in checks.form_violations(answer)] == []
+
+    def test_a_real_h1_outside_one_is_still_reported(self):
+        answer = "# Batch jobs\n\n```bash\n# a comment\nsbatch job.sh\n```\n"
+        assert [item.kind for item in checks.form_violations(answer)] == ["h1-heading"]
+
+    def test_an_untagged_block_is_still_reported(self):
+        answer = "Output:\n\n```\nJOBID PARTITION\n```\n"
+        assert [item.kind for item in checks.form_violations(answer)] == [
+            "unlabelled-code-fence"
+        ]
+
+
+class TestAFooterSentenceIsNotAnOpeningSentence:
+    """The false positive that mattered most, because it is a gateable defect.
+
+    Three of 514 recorded answers opened with "Based on the official RCC documentation,
+    there is no mention of a managed Kubernetes cluster" — a correct refusal, reported as a
+    Sources footer the stripper had failed to remove. The stripper was right; the check was
+    not.
+    """
+
+    OPENER = (
+        "Based on the official RCC documentation, there is no mention of a managed "
+        "Kubernetes cluster.\n\nRCC's documented services are Slurm-based, and the "
+        "[Help desk](docs/index.md) can advise on alternatives."
+    )
+    FOOTER = (
+        "Submit it with `sbatch` ([Batch jobs](docs/slurm/sbatch.md)).\n\n"
+        "Based on the Batch jobs page."
+    )
+
+    def test_an_answer_that_opens_with_it_is_clean(self):
+        assert checks.surviving_footer(self.OPENER) == []
+
+    def test_a_closing_sentence_is_still_a_defect(self):
+        found = checks.surviving_footer(self.FOOTER)
+        assert [item.kind for item in found] == ["footer-survived"]
+        assert found[0].severity == checks.DEFECT
+
+    def test_a_long_closing_sentence_is_a_claim_rather_than_a_footer(self):
+        """A footer names sources and stops; this one goes on to say something."""
+        answer = (
+            "Use `sbatch` ([Batch jobs](docs/slurm/sbatch.md)).\n\nBased on the "
+            "documentation for Midway3, the account and partition flags are both "
+            "required and a job submitted without either one is rejected by the "
+            "scheduler before it reaches the queue at all."
+        )
+        assert checks.surviving_footer(answer) == []
+
+    def test_a_sources_heading_is_a_footer_wherever_it_sits(self):
+        """The heading form needs no position rule — nothing else writes it."""
+        found = checks.surviving_footer("Sources:\n- [Batch jobs](docs/slurm/sbatch.md)")
+        assert [item.kind for item in found] == ["footer-survived"]
+
+
+class TestALeadInIsNotAClaim:
+    """"Here's a minimal example for Midway3:" cites nothing because it says nothing.
+
+    102 of 1108 uncited paragraphs across 514 recorded answers were a colon-terminated
+    line introducing a code block — and the block itself is cut out before the count, so
+    the check was asking a model to cite a colon.
+    """
+
+    ANSWER = (
+        "Here's a minimal example for **Midway3** (replace the account):\n\n"
+        "```bash\n#SBATCH --account=pi-example\n```\n"
+    )
+
+    def test_it_is_not_counted(self):
+        coverage, found = checks.citation_coverage(self.ANSWER)
+        assert found == []
+        assert coverage == 1.0
+
+    def test_a_claim_in_the_same_answer_still_is(self):
+        answer = self.ANSWER + "\nEvery job needs an account flag and a partition.\n"
+        found = checks.citation_coverage(answer)[1]
+        assert [item.kind for item in found] == ["uncited-paragraph"]
+        assert "Every job needs" in found[0].detail
+
+
+class TestATitleThatNamesTheCorpusIsNotACitation:
+    """`User Guide` is a page title *and* what this deployment calls its documentation.
+
+    The same shape as `Charliecloud`, which is a page title and a container runtime: one of
+    the five reports across 514 recorded answers was an answer saying "the RCC User Guide".
+    """
+
+    SOURCES = [{"label": "User Guide", "url": "https://x/"}]
+
+    def test_the_phrase_that_names_the_whole_corpus(self, profile):
+        assert "User Guide" in profile.identity.corpus_name
+        assert checks.bare_title_citations(
+            "I answer from the RCC User Guide and link the pages.", self.SOURCES
+        ) == []
+
+    def test_a_page_title_that_is_not_the_corpus_name_still_counts(self):
+        sources = [{"label": "Interactive jobs", "url": "https://x/"}]
+        found = checks.bare_title_citations("See Interactive jobs for more.", sources)
+        assert [item.kind for item in found] == ["bare-title-citation"]
+
+    def test_a_deployment_with_no_name_for_its_corpus_loses_nothing(self):
+        found = checks.bare_title_citations(
+            "See User Guide for more.", self.SOURCES, corpus_name=""
+        )
+        assert [item.kind for item in found] == ["bare-title-citation"]
+
+
+class TestEveryKindIsExercisedAndEveryKindIsReal:
+    """This file's opening claim, enforced rather than asserted in prose.
+
+    "A check that cannot fail reads as a pass" — and the same is true of a *kind* nobody
+    wrote a case for: it ships, it never fires, and the run looks clean. The other
+    direction matters too, because `tools/agent_bench.py` and `tools/scorecard.py` branch
+    on these strings by name: `_meta_verdict` reading a kind that has since been renamed is
+    a rule against an unversioned identifier, which fails silently on the day it changes.
+    """
+
+    ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+    def kinds_produced(self) -> set[str]:
+        """Every `Finding("…")` kind in `evals/checks.py`, read out of the source."""
+        with open(os.path.join(self.ROOT, "evals", "checks.py"), encoding="utf-8") as handle:
+            tree = ast.parse(handle.read())
+        found = set()
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Name)
+                and node.func.id == "Finding"
+                and node.args
+                and isinstance(node.args[0], ast.Constant)
+            ):
+                found.add(node.args[0].value)
+        return found
+
+    def source(self, *parts: str) -> str:
+        with open(os.path.join(self.ROOT, *parts), encoding="utf-8") as handle:
+            return handle.read()
+
+    def test_there_are_kinds_to_check(self):
+        assert len(self.kinds_produced()) >= 15
+
+    def test_every_kind_has_a_case_somewhere_in_the_suite(self):
+        """Somewhere, not here: `obeyed-injection` is exercised in
+        `test_bench_harness.py`, where the attachment that carries it is set up."""
+        suite = "".join(
+            self.source("tests", name)
+            for name in sorted(os.listdir(os.path.join(self.ROOT, "tests")))
+            if name.endswith(".py")
+        )
+        missing = sorted(kind for kind in self.kinds_produced() if kind not in suite)
+        assert not missing, (
+            "these findings can be produced and no test exercises them: "
+            + ", ".join(missing)
+        )
+
+    def test_every_kind_the_tools_branch_on_still_exists(self):
+        produced = self.kinds_produced()
+        quoted = set()
+        for name in ("agent_bench.py", "scorecard.py"):
+            for kind in produced | {"renamed-away"}:
+                if f'"{kind}"' in self.source("tools", name):
+                    quoted.add(kind)
+        assert quoted, "no tool names a finding kind; this test is measuring nothing"
+        assert quoted <= produced
+
+
+class TestTheValueOfAResourceFlag:
+    """`--partition=turbo` is a claim about this cluster. `--job-name=myjob` is not.
+
+    Measured over 514 recorded answers before the rule was written: checking every
+    `--flag=value` would have reported 27 distinct absent values and not one of them a
+    deployment fact. Restricted to the four flags whose values the *deployment* provides,
+    it reported 15 distinct values, all real.
+    """
+
+    def test_a_partition_the_corpus_has(self, haystack):
+        found = checks.unsupported_tokens(
+            "Use `--partition=caslake`.", {"a": "--partition=caslake is the default"},
+            haystack,
+        )
+        assert found == []
+
+    def test_a_partition_the_corpus_does_not_have(self, haystack):
+        """The evidence carries the flag, so the value is the only thing left to report."""
+        found = checks.unsupported_tokens(
+            "Try `--partition=wibblefast`.",
+            {"a": "pass --partition to sbatch"}, haystack,
+        )
+        assert [item.kind for item in found] == ["invented-token"]
+        assert "wibblefast" in found[0].detail
+
+    def test_a_constraint_expression_is_split(self):
+        found = checks.technical_tokens("Use `--constraint=v100|rtx6000`.")
+        assert {"v100", "rtx6000"} <= found
+
+    def test_a_comma_separated_list_is_split(self):
+        found = checks.technical_tokens("Use `--partition=caslake,gpu`.")
+        assert {"caslake", "gpu"} <= found
+
+    @pytest.mark.parametrize("command", [
+        "--job-name=myjob", "--account=pi-yournetid", "--output=my_job.out",
+        "--time=48:00:00", "--mem-per-cpu=4G",
+    ])
+    def test_a_value_the_reader_chooses_is_not_collected(self, command):
+        """Every one of these appeared in a real answer and is absent from the corpus."""
+        found = checks.technical_tokens(f"Use `{command}`.")
+        value = command.split("=", 1)[1]
+        assert value not in found
+
+    @pytest.mark.parametrize("command", [
+        "--time=[HH:MM:SS]", "--account=pi-[your-group]", "--partition=<partition>",
+        "--ntasks-per-node=[tasks]",
+    ])
+    def test_a_bracketed_placeholder_is_not_a_claim(self, command):
+        found = checks.technical_tokens(f"Use `{command}`.")
+        assert not any("[" in token or "<" in token for token in found)
+
+    def test_prose_is_not_a_command(self):
+        """The value is read from code regions only, like `module load`."""
+        assert "wibblefast" not in checks.technical_tokens(
+            "Some sites have a --partition=wibblefast, which RCC does not."
+        )
+
+
+class TestAPlaceholderCompound:
+    """`/home/yournetid` is a stand-in, and no word list finishes the compounds.
+
+    Two of the seven invented-path defects across 514 recorded answers were this shape.
+    `your` is the only prefix taken, because `my` would make `/var/lib/mysql` a
+    placeholder — the trap `_PLACEHOLDER_WORDS` already records.
+    """
+
+    @pytest.mark.parametrize("path", [
+        "/home/yournetid", "/scratch/midway3/yournetid", "/project/yourgroup/data",
+        "/home/YourUserName",
+    ])
+    def test_it_claims_nothing(self, path):
+        assert path not in checks.technical_tokens(f"Write to {path} for that.")
+
+    def test_the_my_prefix_is_deliberately_not_taken(self):
+        """`/var/lib/mysql` is a real directory, and this file has been bitten before."""
+        assert "/var/lib/mysql" in checks.technical_tokens("Look in /var/lib/mysql.")
+
+    def test_and_the_cost_of_the_your_prefix_stated_rather_than_hidden(self):
+        """A real product whose name begins with `your` is exempted.
+
+        `/opt/yourkit-profiler` would be a claim about the filesystem and is read as a
+        placeholder. That is the trade: `your`-prefixed compounds in this corpus are
+        stand-ins, and the alternative is a word list nobody finishes.
+        """
+        assert "/opt/yourkit-profiler" not in checks.technical_tokens(
+            "Look in /opt/yourkit-profiler."
+        )
+
+
+class TestAnAnswerThatIsThinkingOutLoud:
+    """One turn in 554 shipped 34,645 characters of a model reasoning about its rules.
+
+    It quoted the instructions back line by line, hit the token ceiling mid-sentence
+    without answering, and arrived under a Sources strip of six real sections. `ui.turn`
+    now routes that to the error card, so the delivered text no longer shows it — which is
+    exactly why the check has to exist, or the fix would hide its own measurement.
+    """
+
+    REAL = (
+        "Here's a thinking process:\n\n1. **Analyze User Input:** The user asks whether I "
+        "looked it up.\n2. **Check System Instructions:** I must answer strictly from "
+        "official documentation."
+    )
+
+    @pytest.mark.parametrize("opener", [
+        "Here's a thinking process:", "Here is my thinking process:",
+        "Thinking process:", "<think>", "Let me think this through:",
+        "Chain of thought:",
+    ])
+    def test_the_shapes_that_announce_deliberation(self, opener):
+        found = checks.reasoning_shape(f"{opener}\n\nThe user asks about quotas.")
+        assert [item.kind for item in found] == ["leaked-reasoning"]
+        assert found[0].severity == checks.DEFECT
+
+    def test_the_real_one_reports_its_length(self):
+        found = checks.reasoning_shape(self.REAL)
+        assert f"({len(self.REAL)} chars)" in found[0].detail
+
+    @pytest.mark.parametrize("answer", [
+        "Your /home quota is 30 GB ([Storage](docs/storage/main.md)).",
+        "Let me be clear: the documentation does not cover Frontera.",
+        "I look things up in the RCC documentation and link the pages I used.",
+        "Think of a service unit as an hour of one core ([SUs](docs/allocations.md)).",
+        "",
+    ])
+    def test_an_ordinary_answer_is_not_deliberation(self, answer):
+        assert checks.reasoning_shape(answer) == []
+
+    def test_inspect_reports_it(self, real_corpus, haystack):
+        record = {
+            "text": self.REAL, "raw": self.REAL, "question": "did you look that up?",
+            "sources": [], "evidence": {}, "expect": checks.SELF, "must_mention": [],
+        }
+        kinds = [item.kind for item in checks.inspect(record, real_corpus, haystack)]
+        assert "leaked-reasoning" in kinds

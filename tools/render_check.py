@@ -2348,8 +2348,21 @@ def check_follow(widths) -> tuple[list[str], int]:
     return problems, checked
 
 
+# Every selector this run measured something for. A check keyed on a selector that
+# matches nothing passes silently, and this file is full of `if not found: continue` —
+# `audit_citations` skips its whole body when `.source-item` is absent, which is exactly
+# what would happen the day a class is renamed in `sage/ui/transcript.py` and the fixture
+# here is not. `_check_balanced` guards the fixtures' shape; this guards their content.
+SEEN_SELECTORS: set[str] = set()
+
+# The list selectors the measurement collects every row of, named here because
+# `audit_citations` reads them and the coverage check has to know they exist.
+LIST_SELECTORS = (".source-item", ".related-item")
+
+
 def audit(data, scenario, scheme, width, state: str) -> list[str]:
     problems, els = [], data["els"]
+    SEEN_SELECTORS.update(selector for selector, box in els.items() if box)
     # The state belongs in the label. Six identical-looking failures that named only
     # screen, theme and width could not be placed to a state at all, and the state is
     # what says whether app.js had run, whether an answer was in flight, and whether
@@ -3007,6 +3020,9 @@ def audit_citations(data, where: str) -> list[str]:
     """
     problems: list[str] = []
     lists = data.get("lists") or {}
+    SEEN_SELECTORS.update(
+        selector for selector, rows in lists.items() if rows
+    )
 
     for selector in (".source-item", ".related-item"):
         found = lists.get(selector) or []
@@ -3171,6 +3187,23 @@ def main() -> int:
         select_problems, ran = check_selection(*size)
         failures.extend(select_problems)
         select_checked += ran
+
+    # Which selectors nothing ever matched. Not a style rule: every check keyed on one of
+    # these ran its "absent, so nothing to say" branch in all 660 renders, so the number
+    # this harness prints is over fewer rules than it appears to be. The Sources strip
+    # shipped ragged for months behind a green run for the neighbouring reason — the
+    # measurement read only the first chip — and the lesson is the same one.
+    unmeasured = [
+        selector for selector in list(SELECTORS) + list(LIST_SELECTORS)
+        if selector not in SEEN_SELECTORS
+    ]
+    if unmeasured:
+        failures.append(
+            f"{len(unmeasured)} selector(s) matched nothing in any of the {checked} "
+            "renders, so every check keyed on them passed without looking — this is a "
+            "whole-run property, so it fires for a truncated screen list too: "
+            + ", ".join(unmeasured)
+        )
 
     print(f"\nChecked {checked} renders across {len(SCENARIOS)} screens, "
           f"2 themes, {len(widths)} widths, plus {follow_checked} follow-up scroll "

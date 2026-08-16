@@ -18,8 +18,20 @@ Two bugs shipped for want of this check, both silent:
 Network-bound and therefore not part of the test suite: run it after touching
 `slugify`, `plain_heading` or a URL scheme, and when the corpus is refreshed.
 
-    python tools/anchor_check.py            # every cited page
+    python tools/anchor_check.py            # every anchor this app generates
     python tools/anchor_check.py --limit 20 # a quick sample
+    python tools/anchor_check.py --cited report/transcripts.jsonl   # and what models wrote
+
+The last one closes a gap nothing else can see. The anchors above are the app's own, built
+by `slugify` from headings it indexed; a *model* writes its citations by hand, and it can
+cite a real page at an anchor that does not exist there — the reader clicks and lands at the
+top of the page with no sign anything went wrong. Measured over 514 recorded answers: 336
+anchored citations, 14 of them pointing at an anchor that is not a chunk id, and asking the
+published site settled what an offline check could not — `#faq` and `#basic-usage` are real
+sections this app's chunker does not emit, while `#midway3---shared` and
+`#service-units-allocations-and-accounts` are inventions. So roughly half of that class is a
+false positive offline, which is why this lives here, behind the network, rather than in
+`evals/checks.py`.
 
 Exit status is 1 if any anchor or page is unreachable, so CI can gate on it.
 """
@@ -27,6 +39,7 @@ Exit status is 1 if any anchor or page is unreachable, so CI can gate on it.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
 import sys
@@ -36,7 +49,7 @@ from concurrent.futures import ThreadPoolExecutor
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from sage import corpus as corpus_mod  # noqa: E402
-from sage import profile  # noqa: E402
+from sage import links, profile  # noqa: E402
 
 # `id="..."` on any element. mkdocs-material puts the heading id on the <h_> itself,
 # but permalink anchors and admonitions carry ids too and a match against any of them
@@ -59,10 +72,45 @@ def _fetch(url: str, timeout: float):
     return set(_ID.findall(response.text)), "200"
 
 
+_CITATION = re.compile(r"\]\(\s*([^)\s]+?)\s*\)")
+
+
+def _cited(path: str | None, built) -> list[tuple[str, str, str]]:
+    """Anchors a model wrote, from a saved `transcripts.jsonl`, as (label, where, url).
+
+    Resolved through `links.resolve`, so a target the app could not turn into a URL is
+    already somebody else's finding — `checks.invented_citations` reports it, and this
+    would only report it a second time in a different voice.
+    """
+    if not path:
+        return []
+    found: list[tuple[str, str, str]] = []
+    seen: set[str] = set()
+    with open(path, encoding="utf-8") as handle:
+        for line in handle:
+            try:
+                record = json.loads(line)
+            except ValueError:
+                continue
+            for match in _CITATION.finditer(str(record.get("text") or "")):
+                target = match.group(1)
+                if target.startswith("http") or "#" not in target or target in seen:
+                    continue
+                seen.add(target)
+                url = links.resolve(target, built)
+                if url:
+                    found.append((target, f"cited by {record.get('model', '?')}", url))
+    print(f"{len(found)} distinct anchored citations read from {os.path.basename(path)}")
+    return found
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--limit", type=int, default=0,
                         help="check only the first N pages (0 = all)")
+    parser.add_argument("--cited", metavar="TRANSCRIPTS",
+                        help="also check the anchors *models* cited in a saved "
+                             "transcripts.jsonl, which no offline check can judge")
     parser.add_argument("--workers", type=int, default=8)
     parser.add_argument("--timeout", type=float, default=45.0)
     args = parser.parse_args()
@@ -84,6 +132,10 @@ def main() -> int:
         if source.base_url and source.links in ("mkdocs", "direct")
     )
     wanted: dict[str, list[tuple[str, str, str]]] = defaultdict(list)
+    for path, heading, url in _cited(args.cited, built):
+        if "#" in url:
+            base, anchor = url.split("#", 1)
+            wanted[base].append((path, heading, anchor))
     for chunk in built.chunks:
         if not bases or not chunk.url.startswith(bases) or "#" not in chunk.url:
             continue

@@ -209,7 +209,11 @@ def self_reachability(index, corpus) -> dict:
     unreachable = []
     for page, title in titles.items():
         if not title.strip():
-            unreachable.append(page)
+            # The same shape as the branch below, because a list of two shapes is one
+            # `row["page"]` away from a crash — and that is exactly what `scorecard.py`
+            # does with it: an untitled page would have taken the whole card down with
+            # `TypeError: string indices must be integers` rather than printing a row.
+            unreachable.append({"page": page, "title": title})
             continue
         found = {
             f"{result.chunk.source}/{result.chunk.path}"
@@ -309,7 +313,7 @@ def malformed_urls(corpus) -> list[dict]:
     return found
 
 
-def unregistered_names(profile) -> list[dict]:
+def unregistered_names(profile, tool_names=None) -> list[dict]:
     """Names the profile hands to a registry that nothing has registered.
 
     Each of the five seams fails differently on a typo, and only two of them fail in a way
@@ -329,8 +333,9 @@ def unregistered_names(profile) -> list[dict]:
     from sage.corpus.urls import schemes as url_registry
     from sage.providers import adapters
     from sage.retrieval import engines
-    from sage.tools import factories
+    from sage.tools import DEFAULT_TOOLS, factories
 
+    tool_names = DEFAULT_TOOLS if tool_names is None else tool_names
     wrong = []
 
     def check(kind: str, where: str, name: str, registry) -> None:
@@ -350,7 +355,11 @@ def unregistered_names(profile) -> list[dict]:
     check("retrieval engine", "retrieval", profile.retrieval.engine, engines)
     for entry in profile.providers:
         check("provider kind", f"providers.{entry.name}", entry.kind, adapters)
-    for name in ("search_docs", "read_doc"):
+    # From `DEFAULT_TOOLS` rather than written out here. Two names spelled a second time
+    # is two names to keep in step: a deployment that registers a third tool had it
+    # unchecked, and renaming one of these would have failed with a registry error from the
+    # app while this check still reported the deployment healthy.
+    for name in tool_names:
         check("tool", "tools", name, factories)
     return wrong
 

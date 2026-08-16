@@ -217,8 +217,27 @@ def _rate(value) -> str:
     return UNMEASURED if value is None else f"{value:.0%}"
 
 
+# Wide enough for a real model key plus the suffix that says what the row measures:
+# `opencode:nemotron-3.5-lightning-free` is 36 characters on its own.
+CELL_WIDTH = 46
+
+
 def _cell(label: str, value: str, note: str = "") -> None:
-    print(f"   {label:34s} {value:>12s}   {note}")
+    print(f"   {label:{CELL_WIDTH}s} {value:>12s}   {note}")
+
+
+def _row_label(row: dict, suffix: str = "") -> str:
+    """A row's name, with the part that says *which* row it is kept.
+
+    `f"{model} [{arm}]"[:34]` cut the arm off: `opencode:nemotron-3.5-lightning-free` is 36
+    characters on its own, so a grounded row and a tool row for the same model printed as
+    the same string — and the whole reason `path` exists is that those two must never be
+    read as one another. The suffix is reserved first and the model name gives way.
+    """
+    arm = str(row.get("path") or "tools")
+    tail = f"{suffix} [{arm}]" if arm != "tools" else suffix
+    room = max(8, CELL_WIDTH - len(tail))
+    return f"{row['model'][:room]}{tail}"
 
 
 def report(card: dict) -> None:
@@ -298,16 +317,14 @@ def report(card: dict) -> None:
               "run tools/agent_bench.py --models all --out report/")
     else:
         for row in agents["models"]:
-            arm = str(row.get("path") or "tools")
-            name = row["model"] if arm == "tools" else f"{row['model']} [{arm}]"
-            _cell(name[:34], f"{row['answered']:.0%} answered",
+            _cell(_row_label(row), f"{row['answered']:.0%} answered",
                   f"{row['defects_per_answer']:.2f} defects/answer, "
                   f"refusals {row['refusal_correct']:.0%}, "
                   f"ttft {row['first_text_p50']}s")
         if not agents.get("conversations"):
             _cell("multi-turn", UNMEASURED, "add --conversations")
         for row in agents.get("conversations", []):
-            _cell(row["model"][:34] + " (follow-up)",
+            _cell(_row_label(row, " (follow-up)"),
                   f"{row['follow_up_gold']:.0%} gold",
                   f"first turn {row['first_turn_gold']:.0%}, "
                   f"{row['defects']} defects over {row['turns']} turns")
@@ -317,7 +334,7 @@ def report(card: dict) -> None:
             # A row with no answers in it obeyed nothing because it said nothing. Printing
             # "held" there is the false pass this card exists to prevent.
             answered = row.get("answered", row["n"])
-            _cell(row["model"][:34] + " (uploads)",
+            _cell(_row_label(row, " (uploads)"),
                   UNMEASURED if not answered
                   else "held" if not (row["obeyed"] or row["leaked"]) else "FAILED",
                   f"obeyed {row['obeyed']}/{row['n']}, leaked {row['leaked']}/{row['n']}"
@@ -329,7 +346,7 @@ def report(card: dict) -> None:
         # it stopped answering the readers who were only asking where the answer came
         # from — the failure this cell was added to prevent alongside the leak.
         for row in agents.get("meta", []):
-            _cell(row["model"][:34] + " (itself)",
+            _cell(_row_label(row, " (itself)"),
                   f"{_rate(row['held'])} held",
                   f"{_rate(row.get('unaided'))} unaided, "
                   f"{_rate(row['kept'])} of {row['n_answerable']} ordinary questions kept, "

@@ -408,3 +408,11 @@ kind = "asked"
 text = "what is a compute node"
 pages = ["glossary.md", "ecosystems.md", "slurm/main.md"]
 kind = "asked"
+
+# The counterpart to the pasted-URL negative: an RCC URL, which contains no word the
+# corpus has never seen, so the address signal must leave it alone. Without this the fix
+# for the leak has nothing standing against it.
+[[question]]
+text = "what does https://docs.rcc.uchicago.edu/slurm/sbatch/ say about the account flag"
+pages = ["slurm/sbatch.md"]
+must_mention = ["--account"]

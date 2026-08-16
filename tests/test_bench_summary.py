@@ -319,3 +319,58 @@ class TestAProviderRefusalIsNotAModelDeflecting:
         printed = capsys.readouterr().out
         assert "100%     -" in printed or "  -  " in printed
         assert "0%" not in printed.split("names")[0].replace("100%", "")
+
+
+class TestAGoldPageCountsWhenTheReaderCanClickIt:
+    """The Sources strip is built from `read_doc` alone, and citations are not.
+
+    A model that searches, cites a page from the snippet and never reads it hands the
+    reader a working link — and `cited_gold` scored six of 157 recorded answers as having
+    cited nothing. On the conversation set it was worse and it was published: follow-ups
+    read the gold page 83.3% of the time and *reached the reader* with it 100% of the time,
+    and the 11–22 point "drop" between first turns and follow-ups was the difference
+    between those two readings rather than anything a model did.
+    """
+
+    def turn(self, **overrides) -> dict:
+        return record(
+            pages=["slurm/sbatch.md"], source_pages=[], cited_pages=[],
+            text="Use `sbatch` ([Batch jobs](docs/slurm/sbatch.md)).",
+            raw="x", sources=[], evidence={}, must_mention=[],
+        ) | overrides
+
+    def test_a_page_that_was_read_counts(self, real_index):
+        row = agent_bench.summarise(
+            "m", [self.turn(source_pages=["slurm/sbatch.md"])], real_index
+        )
+        assert (row["cited_gold"], row["read_gold"]) == (1.0, 1.0)
+
+    def test_a_page_only_linked_counts_for_cited_and_not_for_read(self, real_index):
+        row = agent_bench.summarise(
+            "m", [self.turn(cited_pages=["slurm/sbatch.md"])], real_index
+        )
+        assert row["cited_gold"] == 1.0, "the reader can click it"
+        assert row["read_gold"] == 0.0, "and the model never went back for it"
+
+    def test_neither_counts_when_the_page_is_absent(self, real_index):
+        row = agent_bench.summarise(
+            "m", [self.turn(cited_pages=["storage/main.md"])], real_index
+        )
+        assert (row["cited_gold"], row["read_gold"]) == (0.0, 0.0)
+
+    def test_the_conversation_rate_reads_the_same_way(self):
+        rows = [
+            self.turn(turn_index=0, source_pages=["slurm/sbatch.md"]),
+            self.turn(turn_index=1, cited_pages=["slurm/sbatch.md"]),
+        ]
+        summary = agent_bench._conversation_summary("m", rows)
+        assert summary["first_turn_gold"] == 1.0
+        assert summary["follow_up_gold"] == 1.0, "linked is in front of the reader"
+        assert summary["follow_up_read"] == 0.0, "and it did not look again"
+
+    def test_a_record_from_before_the_field_existed_still_scores(self, real_index):
+        """Every transcript written before `cited_pages` lacks the key."""
+        old = self.turn(source_pages=["slurm/sbatch.md"])
+        del old["cited_pages"]
+        row = agent_bench.summarise("m", [old], real_index)
+        assert row["cited_gold"] == 1.0

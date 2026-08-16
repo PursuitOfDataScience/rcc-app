@@ -8,8 +8,8 @@ labelled probes, all six of whose negatives are lexically alien ("sourdough",
 the score floor alone. This file adds the class none of them cover: a question in
 fluent RCC dialect about something the RCC does not have, which scores 26–64.
 
-Fourteen of thirty-eight were caveated when this file was written; thirty-nine of
-forty-five are now, over a set that has since gained the quadrant nothing covered. What
+Fourteen of thirty-eight were caveated when this file was written; forty of
+forty-six are now, over a set that has since gained the quadrant nothing covered. What
 moved it was `names_a_thing` and `reads_like_a_report` in `sage/retrieval/text.py`, not
 either threshold — `tools/gate_check.py --sweep` had shown the two sides occupying one
 score range. The ratchets below sit one case under what the tree measures, so a single
@@ -31,8 +31,8 @@ from evals import gate
 # was where it started and not an acceptable level. What moved it was not a threshold —
 # `tools/gate_check.py --sweep` showed no pair could — but telling an unfamiliar word
 # that *names* something from one that carries a value. See EVAL.md.
-MINIMUM_CAVEAT_RECALL = 0.84    # measured 0.867 (39 of 45)
-MAXIMUM_OVER_REFUSAL = 0.04     # measured 0.026 (2 of 78)
+MINIMUM_CAVEAT_RECALL = 0.84    # measured 0.870 (40 of 46)
+MAXIMUM_OVER_REFUSAL = 0.04     # measured 0.025 (2 of 79)
 MINIMUM_RECALL_AT_5 = 0.96      # measured 0.985
 
 
@@ -187,7 +187,7 @@ def test_no_threshold_pair_beats_the_shipped_one_for_free(real_index, audited, m
     History worth keeping: before the classification fix, no pair reached 90% caveat
     recall while keeping 95% of answerable questions — the two sides occupied the same
     score range, which is why the fix could not be a number. Afterwards one does (24/24
-    buys 4.4pp of caveat recall for 1.3pp of over-refusal). That is a trade on n=45, and
+    buys 4.4pp of caveat recall for 1.3pp of over-refusal). That is a trade on n=46, and
     taking it would mean tuning two constants to catch two cases in the very set they are
     measured on, so it is written down rather than shipped. `tools/gate_check.py --sweep`
     prints the whole front against the shipped point.
@@ -199,6 +199,58 @@ def test_no_threshold_pair_beats_the_shipped_one_for_free(real_index, audited, m
     assert not free, (
         "a threshold pair is better than the shipped one at no cost: " + str(free[:3])
     )
+
+
+class TestTheSweepMeasuresTheOperatingPoint:
+    """The sweep has to contain the pair the app runs at, or it is a set of alternatives
+    to a point that is not on the table.
+
+    It did not: `strong` steps by 4 from `minimum`, so the grid ran 20, 24, 28 and never
+    landed on the shipped 20/26. Every number the sweep printed was still true, and the one
+    comparison a reader wants — where are we, and what would moving cost? — could not be
+    made from it.
+
+    The invariant is the useful part: at the shipped pair, `sweep` and `measure` are two
+    independent computations of the same two rates. If they ever disagree, one of them is
+    wrong, and neither is worth reading until it is known which.
+    """
+
+    @pytest.fixture(scope="class")
+    def swept(self, real_index, audited):
+        return gate.sweep(real_index, audited, evals.questions(), evals.identifiers())
+
+    def test_the_shipped_pair_is_in_the_grid(self, swept, real_index):
+        from sage import config
+
+        shipped = [
+            point for point in swept["front"] if point.get("shipped")
+        ] or [None]
+        assessment = real_index.assess("how do I submit a batch job")
+        assert (assessment.min_confident_score, assessment.strong_score) == (
+            config.MIN_CONFIDENT_SCORE, config.STRONG_SCORE
+        ), "the assessment no longer carries the shipped thresholds"
+        # On the front or not is a finding, not a failure — but it must have been *swept*.
+        assert swept["grid"] > 0
+        assert shipped[0] is None or shipped[0]["min"] == config.MIN_CONFIDENT_SCORE
+
+    def test_the_sweep_and_the_measurement_agree_where_they_overlap(
+        self, real_index, audited, measured
+    ):
+        """Two computations of one number, run over the same cases at the same pair."""
+        from sage import config
+
+        rebuilt = gate.sweep(
+            real_index, audited, evals.questions(), evals.identifiers()
+        )
+        at_shipped = [
+            point for point in rebuilt["grid_points"]
+            if point["min"] == config.MIN_CONFIDENT_SCORE
+            and point["strong"] == config.STRONG_SCORE
+        ]
+        assert at_shipped, "the shipped pair was not evaluated by the sweep"
+        point = at_shipped[0]
+        assert point["caveat_recall"] == pytest.approx(measured["caveat_recall"])
+        assert point["answerable_kept"] == pytest.approx(1 - measured["over_refusal"])
 
 
 class TestTheDominationTolerance:

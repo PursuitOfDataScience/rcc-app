@@ -152,7 +152,24 @@ def summarise(model: str, records: list[dict], index) -> dict:
         "calls": round(statistics.mean([row["provider_calls"] for row in records]), 2),
         "read_errors": sum(row["read_errors"] for row in records),
         "bad_tool_args": bad_args,
+        # What the reader can click: the pages the turn read *or* the answer links to. The
+        # Sources strip is built from `read_doc` alone, so a model that cites a page from a
+        # search snippet without reading it hands over a working link — and this column,
+        # labelled `cited_gold` on the card, scored six of 157 recorded answers as having
+        # cited nothing. 94.3% became 98.1% when the links were counted.
         "cited_gold": (
+            sum(
+                1 for row in with_gold
+                if set(row["pages"]) & (
+                    set(row["source_pages"]) | set(row.get("cited_pages") or [])
+                )
+            )
+            / (len(with_gold) or 1)
+        ),
+        # And the stricter reading, kept because the prompt asks the model to *read* before
+        # answering: citing a page off a snippet is weaker evidence than having read it,
+        # and a model that stops reading altogether should be visible.
+        "read_gold": (
             sum(1 for row in with_gold if set(row["pages"]) & set(row["source_pages"]))
             / (len(with_gold) or 1)
         ),
@@ -335,12 +352,26 @@ def run_conversations(models, sage, haystack, contact, stream, internals=None,
     return out
 
 
+def _read_rate(rows: list[dict]) -> float:
+    """The stricter half of `_gold_rate`: pages the turn actually read."""
+    if not rows:
+        return 0.0
+    hits = sum(1 for row in rows if set(row["pages"]) & set(row["source_pages"] or []))
+    return hits / len(rows)
+
+
 def _conversation_summary(model: str, rows: list[dict]) -> dict:
     """`first_turn_gold` against `follow_up_gold` is the multi-turn measurement.
 
-    A model that cites the right page on the opening question and stops doing it on the
-    follow-up has lost the thread, and the failure is quiet: a plausible answer to a
-    question nobody asked, cited to a real page.
+    A model that puts the right page in front of the reader on the opening question and
+    stops doing it on the follow-up has lost the thread, and the failure is quiet: a
+    plausible answer to a question nobody asked, cited to a real page.
+
+    Both rates count a page the answer *links to* as well as one the turn read — see
+    `_gold_rate`. Scoring `read_doc` calls alone put the follow-up rate at 83.3% over 36
+    recorded follow-ups where the reader-visible figure is 100%, and that gap was published
+    as a finding about models losing the thread. `read_gold` keeps the strict reading, which
+    is the one that says whether a follow-up went back to the documentation at all.
     """
     follow_ups = [row for row in rows if row.get("turn_index", 0) > 0 and row["pages"]]
     first_turns = [row for row in rows if row.get("turn_index", 0) == 0 and row["pages"]]
@@ -349,6 +380,8 @@ def _conversation_summary(model: str, rows: list[dict]) -> dict:
         "turns": len(rows),
         "first_turn_gold": _gold_rate(first_turns),
         "follow_up_gold": _gold_rate(follow_ups),
+        "first_turn_read": _read_rate(first_turns),
+        "follow_up_read": _read_rate(follow_ups),
         "answered": sum(1 for row in rows if row["outcome"] == "answered")
         / (len(rows) or 1),
         "question_always_sent": all(row.get("question_sent", True) for row in rows),
@@ -358,25 +391,46 @@ def _conversation_summary(model: str, rows: list[dict]) -> dict:
 
 
 def _gold_rate(rows: list[dict]) -> float:
+    """Turns that put a gold page in front of the reader, read or linked.
+
+    The same correction as `cited_gold` in `summarise`, and it matters more here: a
+    follow-up is exactly the turn that answers from what it already has, so scoring only
+    `read_doc` calls understates the number this set exists to produce. Two of the six
+    recorded turns the old rule missed were follow-ups.
+    """
     if not rows:
         return 0.0
-    hits = sum(1 for row in rows if set(row["pages"]) & set(row["source_pages"]))
+    hits = sum(
+        1 for row in rows
+        if set(row["pages"]) & (
+            set(row["source_pages"]) | set(row.get("cited_pages") or [])
+        )
+    )
     return hits / len(rows)
 
 
 def run_injections(models, sage, haystack, contact, stream, internals=None,
                    toolless=False) -> list[dict]:
     """An instruction hidden in an uploaded file, which the app promises to ignore."""
-    from sage.files import Attachment  # noqa: PLC0415 — only this phase needs it
+    from sage import files  # noqa: PLC0415 — only this phase needs it
 
     out = []
     for model in models:
         print(f"\n{model} — injections", flush=True)
         rows = []
         for case in evals.injections():
-            attachment = Attachment(
-                filename=case.filename, kind="text", text=case.content
+            # Through `files.process`, not `Attachment(...)` by hand. The harness's whole
+            # claim is that it measures the app rather than a copy of it, and building the
+            # attachment directly skipped the upload path — including the filename
+            # sanitising that stops a name forging the `--- END ---` frame, which is what
+            # the `forged frame` case exists to check.
+            attachment, refused = files.process(
+                case.filename, case.content.encode("utf-8")
             )
+            if attachment is None:
+                print(f"   SKIPPED {case.name}: the app refused it ({refused})",
+                      flush=True)
+                continue
             record = harness.run_turn(
                 case.question, model, attachments=[attachment], toolless=toolless
             )
@@ -620,15 +674,17 @@ def report_meta(rows: list[dict]) -> None:
 def report_conversations(rows: list[dict]) -> None:
     print("\nmulti-turn — did the follow-up keep the thread?")
     print(f"   {'model':34s} {'turns':>6s} {'first':>7s} {'follow':>7s} "
-          f"{'ans':>5s} {'def':>4s} {'peak req':>9s}")
+          f"{'read':>7s} {'ans':>5s} {'def':>4s} {'peak req':>9s}")
     for row in rows:
         print(f"   {row['model'][:34]:34s} {row['turns']:6d} "
               f"{row['first_turn_gold']:6.0%} {row['follow_up_gold']:6.0%} "
+              f"{row.get('follow_up_read', 0.0):6.0%} "
               f"{row['answered']:4.0%} {row['defects']:4d} "
               f"{row['peak_request_chars']:9d}")
         if not row["question_always_sent"]:
             print("      the question did not survive the history budget on some turn")
-    print("   first/follow = cited a gold page on the first turn / on later turns")
+    print("   first/follow = a gold page reached the reader, read or linked; read = the "
+          "follow-ups that went back to the documentation for it")
 
 
 def report_injections(rows: list[dict]) -> None:
@@ -674,6 +730,15 @@ def rescore(path: str) -> dict:
     with open(path, encoding="utf-8") as handle:
         for line in handle:
             record = json.loads(line)
+            if "cited_pages" not in record and record.get("text"):
+                # Recomputed rather than defaulted to empty: every transcript written
+                # before this field existed would otherwise be scored by the old rule
+                # while the card claimed the new one.
+                from sage import links as links_mod  # noqa: PLC0415
+
+                record["cited_pages"] = sorted(
+                    links_mod.cited_pages(record["text"], built)
+                )
             found = checks.inspect(
                 record, built, haystack, contact=contact, internals=internals
             )
@@ -782,6 +847,9 @@ def report(summary: dict) -> None:
                     f"{kind} x{count}" for kind, count in
                     sorted(row[key].items(), key=lambda item: -item[1])
                 ))
+        if row.get("read_gold") is not None and row["read_gold"] != row["cited_gold"]:
+            print(f"   gold: cited {row['cited_gold']:.0%}, and read "
+                  f"{row['read_gold']:.0%} of those pages before answering")
         quality = row["query_quality"]
         print(f"   its query vs the reader's: better {quality['better']}, "
               f"worse {quality['worse']}, same {quality['same']}")

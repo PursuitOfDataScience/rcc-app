@@ -183,3 +183,53 @@ def test_every_advertised_path_can_be_read_back(real_index):
         for result in real_index.search(question, limit=3):
             out = runner.run(READ_DOC, {"path": result.id})
             assert not out.startswith("Error:"), f"{result.id} -> {out[:80]}"
+
+
+class TestTheCardAndTheRatchetMeasureTheSameThing:
+    """`tools/metrics.py` computes recall@5; this file ratchets it. Two computations.
+
+    They are not written the same way: the tests search with `limit=RECALL_AT` and ask
+    whether a gold page is among the results, while `metrics.measure` searches with
+    `limit=6` and slices the first five. With `MAX_PER_PAGE` capping sections per page,
+    those need not be the same five pages — and if they ever stop being, the card quotes
+    one number while CI gates on another, with nothing saying so.
+
+    The same gap was real in `evals/gate.py`: its threshold sweep never evaluated the pair
+    the app runs at, so the front was a set of alternatives to a point that was not on it.
+    """
+
+    @pytest.fixture(scope="class")
+    def metrics(self):
+        from tools import metrics as tool
+
+        return tool
+
+    def test_the_case_list_read_with_ast_is_the_one_defined_here(self, metrics):
+        """`metrics.py` parses this file rather than importing it, to run without pytest."""
+        known, gaps = metrics.cases()
+        assert [tuple(case) for case in known] == [
+            (question, tuple(pages)) for question, pages in CASES
+        ]
+        assert [tuple(case) for case in gaps] == [
+            (question, tuple(pages)) for question, pages in KNOWN_GAPS
+        ]
+
+    def test_slicing_six_results_gives_the_same_five_pages(self, real_index, metrics):
+        known, gaps = metrics.cases()
+        differ = [
+            question
+            for question, _expected in known + gaps
+            if [result.chunk.path for result in real_index.search(question, RECALL_AT)]
+            != [result.chunk.path for result in real_index.search(question, 6)][:RECALL_AT]
+        ]
+        assert not differ, (
+            "searching for six and slicing five no longer matches searching for five, so "
+            "the card and the ratchet are measuring different sets: " + "; ".join(differ[:3])
+        )
+
+    def test_the_two_recall_figures_agree(self, real_index, metrics):
+        known, _gaps = metrics.cases()
+        ratcheted = sum(
+            hit(real_index, question, expected, RECALL_AT) for question, expected in CASES
+        ) / len(CASES)
+        assert metrics.measure(real_index, known)["recall@5"] == pytest.approx(ratcheted)
