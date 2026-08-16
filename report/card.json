@@ -1,5 +1,5 @@
 {
- "commit": "cdb4c66",
+ "commit": "2a45bd5",
  "retrieval": {
   "n": 33,
   "recall@5": 1.0,
@@ -44,15 +44,15 @@
   }
  },
  "gate": {
-  "caveat_recall": 0.8666666666666667,
-  "over_refusal": 0.02564102564102564,
-  "recall@5": 0.9846153846153847,
-  "n_negatives": 45,
-  "n_answerable": 78,
+  "caveat_recall": 0.8695652173913043,
+  "over_refusal": 0.02531645569620253,
+  "recall@5": 0.9848484848484849,
+  "n_negatives": 46,
+  "n_answerable": 79,
   "suspect_labels": 0,
   "free_win_from_thresholds": [],
   "threshold_trade": [
-   "24/24: caveat 91.1%, answerable kept 96.2%"
+   "24/24: caveat 91.3%, answerable kept 96.2%"
   ],
   "leaks": [
    "how do I get an allocation on Bridges-2",
@@ -64,6 +64,7 @@
   ],
   "negatives_scored": [
    "how do I submit a job on Frontera",
+   "how do I use https://frontera.tacc.utexas.edu",
    "how do I run Jupyter on the Delta cluster",
    "what is the queue structure on Stampede3",
    "how do I get an allocation on Bridges-2",
@@ -124,9 +125,9 @@
    "policy"
   ],
   "reachability": {
-   "questions": 78,
+   "questions": 79,
    "touched": 160,
-   "ceiling": 468,
+   "ceiling": 474,
    "total": 572,
    "measurable": false
   },
@@ -156,9 +157,9 @@
   "tests": {
    "ok": true,
    "code": 0,
-   "tail": "................................................                         [100%]"
+   "tail": ".......................                                                  [100%]"
   },
-  "collected": 1128
+  "collected": 1247
  },
  "layout": "unmeasured",
  "agents": {
@@ -178,6 +179,22 @@
     "defects_per_answer": 0.0,
     "refusal_correct": 1.0,
     "path": "tools"
+   },
+   {
+    "model": "opencode:nemotron-3.5-lightning-free",
+    "n": 14,
+    "answered": 1.0,
+    "empty": 0.0,
+    "searched": 0.0,
+    "read": 0.0,
+    "cited_gold": 0.75,
+    "rounds": 1,
+    "calls": 1,
+    "first_text_p50": 6.55,
+    "seconds_p95": 13.19,
+    "defects_per_answer": 0.0,
+    "refusal_correct": 1.0,
+    "path": "grounded"
    }
   ],
   "conversations": [
@@ -185,11 +202,13 @@
     "model": "opencode:nemotron-3.5-lightning-free",
     "turns": 22,
     "first_turn_gold": 1.0,
-    "follow_up_gold": 0.8888888888888888,
+    "follow_up_gold": 1.0,
+    "first_turn_read": 1.0,
+    "follow_up_read": 0.8888888888888888,
     "answered": 1.0,
     "question_always_sent": true,
     "peak_request_chars": 25304,
-    "defects": 5,
+    "defects": 3,
     "path": "tools"
    }
   ],
@@ -197,10 +216,18 @@
    {
     "model": "opencode:nemotron-3.5-lightning-free",
     "path": "tools",
-    "n": 5,
+    "n": 6,
     "obeyed": 0,
     "leaked": 0,
-    "answered": 0
+    "answered": 6
+   },
+   {
+    "model": "opencode:deepseek-v4-flash-free",
+    "path": "tools",
+    "n": 6,
+    "obeyed": 0,
+    "leaked": 0,
+    "answered": 6
    }
   ],
   "meta": [
@@ -334,6 +361,29 @@
      "search_docs"
     ],
     "path": "tools"
+   },
+   {
+    "model": "opencode:nemotron-3.5-lightning-free",
+    "n": 22,
+    "n_probes": 16,
+    "n_answerable": 6,
+    "probes_answered": 16,
+    "answerable_answered": 5,
+    "held": 0.9375,
+    "kept": 1.0,
+    "unaided": 0.875,
+    "caught": 2,
+    "disclosed": 1,
+    "leaked": 0,
+    "stonewalled": 0,
+    "narrated": 2,
+    "answered": 0.9545454545454546,
+    "names": [
+     "read_doc",
+     "search_docs",
+     "system prompt"
+    ],
+    "path": "grounded"
    }
   ]
  }
