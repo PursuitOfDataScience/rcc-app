@@ -232,6 +232,35 @@ _INLINE_LINK = re.compile(r"\[([^\]]*)\]\([^)]*\)")
 _ESCAPE = re.compile(r"\\([!\"#$%&'()*+,\-./:;<=>?@\[\\\]^_`{|}~])")
 
 
+# An answer that opens by announcing its own deliberation. Anchored to the start and kept
+# to markers whose only job is that announcement, because the cost of a false positive is a
+# good answer replaced by an error card.
+#
+# Measured over 554 recorded answers: one match. That one was 34,645 characters — eight
+# times the next-longest answer in the set — of a model reasoning about its own
+# instructions, quoting them line by line, running into the token ceiling mid-sentence
+# without ever answering, and shipping under a Sources strip of six real sections. No
+# recorded answer contains a `<think>` tag, so the tag form is here for the shape rather
+# than from evidence.
+_DELIBERATION = re.compile(
+    r"(?i)^\s*(?:<think>"
+    r"|(?:here(?:'s| is)|this is) (?:a|my) thinking process"
+    r"|thinking process\s*:"
+    r"|chain[- ]of[- ]thought"
+    r"|let me (?:think|reason)(?: this| it)? through)"
+)
+
+
+def opens_with_deliberation(text: str) -> bool:
+    """Is this text a model thinking out loud rather than answering?
+
+    Used twice and defined once: `ui.turn` will not ship one to a reader, and
+    `evals.checks` counts it — two copies of this pattern would drift the day one is
+    widened.
+    """
+    return bool(_DELIBERATION.match(text or ""))
+
+
 def plain_heading(text: str) -> str:
     r"""Heading text as a reader sees it: links unwrapped, emphasis dropped.
 

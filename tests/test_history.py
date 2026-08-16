@@ -1,3 +1,5 @@
+import pytest
+
 from sage import config, history
 from sage.files import Attachment
 
@@ -313,3 +315,90 @@ def test_a_screenshot_does_not_evict_the_conversation_from_the_budget():
                      else [{"text": message["content"]}])
     )
     assert "first question" in joined, "one image evicted the whole conversation"
+
+
+class TestTheQuestionSurvivesAnyBudget:
+    """The budget may drop history and clip a file. It may not clip the question.
+
+    `_trim` clips the *head* of the last message when that message alone is over budget,
+    and — since `user_content` puts the question first — the head is the question. At a
+    small enough budget it clipped the question itself: measured at
+    `SAGE_HISTORY_CHAR_BUDGET=1`, the model was handed one character of the question and
+    answered anyway. That is the failure `question_sent` was added to the bench to catch,
+    and this is the floor that makes it unreachable.
+
+    The floor is derived from the stub rendering of the same turn rather than picked: it is
+    the smallest faithful form of the turn, it always carries the question whole, and
+    `MAX_PROMPT_CHARS` bounds what a reader can type so honouring it cannot run away.
+    """
+
+    QUESTION = "how do I submit a batch job with a GPU on Midway3?"
+
+    def build(self, budget: int, attachments=()):
+        from sage import config
+
+        before = config.HISTORY_CHAR_BUDGET
+        config.HISTORY_CHAR_BUDGET = budget
+        try:
+            built = history.build(
+                [{"role": "user", "text": self.QUESTION,
+                  "attachments": list(attachments)}],
+                "SYSTEM",
+            )
+        finally:
+            config.HISTORY_CHAR_BUDGET = before
+        return "\n".join(str(message["content"]) for message in built)
+
+    @pytest.mark.parametrize("budget", [1, 10, 100, 400, 48000])
+    def test_it_is_sent_whole_at_every_budget(self, budget):
+        assert self.QUESTION in self.build(budget)
+
+    @pytest.mark.parametrize("budget", [1, 100, 400])
+    def test_and_with_a_file_far_larger_than_the_budget(self, budget):
+        attachment = Attachment(filename="log.txt", kind="text", text="L" * 30000)
+        sent = self.build(budget, [attachment])
+        assert self.QUESTION in sent
+        assert "L" * 500 not in sent, "the file should be what gives way"
+
+    def test_a_budget_that_fits_is_still_honoured(self):
+        """The floor is a floor, not a licence to ignore the setting."""
+        attachment = Attachment(filename="log.txt", kind="text", text="L" * 30000)
+        assert len(self.build(2000, [attachment])) < 2500
+
+    def test_a_conversation_still_loses_its_oldest_turns_first(self):
+        from sage import config
+
+        before = config.HISTORY_CHAR_BUDGET
+        config.HISTORY_CHAR_BUDGET = 200
+        try:
+            built = history.build([
+                {"role": "user", "text": "the oldest question " * 10, "attachments": []},
+                {"role": "assistant", "text": "an old answer " * 10, "sources": []},
+                {"role": "user", "text": self.QUESTION, "attachments": []},
+            ], "SYSTEM")
+        finally:
+            config.HISTORY_CHAR_BUDGET = before
+        sent = "\n".join(str(message["content"]) for message in built)
+        assert self.QUESTION in sent
+        assert "the oldest question" not in sent
+
+    def test_a_question_larger_than_a_reader_could_type_is_still_clipped(self):
+        """The floor is bounded by `MAX_PROMPT_CHARS`, not by whatever arrives.
+
+        `MAX_PROMPT_CHARS` is what the composer accepts, so a question above it cannot come
+        from a reader — and the budget must not become optional for anything that skips the
+        composer.
+        """
+        from sage import config
+
+        before = config.HISTORY_CHAR_BUDGET
+        config.HISTORY_CHAR_BUDGET = 500
+        try:
+            built = history.build(
+                [{"role": "user", "text": "y" * (config.MAX_PROMPT_CHARS * 2),
+                  "attachments": []}],
+                "S",
+            )
+        finally:
+            config.HISTORY_CHAR_BUDGET = before
+        assert len(built[1]["content"]) <= config.MAX_PROMPT_CHARS

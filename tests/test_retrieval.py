@@ -2,6 +2,7 @@ import pytest
 
 from sage import config, retrieval
 from sage.corpus import Chunk, Corpus
+from sage.retrieval import text
 
 # The shipped profile's vocabulary: its protected terms and its synonym groups. That
 # split is the seam under test here — the stemming rules are about English and live in
@@ -250,7 +251,7 @@ class TestNamingAnUnknownThing:
     """Telling a word that names something from a word that carries a value.
 
     This is what took the refusal gate from caveating 14 of 38 labelled unanswerable
-    questions to 39 of 45, without moving either threshold — `tools/gate_check.py
+    questions to 40 of 46, without moving either threshold — `tools/gate_check.py
     --sweep` had shown that no pair could, because the two sides occupy the same score
     range. Every case below is the shape of a real question, and the second half of the
     class is the half that must never regress: each one is answerable, and each one was
@@ -380,3 +381,58 @@ class TestNamingAnUnknownThing:
         assessment = real_index.assess("what does the scavenge partition do")
         assert assessment.unknown_terms == ()
         assert assessment.confident
+
+
+class TestAnAddressIsMadeOfNames:
+    """Inside a URL, both signals that decide "does this word name a thing?" are blind.
+
+    A hostname's labels are lower case, so capitalisation says nothing, and no preposition
+    introduces them — so `how do I use https://frontera.tacc.utexas.edu` scored 27.4 with
+    `frontera`, `tacc` and `utexas` all unknown to the corpus and the gate stayed
+    confident. Pasting an address is how a reader asks about a *page* rather than a topic,
+    which makes it an ordinary query rather than an exotic one.
+
+    Scheme-anchored deliberately: a bare dotted host is the same shape as a filename, and
+    reading `job.sh` or `python3.11` as a name would refuse the answerable questions the
+    second half of `TestNamingAnUnknownThing` exists to protect.
+    """
+
+    def shapes(self, query: str) -> dict[str, bool]:
+        return {
+            mention.word.lower(): mention.in_address
+            for mention in text.mentions(query)
+        }
+
+    def test_a_word_inside_a_url_is_marked(self):
+        found = self.shapes("how do I use https://frontera.tacc.utexas.edu today")
+        assert found["frontera"] and found["tacc"] and found["utexas"]
+        assert not found["how"] and not found["use"] and not found["today"]
+
+    def test_www_counts_as_an_address(self):
+        assert self.shapes("see www.tacc.utexas.edu/frontera")["frontera"]
+
+    @pytest.mark.parametrize("query", [
+        "my job wrote job.sh and job.out",
+        "how do I load python3.11",
+        "quota exceeded writing to /project2/pi-jsmith",
+        "srun: error: task 0 launch failed",
+    ])
+    def test_a_dotted_filename_is_not_an_address(self, query):
+        assert not any(self.shapes(query).values()), query
+
+    def test_it_names_a_thing_without_a_capital_or_a_preposition(self):
+        mention = next(
+            item for item in text.mentions("see https://frontera.tacc.utexas.edu")
+            if item.word.lower() == "frontera"
+        )
+        assert not mention.capitalized
+        assert mention.previous not in text.NAMING_PREPOSITIONS
+        assert text.names_a_thing(mention, versioned=False)
+
+    def test_the_gate_caveats_a_foreign_url_and_not_an_rcc_one(self, real_index):
+        foreign = real_index.assess("how do I use https://frontera.tacc.utexas.edu")
+        ours = real_index.assess(
+            "what does https://docs.rcc.uchicago.edu/slurm/sbatch/ say about the account flag"
+        )
+        assert not foreign.confident, "another centre's machine, named only in a URL"
+        assert ours.confident, "our own documentation URL must still be answered"

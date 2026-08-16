@@ -202,6 +202,15 @@ def parse_sse(lines: Iterator[str]) -> Iterator[Chunk]:
         # JSONDecodeError branch above already decided.
         if not isinstance(event, dict):
             continue
+        # An error the provider streamed *after* a 200, which is how some gateways
+        # report a rate limit hit mid-generation. Skipped like anything else this does
+        # not understand — the rationale above holds, and discarding a half-streamed
+        # answer to show "something went wrong" is worse than a short one — but not
+        # silently: without this line the log has nothing to say about an answer that
+        # stopped mid-sentence, which is the one question an operator will have.
+        if event.get("error"):
+            logger.warning("Provider reported an error mid-stream: %r", str(event["error"])[:200])
+            continue
         # `isinstance` before the subscript, not after it. `{"choices": {"delta": {}}}`
         # is a dict, which is truthy, so `choices[0]` raised `KeyError: 0` before the
         # shape check below could run — and a raise here escapes the generator, so

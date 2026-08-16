@@ -106,10 +106,25 @@ def grounded_instruction(context: str, identity: Identity | None = None) -> str:
     The rules it repeats from the system prompt are the two that matter most when
     there is no second round to correct them: cite the exact path, and do not print a
     Sources list the app is already printing three lines below.
+
+    It opens by taking the tools away, and that sentence is the whole reason this
+    docstring is longer than it was. The system prompt above describes a search-then-read
+    loop — it has to, because most turns have one — and on this path there is nothing to
+    call. Measured over 14 grounded turns of the ordinary question set, **eight answers
+    named a tool** and three of them were nothing but the call, written out as text:
+
+        search("submit batch job sbatch RCC Midway")
+
+    That is what the reader got, under a Sources strip of six real sections. The model was
+    not misbehaving; it was doing what the only instructions it could see told it to do.
     """
     who = identity or active().identity
     return (
-        f"Answer only from these {who.qualifier}documentation sections. Cite them "
+        "This turn has no tools and nothing to search: the "
+        f"{who.qualifier}documentation sections below were retrieved for this question "
+        "already. Never write a search call, a function call, or any sentence about "
+        "looking something up — there is nothing to call and no step to describe.\n\n"
+        f"Answer only from these sections. Cite them "
         "inline as [Title](path) using the exact path in each header, and "
         "do not restate them at the end — no Sources list and no 'Cited "
         "from' sentence, because one is printed for you. If they do not "

@@ -8,7 +8,7 @@ import time
 
 import streamlit as st
 
-from .. import config, feedback, history, links, llm, prompts, redact
+from .. import config, feedback, history, links, llm, normalize, prompts, redact
 from ..tools import READ_DOC, SEARCH_DOCS, gather_context
 from .access import get_provider
 from .state import get_limiter
@@ -362,6 +362,20 @@ def run(view: View) -> None:
         # error card already offers.
         if not final_text.strip():
             logger.warning("%s returned an empty answer", model.key)
+            raise llm.AssistantError("empty")
+
+        # A model reasoning out loud instead of answering. One turn in 554 recorded ones
+        # did this: 34,645 characters of it, quoting the instructions back line by line,
+        # cut off mid-sentence by the token ceiling, with a Sources strip of six real
+        # sections under it. The same outcome as the preamble case above — the model said
+        # what it was going to do and never did it — so it takes the same route: the error
+        # card, which offers Try again and another model, rather than a wall of monologue
+        # dressed as an answer. `normalize` owns the pattern; `evals.checks` counts it.
+        if normalize.opens_with_deliberation(final_text):
+            logger.warning(
+                "%s answered with its own reasoning (%d chars); treating as no answer",
+                model.key, len(final_text),
+            )
             raise llm.AssistantError("empty")
 
         # The names of the tools, out of the prose and replaced by what a reader would

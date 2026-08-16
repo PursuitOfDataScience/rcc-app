@@ -133,6 +133,26 @@ class TestParseSSE:
         lines = [event, 'data: {"choices":[{"delta":{"content":"ok"}}]}']
         assert "".join(c.text for c in providers.parse_sse(iter(lines))) == "ok"
 
+    def test_an_error_streamed_after_a_200_keeps_the_answer_and_says_so(self, caplog):
+        """Some gateways report a rate limit hit *during* generation, in the stream.
+
+        Skipped like every other event this parser does not understand — the rule above
+        is deliberate, and discarding a half-streamed answer to show "something went
+        wrong" is worse than a short one. But it is the one shape that says the answer
+        stopped rather than finished, so it goes in the log: without it, an operator
+        looking at an answer that ends mid-sentence has nothing to read.
+        """
+        lines = [
+            'data: {"choices":[{"delta":{"content":"half an "}}]}',
+            'data: {"error":{"message":"rate limit exceeded","type":"rate_limit"}}',
+            'data: {"choices":[{"delta":{"content":"answer"}}]}',
+        ]
+        with caplog.at_level("WARNING"):
+            text = "".join(c.text for c in providers.parse_sse(iter(lines)))
+        assert text == "half an answer", "the text already streamed must survive"
+        assert any("mid-stream" in record.message for record in caplog.records)
+        assert any("rate limit exceeded" in str(record.args) for record in caplog.records)
+
     def test_bytes_lines_are_decoded(self):
         lines = [b'data: {"choices":[{"delta":{"content":"bytes"}}]}']
         assert "".join(c.text for c in providers.parse_sse(iter(lines))) == "bytes"

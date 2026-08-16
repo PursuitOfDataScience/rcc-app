@@ -120,6 +120,32 @@ def unresolved(text: str, corpus: Corpus) -> list[str]:
     return missing
 
 
+def cited_pages(text: str, corpus: Corpus) -> set[str]:
+    """Every page an internal link in `text` resolves to — the inverse of `unresolved`.
+
+    What the *reader* can click, which is not the same as what the turn read: the Sources
+    strip is built from `read_doc` calls only, so a model that searches, cites a page from
+    the snippet and never reads it delivers a working inline link under an empty strip.
+    Measured over 157 recorded answers with a gold page, that is six turns — and the
+    benchmark scored every one of them as not having cited the right page, under a column
+    labelled `cited_gold`.
+    """
+    pages: set[str] = set()
+    text = _MARKDOWN_IMAGE.sub(_as_figure, _ATTR_LIST.sub("", text))
+    for match in _MARKDOWN_LINK.finditer(text):
+        target = match.group(2)
+        if target.startswith(_EXTERNAL) or resolve(target, corpus) is None:
+            continue
+        chunk = corpus.chunk(target)
+        if chunk is not None:
+            pages.add(chunk.path)
+            continue
+        document = corpus.document(target.split("#", 1)[0])
+        if document is not None:
+            pages.add(document.path)
+    return pages
+
+
 def fix_links(text: str, corpus: Corpus) -> str:
     """Point internal links at published URLs; unlink what cannot be resolved.
 
