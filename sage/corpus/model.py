@@ -15,6 +15,9 @@ from . import urls
 
 @dataclass
 class Chunk:
+    #: `{source}/{path}#{anchor}` — this app's own name for the section, and what
+    #: `search_docs` hands the model to cite. Unique by construction: a heading that
+    #: repeats on a page gets `-1`, `-2` appended so two sections are never one id.
     id: str
     source: str
     path: str
@@ -22,6 +25,12 @@ class Chunk:
     heading: str
     breadcrumb: str
     text: str
+    #: Where the reader goes, which is **not** `id` with the prefix swapped. A repeated
+    #: heading publishes at one anchor on the site — mkdocs-material's own duplicate
+    #: suffix is `_1`, not `-1` — so `alphafold.md#alphafold-2-1` is a real id whose URL
+    #: ends `#alphafold-2`, and `links.resolve` goes through the index to get from one to
+    #: the other rather than rewriting the string. Comparing an *id* against the published
+    #: page's ids reports working citations as broken; `tools/anchor_check.py` checks these.
     url: str
 
     @property

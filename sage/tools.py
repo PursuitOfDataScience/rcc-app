@@ -257,6 +257,19 @@ class ReadDoc:
                 "Run search_docs again and use a `path` exactly as returned."
             )
 
+        if not document.text.strip():
+            # A page that exists and says nothing. `docs/data_transfer/cloud/rclone.md` is
+            # 0 bytes in the upstream snapshot, and it is a name a model would guess for an
+            # rclone question — so this is reachable without any search result offering it.
+            # Returned as an error rather than as a header with nothing under it: an empty
+            # read looks like a page that failed to load, and the model's own best guess
+            # about a blank section is the one thing this app must not encourage. No
+            # source is recorded either, because nothing was read.
+            return (
+                f"Error: '{document.id}' is in the index but has no content. "
+                "Run search_docs and read a different section."
+            )
+
         first = next(
             (item for item in corpus.chunks if item.path == document.path), None
         )

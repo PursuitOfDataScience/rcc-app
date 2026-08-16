@@ -883,3 +883,46 @@ class TestAttributingWhatTheModelDidNotLink:
         sources, _ = self.one_source()
         text = "Submit it with the sbatch command and watch with squeue."
         assert links.mark_sources(text, sources) == text
+
+
+class TestWhatTheAnswerLinksTo:
+    """`cited_pages` is the inverse of `unresolved`: the pages a reader can reach.
+
+    Needed because the Sources strip is built from `read_doc` calls alone, so "what did
+    this turn put in front of the reader" and "what did it read" are different questions —
+    and the benchmark was answering the second while labelling it the first.
+    """
+
+    def test_a_section_link_resolves_to_its_page(self, real_corpus):
+        assert links.cited_pages(
+            "see [GPU jobs](docs/slurm/sbatch.md#gpu-jobs)", real_corpus
+        ) == {"slurm/sbatch.md"}
+
+    def test_a_page_link_resolves_too(self, real_corpus):
+        assert links.cited_pages(
+            "see [Batch jobs](docs/slurm/sbatch.md)", real_corpus
+        ) == {"slurm/sbatch.md"}
+
+    def test_several_links_come_back_deduplicated(self, real_corpus):
+        found = links.cited_pages(
+            "[a](docs/slurm/sbatch.md#gpu-jobs) [b](docs/slurm/sbatch.md) "
+            "[c](docs/storage/main.md)",
+            real_corpus,
+        )
+        assert found == {"slurm/sbatch.md", "storage/main.md"}
+
+    @pytest.mark.parametrize("text", [
+        "[x](docs/nope.md)",                      # a page the corpus does not have
+        "[x](https://docs.rcc.uchicago.edu/)",    # already a URL
+        "![diagram](docs/img/x.png)",             # an image is not a citation
+        "no links at all",
+        "",
+    ])
+    def test_nothing_to_count(self, text, real_corpus):
+        assert links.cited_pages(text, real_corpus) == set()
+
+    def test_an_invented_path_is_still_reported_by_the_other_half(self, real_corpus):
+        """The two are complementary: one counts what resolves, one what does not."""
+        text = "[good](docs/slurm/sbatch.md) and [bad](docs/nope.md)"
+        assert links.cited_pages(text, real_corpus) == {"slurm/sbatch.md"}
+        assert links.unresolved(text, real_corpus) == ["docs/nope.md"]

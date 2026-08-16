@@ -650,7 +650,8 @@ class TestToollessModels:
         assert zen.calls == 1
         assert zen.tools_seen == [None], "tools must not be offered"
         sent = "\n".join(m["content"] for m in zen.sent[0])
-        assert "Answer only from these RCC documentation sections" in sent
+        assert "no tools and nothing to search" in sent, "the tools must be taken away"
+        assert "Answer only from these sections" in sent
         assert "docs/storage" in sent
         answer = stub.session_state["messages"][-1]
         assert answer["text"] == "Your quota is 30 GB."
@@ -1544,6 +1545,25 @@ class TestCitationApparatus:
         assert "<script>x</script>" not in html
         assert "&lt;script&gt;" in html
 
+    def test_a_url_cannot_add_an_attribute_to_its_own_link(self, monkeypatch):
+        """The label is element content; the URL becomes an `href`, which is worse.
+
+        A quote inside it closes the attribute and whatever follows becomes a new one. It
+        is reachable: `corpus/urls.py` rejects a non-http scheme — `javascript:`, `data:`
+        and `file:` all fall back to the site root, which `test_normalize.py` pins — but a
+        quote inside an `https://` URL passes, and the scraper's input is the live web.
+        `corpus_health.malformed_urls` reports one; this is what stops it rendering.
+        """
+        session = self.session(1)
+        session["messages"][1]["sources"][0]["url"] = (
+            'https://x.org/a" onmouseover="evil()'
+        )
+        stub, _module = run_app(monkeypatch, session=session)
+        html = self.markup(stub)
+        assert "onmouseover" in html, "the URL should still be shown, escaped"
+        assert 'onmouseover="' not in html, "the URL opened a new HTML attribute"
+        assert "&quot;" in html
+
     def test_related_is_absent_when_there_is_nothing_to_relate(self, monkeypatch):
         """The Related block is optional; an empty one would render a bare label."""
         html = self.render(monkeypatch)
@@ -2054,3 +2074,48 @@ class TestSessionsAreNotShared:
         html = " ".join("\n".join(second.markdown_html).split())
         assert "What can I help you with?" in html
         assert "someone else's question" not in html
+
+
+class TestAModelThinkingOutLoudIsNotAnAnswer:
+    """34,645 characters of deliberation shipped as a reply, once in 554 recorded turns.
+
+    The model quoted its instructions back line by line, ran into the token ceiling
+    mid-sentence without answering, and the transcript drew all of it under a Sources
+    strip of six real sections. It is the preamble case in a different costume — the model
+    said what it was going to do and never did it — so it takes the same route out: the
+    error card, which offers Try again and a different model.
+    """
+
+    def session(self):
+        return {
+            "messages": [
+                {"role": "user", "text": "did you look that up?", "attachments": []}
+            ],
+            "processing": True,
+        }
+
+    def test_it_becomes_the_recoverable_error_card(self, monkeypatch):
+        monologue = (
+            "Here's a thinking process:\n\n1. **Analyze User Input:** the user asks "
+            "whether I looked it up.\n2. **Check System Instructions:** I must answer "
+            "strictly from the documentation and cite every page."
+        )
+        client = ScriptedProvider([[event(monologue)]])
+        stub, _module = run_app(monkeypatch, client=client, session=self.session())
+        assert stub.session_state["error"] is not None
+        stored = stub.session_state["messages"][-1]
+        assert stored["role"] == "user", "the monologue must not be stored as an answer"
+
+    def test_an_ordinary_answer_still_lands(self, monkeypatch):
+        client = ScriptedProvider([[event("Your /home quota is 30 GB.")]])
+        stub, _module = run_app(monkeypatch, client=client, session=self.session())
+        assert stub.session_state["error"] is None
+        assert stub.session_state["messages"][-1]["text"] == "Your /home quota is 30 GB."
+
+    def test_a_numbered_answer_is_not_deliberation(self, monkeypatch):
+        """The shape is the opening line, not the numbering — answers use lists too."""
+        answer = "1. Load the module.\n2. Submit with `sbatch`.\n3. Watch with `squeue`."
+        client = ScriptedProvider([[event(answer)]])
+        stub, _module = run_app(monkeypatch, client=client, session=self.session())
+        assert stub.session_state["error"] is None
+        assert stub.session_state["messages"][-1]["text"] == answer

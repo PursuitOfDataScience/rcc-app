@@ -241,3 +241,35 @@ def test_runner_works_on_an_empty_index():
 
     tool = runner(retrieval.Index(Corpus()))
     assert "No matching" in tool.run(tools.SEARCH_DOCS, {"query": "anything"})
+
+
+class TestAPageWithNothingInIt:
+    """`docs/data_transfer/cloud/rclone.md` is 0 bytes in the upstream snapshot.
+
+    It produces no chunks, so no search result offers it — but it is exactly the path a
+    model would guess for an rclone question, and `read_doc` resolves documents by name.
+    It used to answer with a header and one blank line, which reads as a page that failed
+    to load and leaves the model's own memory as the best thing in its context.
+    """
+
+    def toolset(self, real_index):
+        return tools.build(real_index)
+
+    def test_it_says_so_instead_of_returning_a_header_and_nothing(self, real_index):
+        runner = self.toolset(real_index).runner()
+        out = runner.run("read_doc", {"path": "docs/data_transfer/cloud/rclone.md"})
+        assert out.startswith("Error:")
+        assert "no content" in out
+        assert "search_docs" in out
+
+    def test_nothing_is_recorded_as_a_source(self, real_index):
+        """Nothing was read, so the Sources strip must not offer the reader a blank page."""
+        runner = self.toolset(real_index).runner()
+        runner.run("read_doc", {"path": "docs/data_transfer/cloud/rclone.md"})
+        assert runner.sources == []
+
+    def test_a_page_with_content_still_reads(self, real_index):
+        runner = self.toolset(real_index).runner()
+        out = runner.run("read_doc", {"path": "docs/slurm/sbatch.md"})
+        assert out.startswith("=== ")
+        assert runner.sources

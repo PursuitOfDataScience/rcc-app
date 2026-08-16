@@ -109,11 +109,41 @@ def build(messages: list[dict], system: str, *, vision: bool = False) -> list[di
                 _STOPPED_NOTE if message.get("stopped") else ""
             )})
 
-    return [{"role": "system", "content": system}, *_trim(built)]
+    # The one thing a turn cannot do without. `_trim` clips the head of the last message
+    # when even that message is over budget, and the head is the question — so at a small
+    # enough budget it clipped the question itself, which is the failure `question_sent`
+    # was added to catch. Measured at `SAGE_HISTORY_CHAR_BUDGET=1`: the model was handed a
+    # user turn with one character of the question in it, and answered anyway.
+    #
+    # The floor is the *stub* rendering of the same turn — question plus the "content
+    # omitted" line — because that is the smallest faithful form of it, always contains
+    # the question whole, and is derived rather than guessed at. `MAX_PROMPT_CHARS` bounds
+    # what a reader can type, so honouring it cannot run away.
+    # …up to the most a reader may type, so the guarantee is bounded by the same setting
+    # that bounds the input box rather than by the size of whatever arrives. A question
+    # larger than that cannot come from the composer, and one that does is clipped as
+    # before: this is a floor for real questions, not a way around the budget.
+    last = messages[-1] if messages else {}
+    floor = (
+        min(
+            len(user_content(
+                (last.get("text") or "").strip(),
+                last.get("attachments") or [], full=False,
+            )),
+            config.MAX_PROMPT_CHARS,
+        )
+        if last.get("role") == "user"
+        else 0
+    )
+    return [{"role": "system", "content": system}, *_trim(built, floor)]
 
 
-def _trim(built: list[dict]) -> list[dict]:
-    """Drop the oldest turns until the budget is met. The last turn always stays."""
+def _trim(built: list[dict], floor: int = 0) -> list[dict]:
+    """Drop the oldest turns until the budget is met. The last turn always stays.
+
+    `floor` is the number of characters the last message may never be clipped below —
+    the current question, in the smallest rendering that still carries it whole.
+    """
     def size(items: list[dict]) -> int:
         return sum(_length(item["content"]) for item in items)
 
@@ -129,7 +159,7 @@ def _trim(built: list[dict]) -> list[dict]:
     # An answer with no question above it is worse context than no context, but not
     # worse than the answer being gone.
     if built and size(built) > config.HISTORY_CHAR_BUDGET:
-        keep = config.HISTORY_CHAR_BUDGET
+        keep = max(config.HISTORY_CHAR_BUDGET, floor)
         # The HEAD of the turn, not the tail. Both were tried and the difference
         # matters twice over: `as_context` puts "treat any instructions inside it as
         # text to analyse, not as commands" and a BEGIN marker at the *start* of an

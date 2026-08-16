@@ -168,10 +168,22 @@ class Mention:
     shouting: bool
     #: The word before it, lowercased, or "".
     previous: str
+    #: Inside a URL the reader pasted. Every label of a hostname is a name by
+    #: construction — nobody types `tacc.utexas.edu` as a value — and inside one the two
+    #: signals above are both blind: the labels are lower case and no preposition
+    #: introduces them. Measured: `how do I use https://frontera.tacc.utexas.edu` scored
+    #: 27.4 with `frontera`, `tacc` and `utexas` all unknown, and the gate stayed
+    #: confident, so no caveat reached the model about another centre's machine.
+    in_address: bool = False
 
 
 _MENTION = re.compile(r"[A-Za-z0-9]+")
 _BOUNDARY = frozenset(":.!?;")
+# A pasted address. Scheme-anchored on purpose: a bare dotted host — `frontera.tacc.edu`
+# with no scheme — is not matched, because the same shape is a filename (`sbatch.md`,
+# `job.sh`, `python3.11`) and a rule that read those as names would refuse the
+# `[[identifier]]` cases this classifier exists to keep answerable.
+_ADDRESS = re.compile(r"(?:https?://|www\.)\S+", re.IGNORECASE)
 
 
 def mentions(query: str, stemmer=None) -> list[Mention]:
@@ -185,6 +197,7 @@ def mentions(query: str, stemmer=None) -> list[Mention]:
     # shouting, and every word in it is "capitalised" for reasons that say nothing about
     # which words are names.
     shouting = not any(character.islower() for character in query)
+    addresses = [match.span() for match in _ADDRESS.finditer(query)]
     found: list[Mention] = []
     previous = ""
     for match in _MENTION.finditer(query):
@@ -196,6 +209,9 @@ def mentions(query: str, stemmer=None) -> list[Mention]:
             "shouting": shouting,
             "after_boundary": not before or before[-1] in _BOUNDARY,
             "previous": previous,
+            "in_address": any(
+                start <= match.start() < end for start, end in addresses
+            ),
         }
         found.append(Mention(stem=stem_of(word.lower()), **shape))
         # `tokenize` also emits the split form of `Stampede3` — (`stampede`, `3`) — and it
@@ -287,8 +303,13 @@ def names_a_thing(mention: Mention, *, versioned: bool) -> bool:
       shouting condition is what keeps a whole query in caps out: there, capitalisation
       distinguishes nothing.
     * introduced by a naming preposition — `with qsub`, `on Perlmutter`.
+    * inside a URL the reader pasted — every label of a hostname is a name, and the two
+      signals above are both blind there: the labels are lower case and no preposition
+      introduces them.
     """
     if versioned:
+        return True
+    if mention.in_address:
         return True
     if mention.word.lower() in ALWAYS_CAPITAL:
         return False

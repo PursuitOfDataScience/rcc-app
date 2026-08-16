@@ -56,6 +56,31 @@ def pattern(names) -> re.Pattern | None:
     )
 
 
+# Where a substitution must not go. Both are addresses rather than prose: rewriting one
+# changes where a link points, and a broken citation is worse than the name was. The
+# corpus this was written against has no page whose path contains a tool's name — but
+# `redact.py` is generic, and a deployment whose documentation *documents* functions
+# called `read_doc` is exactly the deployment that would meet this.
+#
+# Inline code is deliberately not exempt: `` `search_docs` `` is the commonest way an
+# answer names a tool, and it is prose about the tool rather than an address.
+_LINK_TARGET = re.compile(r"\]\([^)\s]*\)")
+_BARE_URL = re.compile(r"https?://\S+")
+
+
+def _same_case(original: str, public: str) -> str:
+    """`SEARCH_DOCS` -> `SEARCH`, `Search_docs` -> `Search`, `search_docs` -> `search`.
+
+    The match is case-insensitive, so without this a model that opened a sentence with
+    the name — or shouted it — got a lowercase word back in the middle of its own prose.
+    """
+    if original.isupper():
+        return public.upper()
+    if original[:1].isupper():
+        return public[:1].upper() + public[1:]
+    return public
+
+
 def apply(text: str, names: Mapping[str, str]) -> tuple[str, list[str]]:
     """The text with each internal name replaced by its public one, and which ones went.
 
@@ -63,18 +88,28 @@ def apply(text: str, names: Mapping[str, str]) -> tuple[str, list[str]]:
     for this app. A name with no public form is left alone rather than deleted, because
     the caller has then said "keep this out of answers" without saying what to put in its
     place, and guessing is how a sentence gets broken.
+
+    Single-pass: a public name that happens to be another internal name is not swapped
+    again, so no chain of labels can cascade.
     """
     found = pattern(names)
     if not found or not text:
         return text, []
+    skip = [
+        match.span()
+        for shape in (_LINK_TARGET, _BARE_URL)
+        for match in shape.finditer(text)
+    ]
     removed: list[str] = []
 
     def swap(match: re.Match) -> str:
         original = match.group(0)
+        if any(start <= match.start() < end for start, end in skip):
+            return original
         public = names.get(original) or names.get(original.lower()) or ""
         if not public:
             return original
         removed.append(original)
-        return public
+        return _same_case(original, public)
 
     return found.sub(swap, text), removed

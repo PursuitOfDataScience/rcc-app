@@ -61,6 +61,46 @@ class TestTheSwap:
         )
         assert text == "outline is not read"
 
+    def test_the_case_of_the_original_survives(self):
+        """A case-insensitive match with a lowercase replacement rewrote the reader's
+        prose: "Search_docs finds sections" came back opening on a lowercase word."""
+        assert redact.apply("Search_docs finds sections.", NAMES)[0] == (
+            "Search finds sections."
+        )
+        assert redact.apply("SEARCH_DOCS", NAMES)[0] == "SEARCH"
+        assert redact.apply("search_docs", NAMES)[0] == "search"
+
+    def test_a_link_target_is_left_alone(self):
+        """A substitution there changes where a citation points.
+
+        No page in this corpus has a tool's name in its path — but this module is generic,
+        and a deployment whose documentation documents a function called `read_doc` is
+        precisely the one that would meet it. A broken link is worse than the name was.
+        """
+        text = "See [the guide](docs/search_docs.md) and https://x.org/read_doc for more."
+        assert redact.apply(text, NAMES) == (text, [])
+
+    def test_but_the_same_name_in_prose_beside_a_link_still_goes(self):
+        """The exemption is the address, not the sentence containing it."""
+        out, removed = redact.apply(
+            "I used search_docs; see [the guide](docs/search_docs.md).", NAMES
+        )
+        assert out == "I used search; see [the guide](docs/search_docs.md)."
+        assert removed == ["search_docs"]
+
+    def test_inline_code_is_not_an_address_and_is_swapped(self):
+        assert redact.apply("I called `read_doc` next.", NAMES)[0] == (
+            "I called `read` next."
+        )
+
+    def test_a_public_name_that_is_another_internal_name_does_not_cascade(self):
+        """Single-pass, so a pathological label map cannot chain."""
+        out, removed = redact.apply(
+            "use search_docs", {"search_docs": "search", "search": "look"}
+        )
+        assert out == "use search"
+        assert removed == ["search_docs"]
+
     def test_a_word_that_merely_contains_a_name_is_untouched(self):
         for text in ("my-search_docs wrapper", "presearch_docs", "read_docs"):
             assert redact.apply(text, NAMES) == (text, [])
