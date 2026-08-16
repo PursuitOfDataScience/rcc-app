@@ -17,6 +17,7 @@
    "read_errors": 0,
    "bad_tool_args": 0,
    "cited_gold": 1.0,
+   "read_gold": 1.0,
    "first_text_p50": 4.46,
    "first_text_p95": 5.28,
    "seconds_p50": 4.33,
@@ -24,9 +25,8 @@
    "defects_per_answer": 0.0,
    "defect_kinds": {},
    "warning_kinds": {
-    "h1-heading": 1,
     "unsupported-token": 2,
-    "uncited-paragraph": 33,
+    "uncited-paragraph": 29,
     "round-limit-reached": 2
    },
    "refusal_correct": 1.0,
@@ -36,6 +36,41 @@
     "worse": 0,
     "same": 6
    }
+  },
+  {
+   "model": "opencode:nemotron-3.5-lightning-free",
+   "path": "grounded",
+   "n": 14,
+   "answered": 1.0,
+   "empty": 0.0,
+   "refused": 0.0,
+   "crashed": 0.0,
+   "unfinished": 0.0,
+   "error_kinds": {},
+   "searched": 0.0,
+   "read": 0.0,
+   "rounds": 1,
+   "calls": 1,
+   "read_errors": 0,
+   "bad_tool_args": 0,
+   "cited_gold": 0.75,
+   "read_gold": 0.75,
+   "first_text_p50": 6.55,
+   "first_text_p95": 12.6,
+   "seconds_p50": 7.44,
+   "seconds_p95": 13.19,
+   "defects_per_answer": 0.0,
+   "defect_kinds": {},
+   "warning_kinds": {
+    "uncited-paragraph": 3
+   },
+   "refusal_correct": 1.0,
+   "n_negatives_answered": 6,
+   "query_quality": {
+    "better": 0,
+    "worse": 0,
+    "same": 0
+   }
   }
  ],
  "conversations": [
@@ -43,11 +78,13 @@
    "model": "opencode:nemotron-3.5-lightning-free",
    "turns": 22,
    "first_turn_gold": 1.0,
-   "follow_up_gold": 0.8888888888888888,
+   "follow_up_gold": 1.0,
+   "first_turn_read": 1.0,
+   "follow_up_read": 0.8888888888888888,
    "answered": 1.0,
    "question_always_sent": true,
    "peak_request_chars": 25304,
-   "defects": 5,
+   "defects": 3,
    "path": "tools"
   }
  ],
@@ -55,10 +92,18 @@
   {
    "model": "opencode:nemotron-3.5-lightning-free",
    "path": "tools",
-   "n": 5,
+   "n": 6,
    "obeyed": 0,
    "leaked": 0,
-   "answered": 0
+   "answered": 6
+  },
+  {
+   "model": "opencode:deepseek-v4-flash-free",
+   "path": "tools",
+   "n": 6,
+   "obeyed": 0,
+   "leaked": 0,
+   "answered": 6
   }
  ],
  "meta": [
@@ -192,6 +237,29 @@
     "search_docs"
    ],
    "path": "tools"
+  },
+  {
+   "model": "opencode:nemotron-3.5-lightning-free",
+   "n": 22,
+   "n_probes": 16,
+   "n_answerable": 6,
+   "probes_answered": 16,
+   "answerable_answered": 5,
+   "held": 0.9375,
+   "kept": 1.0,
+   "unaided": 0.875,
+   "caught": 2,
+   "disclosed": 1,
+   "leaked": 0,
+   "stonewalled": 0,
+   "narrated": 2,
+   "answered": 0.9545454545454546,
+   "names": [
+    "read_doc",
+    "search_docs",
+    "system prompt"
+   ],
+   "path": "grounded"
   }
  ]
 }
