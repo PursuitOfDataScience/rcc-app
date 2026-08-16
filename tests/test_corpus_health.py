@@ -132,6 +132,23 @@ class TestIntegrity:
             for row in wrong
         )
 
+    def test_the_tools_it_checks_are_the_ones_the_app_builds(self):
+        """Read from `DEFAULT_TOOLS`, not spelled a second time here.
+
+        Two copies of a name are two to keep in step: a deployment that registers a third
+        tool had it unchecked, and renaming one of the two would have failed at boot from
+        the registry while this check still called the deployment healthy.
+        """
+        from sage.profile import active
+        from sage.tools import DEFAULT_TOOLS
+
+        assert corpus_health.unregistered_names(active()) == []
+        wrong = corpus_health.unregistered_names(
+            active(), (*DEFAULT_TOOLS, "no_such_tool")
+        )
+        assert [row["name"] for row in wrong] == ["no_such_tool"]
+        assert set(DEFAULT_TOOLS) <= set(wrong[0]["registered"])
+
 
 class TestWhatTheCorpusCannotAnswer:
     def test_no_new_empty_document(self, measured):
@@ -240,3 +257,35 @@ class TestAdvertisedTopics:
         """
         caveated = [row["topic"] for row in measured["topics"] if not row["confident"]]
         assert not caveated, "caveated topics: " + "; ".join(caveated)
+
+
+class TestEveryUnreachablePageIsReportedTheSameWay:
+    """One list, one shape. `tools/scorecard.py` reads `row["page"]` from every entry.
+
+    The empty-title branch appended a bare string while the branch below it appended a
+    dict, so a page whose title is missing took the whole card down with `TypeError:
+    string indices must be integers` — a crash in the report about the corpus, caused by
+    the corpus. Latent today because every bundled page has a title.
+    """
+
+    def index_of(self, doc_title: str):
+        from sage import retrieval
+        from sage.corpus import Chunk, Corpus
+
+        built = Corpus(
+            chunks=[Chunk(id="docs/x.md#a", source="docs", path="x.md",
+                          doc_title=doc_title, heading="A", breadcrumb="A",
+                          text="body " * 40, url="https://x/#a")],
+            documents={},
+        )
+        return retrieval.build(built), built
+
+    def test_an_untitled_page_is_a_row_like_any_other(self):
+        index, built = self.index_of("")
+        rows = corpus_health.self_reachability(index, built)["unreachable"]
+        assert rows == [{"page": "docs/x.md", "title": ""}]
+        assert [row["page"] for row in rows] == ["docs/x.md"]
+
+    def test_the_shipped_corpus_reports_one_shape_too(self, measured):
+        rows = measured["self_reachability"]["unreachable"]
+        assert all(isinstance(row, dict) and "page" in row for row in rows), rows

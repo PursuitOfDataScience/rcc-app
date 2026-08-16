@@ -33,7 +33,7 @@ import re
 from dataclasses import dataclass
 from urllib.parse import urlparse
 
-from sage import links
+from sage import links, normalize
 from sage import tools as tools_module
 from sage.corpus import Corpus
 from sage.profile import Profile
@@ -98,6 +98,21 @@ _ABS_PATH = re.compile(r"(?<![A-Za-z0-9])/[A-Za-z0-9_.\-]+(?:/[A-Za-z0-9_.\-]+)+
 # times in 75 answers, all of them correctly-resolved citations.
 _DOC_SUFFIX = (".md", ".txt", ".html", ".htm")
 _MODULE_LOAD = re.compile(r"module\s+load\s+([A-Za-z0-9_.+\-/]+)")
+# The value of a flag that names something the *deployment* provides. A partition, a QOS or
+# a feature is a fact about this cluster; `--job-name=myjob` and `--account=pi-yournetid`
+# are the reader's to choose, and `--time=48:00:00` is arithmetic.
+#
+# Measured before it was written, over 514 recorded answers: checking *every* `--flag=value`
+# would have reported 27 distinct values absent from the corpus and **not one of them a
+# deployment fact** — job names, output filenames, placeholder accounts. Restricted to these
+# four flags it reports 15 distinct values, all of them real, so it is a rule with no
+# measured false positives that catches the one shape `_NUMBERED_NAME` cannot:
+# `--partition=turbo` has no digit welded on.
+# The comma stays *inside* the captured value so a list can be split below; a trailing one
+# splits to an empty part and is dropped.
+_RESOURCE_VALUE = re.compile(
+    r"--(?:partition|qos|constraint|reservation)=([^\s`\"';)\\]+)"
+)
 # `midway3`, `beagle3`, `gpu2`, `scratch2` — a name with a number welded on is exactly
 # the shape of an invented cluster, partition or filesystem, and the unseen-word rule
 # in retrieval skips digit-bearing terms by design (a job ID is not a topic), so
@@ -140,11 +155,21 @@ def _placeholder(token: str) -> bool:
     Whole words inside each segment: `your_rcc_username` splits to {your, rcc, username}
     and matches, while `mysql` stays one word that matches nothing.
     """
-    if "<" in token or "$" in token or "..." in token or "{" in token:
+    if any(mark in token for mark in ("<", "$", "...", "{", "[")):
+        # Square brackets included because models reach for them constantly:
+        # `--time=[HH:MM:SS]`, `pi-[your-group]`, `--ntasks-per-node=[tasks]`.
         return True
     for segment in token.lower().split("/"):
         words = _SEGMENT_WORD.findall(segment)
         if words and any(word in _PLACEHOLDER_WORDS for word in words):
+            return True
+        # …and the compounds, which no word list will ever finish: `yournetid`,
+        # `yourgroup`, `yourusername`. `/home/yournetid` and `/scratch/midway3/yournetid`
+        # were two of the seven invented-path defects across 514 recorded answers, and
+        # both are plainly stand-ins. Only the `your` prefix, never `my`: `mysql` is a real
+        # directory name and this file has already been bitten by treating it as a
+        # placeholder.
+        if any(word.startswith("your") for word in words):
             return True
     return False
 
@@ -179,6 +204,13 @@ def technical_tokens(text: str) -> set[str]:
         target = match.group(1).rstrip(".,;:")
         if not _placeholder(target):
             found.add(target)
+    for match in _RESOURCE_VALUE.finditer(code):
+        # Split, because Slurm takes a list — `--partition=caslake,gpu` — and a
+        # `--constraint` expression joins features with `&` or `|`.
+        for value in re.split(r"[,|&]", match.group(1)):
+            value = value.strip().rstrip(".,;:")
+            if value and not value.isdigit() and not _placeholder(value):
+                found.add(value)
     # Numbered names only inside code, where they are being quoted as literals rather
     # than mentioned in prose ("Midway3" in a sentence is a name, not a command).
     for body in _code_regions(text):
@@ -284,6 +316,13 @@ def prose_paragraphs(text: str) -> list[str]:
             # one constantly — a flag reference with four rows counted as an uncited
             # paragraph, so this check was charging models for formatting.
             continue
+        if stripped.endswith(":"):
+            # A line introducing what comes next — "Here's a minimal example for
+            # Midway3:", "Add this to your script:" — states nothing on its own, and
+            # whatever it introduces is a code block this function has already cut out.
+            # 102 of 1108 uncited paragraphs across 514 recorded answers were one of
+            # these, all of them asking a model to cite a colon.
+            continue
         words = re.findall(r"[A-Za-z]{2,}", stripped)
         if len(words) >= 8:
             out.append(stripped)
@@ -332,24 +371,49 @@ _FOOTER_SENTENCE = re.compile(
 )
 
 
+#: How long a line may be and still be a citation footer rather than a sentence making a
+#: claim. A footer names sources and stops.
+_FOOTER_LINE_WORDS = 25
+
+
 def surviving_footer(text: str) -> list[Finding]:
     """A Sources list the strip is about to print again, directly underneath.
 
     `links.strip_source_footer` removes these. One that is still here after it ran is
     either a shape the stripper does not know or a stripper that stopped working, and
     both land the same way on screen: an identical list of links, twice.
+
+    A *heading* — `Sources:`, `## References` — is a footer wherever it appears. A
+    *sentence* is one only after the substance: "Based on the official RCC documentation,
+    there is no mention of a managed Kubernetes cluster" is how three of 514 recorded
+    answers opened, and this rule called each of them a surviving footer — a gateable
+    defect on an answer the stripper had rightly left alone. So the sentence form has to
+    sit outside the opening block and on a line short enough to be a footer.
     """
     findings = []
     for match in _FOOTER_HEAD.finditer(text):
         findings.append(Finding("footer-survived", match.group(0).strip(), DEFECT))
+    opening = len(text.split("\n\n", 1)[0])
     for match in _FOOTER_SENTENCE.finditer(text):
+        # From the line the *keyword* sits on, not from the match: the pattern's `^\s*`
+        # swallows the blank line before it, so `match.start()` points at a newline and
+        # the "line" measured from there was the empty string — which is short, so every
+        # sentence passed the length rule this exists to apply.
+        head = text.rfind("\n", 0, match.end()) + 1
+        if head <= opening:
+            continue        # inside the answer's first block: an opening, not a footer
+        line = text[head:].split("\n", 1)[0]
+        if len(re.findall(r"[A-Za-z']+", line)) > _FOOTER_LINE_WORDS:
+            continue
         findings.append(
             Finding("footer-survived", match.group(0).strip()[:80], DEFECT)
         )
     return findings
 
 
-def bare_title_citations(text: str, sources: list[dict] | None) -> list[Finding]:
+def bare_title_citations(
+    text: str, sources: list[dict] | None, corpus_name: str | None = None
+) -> list[Finding]:
     """A section named in plain text as if it were a citation.
 
     "(Allocations and Service Units FAQ, Running jobs on RCC clusters)" prints the
@@ -357,6 +421,15 @@ def bare_title_citations(text: str, sources: list[dict] | None) -> list[Finding]
     explicitly, and it is only checkable against the strip's own contents — which is
     why the labels are passed in rather than guessed.
     """
+    # What this deployment calls its own documentation — "the official RCC User Guide and
+    # website" — read from the profile rather than passed in, so a caller inspecting one
+    # record needs to know nothing about it. A page *titled* `User Guide` is then not a
+    # citation when an answer says "the RCC User Guide": that phrase names the corpus, the
+    # way `Charliecloud` names a container runtime. One of the five reports across 514
+    # recorded answers was this; the other four were real.
+    whole = (
+        _active().identity.corpus_name if corpus_name is None else corpus_name
+    ).lower()
     findings = []
     plain = _FENCED.sub("\n", text)
     # Where a link's *label* sits, and where code spans sit. Asked of this occurrence
@@ -376,6 +449,8 @@ def bare_title_citations(text: str, sources: list[dict] | None) -> list[Finding]
         # long single word through; the app's own rule already knew better.
         if len(re.findall(r"[^\W_]+", label)) < 2:
             continue
+        if whole and label.lower() in whole:
+            continue
         for match in re.finditer(re.escape(label), plain):
             if _inside(match.start(), labels) or _inside(match.start(), code):
                 continue        # inside the link that cites it, or quoted as a literal
@@ -388,10 +463,17 @@ def form_violations(text: str) -> list[Finding]:
     """The two shape rules the prompt states outright: no `#`, and tag every fence.
 
     Fences are taken in pairs — every other one is a closing fence, which never
-    carries a language and must not be counted as an untagged opening.
+    carries a language and must not be counted as an untagged opening. Measured over 514
+    recorded answers, every one of them pairs; an unclosed fence would shift the reading
+    of every fence after it, and there are none to shift.
+
+    The heading scan runs over the answer with its fenced blocks *removed*, because `#` in
+    a ```bash block is a shell comment. `# Optional: constrain the GPU type` and `# Your
+    actual work follows:` are the two commonest, and this rule reported 69 of them across
+    those same 514 answers — five times more often than it fired on a real heading.
     """
     findings = []
-    for line in text.splitlines():
+    for line in _FENCED.sub("\n", text).splitlines():
         if re.match(r"^#\s+\S", line):
             findings.append(Finding("h1-heading", line.strip()[:60], WARNING))
     fences = [match.group(1) for match in _FENCE_OPEN.finditer(text)]
@@ -777,6 +859,24 @@ def stonewalled(text: str) -> list[Finding]:
     return [Finding("stonewalled", match.group(0).strip()[:80], WARNING)] if match else []
 
 
+def reasoning_shape(text: str) -> list[Finding]:
+    """An answer that opens by announcing its own deliberation.
+
+    One turn in 554 recorded ones: 34,645 characters — eight times the next-longest answer
+    in the set — of a model reasoning about its instructions, quoting them line by line,
+    running into the token ceiling mid-sentence without ever answering. `ui.turn` now shows
+    the error card instead of shipping it, which means the *reader* is safe and the
+    behaviour is invisible in the delivered text; this is what keeps it counted. A defect,
+    not a warning: the turn produced no answer and leaked the prompt doing it.
+
+    The pattern lives in `sage.normalize`, so the app and this check cannot drift apart.
+    """
+    if not normalize.opens_with_deliberation(text):
+        return []
+    first = text.strip().splitlines()[0][:60]
+    return [Finding("leaked-reasoning", f"{first} ({len(text)} chars)", DEFECT)]
+
+
 def caught_internals(redacted) -> list[Finding]:
     """Names `sage.redact` took out of this answer before the reader saw it.
 
@@ -946,6 +1046,7 @@ def inspect(
         asked=str(record.get("question") or ""),
     )
     findings += caught_internals(record.get("redacted"))
+    findings += reasoning_shape(text)
     findings += narrated_machinery(text)
     findings += stonewalled(text)
 

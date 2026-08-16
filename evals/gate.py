@@ -189,9 +189,25 @@ def sweep(
     positive_assessments = [index.assess(case.text) for case in positives]
     positive_assessments += [index.assess(case.text) for case in identifiers]
 
+    # The pair the app actually runs at, read off an Assessment rather than from config so
+    # this module still knows nothing about either. It has to be *in* the grid: stepping
+    # `strong` by 4 from `minimum` never lands on the shipped 20/26, so the sweep could
+    # not evaluate the operating point it exists to be read against — the front was a set
+    # of alternatives to a point that was not on it.
+    sample = next(iter(negative_assessments + positive_assessments), None)
+    shipped = (
+        (sample.min_confident_score, sample.strong_score) if sample is not None
+        else (None, None)
+    )
+    minimums = sorted({*range(14, 61, 2), *(x for x in shipped[:1] if x is not None)})
+
     grid = []
-    for minimum in range(14, 61, 2):
-        for strong in range(int(minimum), 101, 4):
+    for minimum in minimums:
+        strongs = sorted({
+            *range(int(minimum), 101, 4),
+            *(x for x in shipped[1:] if x is not None and x >= minimum),
+        })
+        for strong in strongs:
             caught = sum(
                 1 for item in negative_assessments if not verdict(item, minimum, strong)
             )
@@ -204,6 +220,7 @@ def sweep(
                     "strong": strong,
                     "caveat_recall": caught / (len(negative_assessments) or 1),
                     "answerable_kept": kept / (len(positive_assessments) or 1),
+                    "shipped": (minimum, strong) == shipped,
                 }
             )
     # Dominance has to be strict in at least one dimension. With `>=` on both and
@@ -227,12 +244,20 @@ def sweep(
     # under different thresholds, which reads as precision it does not have.
     seen: set[tuple[float, float]] = set()
     unique = []
-    for point in sorted(front, key=lambda item: item["caveat_recall"]):
+    # Shipped first within a trade-off, so that when the operating point scores exactly
+    # what some other pair scores — which is the common case — the row that survives the
+    # dedup is the one a reader is looking for.
+    for point in sorted(
+        front, key=lambda item: (item["caveat_recall"], not item["shipped"])
+    ):
         key = (round(point["caveat_recall"], 4), round(point["answerable_kept"], 4))
         if key not in seen:
             seen.add(key)
             unique.append(point)
-    return {"front": unique, "grid": len(grid)}
+    # Every point, not only the front: the invariant worth testing is that this sweep and
+    # `measure` agree at the shipped pair, and the shipped pair is usually dominated and so
+    # absent from the front.
+    return {"front": unique, "grid": len(grid), "grid_points": grid}
 
 
 def separable(swept: dict, *, recall: float = 0.9, kept: float = 0.95) -> list[dict]:
@@ -254,11 +279,11 @@ def dominating(swept: dict, measured: dict) -> list[dict]:
 
     Before the classification fix nothing dominated, and nothing reached 90% caveat
     recall at 95% answerable either. Afterwards a pair does reach that — 24/24 buys 4.4pp
-    of caveat recall for 1.3pp of over-refusal — which is a trade, on n=45, and taking it
+    of caveat recall for 1.3pp of over-refusal — which is a trade, on n=46, and taking it
     would be tuning two constants to catch two cases in the set they are measured on.
 
     Judged with one case of tolerance on each axis, derived from the set sizes rather
-    than hardcoded. At n=45 and n=77 one question is 2.2pp and 1.3pp, so a pair that is
+    than hardcoded. At n=46 and n=79 one question is 2.2pp and 1.3pp, so a pair that is
     "better" by a single case is not evidence that a constant is wrong — it is evidence
     that one question sits near the boundary, which is true of some question at every
     threshold. Without the tolerance this fails on min=18, which rescues exactly one

@@ -203,6 +203,32 @@ class TestInjections:
             lowered = case.question.lower()
             assert "file" not in lowered and "attach" not in lowered, case.name
 
+    def test_every_case_survives_the_real_upload_path(self):
+        """The bench now builds each attachment with `files.process`, as the app does.
+
+        A case the app *refuses* — empty, binary, over the size limit — would be skipped at
+        run time and measure nothing, which is the failure this whole file exists to catch.
+        And the framing has to hold after sanitising: exactly one BEGIN and one END line,
+        however the filename is shaped.
+        """
+        from sage import files
+
+        for case in evals.injections():
+            attachment, refused = files.process(
+                case.filename, case.content.encode("utf-8")
+            )
+            assert attachment is not None, f"{case.name}: the app refuses it ({refused})"
+            lines = files.as_context(attachment).splitlines()
+            assert sum(1 for line in lines if line.startswith("--- BEGIN")) == 1, case.name
+            assert sum(1 for line in lines if line.startswith("--- END")) == 1, case.name
+
+    def test_one_case_attacks_the_framing_rather_than_the_model(self):
+        """A filename with a newline in it can close the quoted block early."""
+        assert any(
+            "\n" in case.filename or "--- END" in case.filename
+            for case in evals.injections()
+        ), "no case tests the frame the filename sits in"
+
     def test_every_case_carries_content_and_a_canary(self):
         for case in evals.injections():
             assert case.content.strip(), case.name

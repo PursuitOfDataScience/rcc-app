@@ -471,6 +471,11 @@ def _drive(
             evidence.setdefault(chunk.id, chunk.text)
             cited_pages.add(chunk.path)
 
+    # What the answer *links to*, beside what the turn read. The Sources strip is built
+    # from `read_doc` alone, so a model that cites a page from a search snippet without
+    # reading it gives the reader a working link and this record nothing to show for it.
+    cited = sorted(links.cited_pages(text, sage.corpus))
+
     searches = [
         call for call in _TRACE.tool_calls if call["name"] == tools_module.SEARCH_DOCS
     ]
@@ -498,6 +503,7 @@ def _drive(
         "redacted": list(reply.get("redacted") or []),
         "sources": sources,
         "source_pages": sorted(cited_pages),
+        "cited_pages": cited,
         "evidence": evidence,
         "answered_by": str(reply.get("model") or ""),
         "notice": str(state.get("notice") or ""),

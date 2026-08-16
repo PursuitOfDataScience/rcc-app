@@ -104,16 +104,54 @@ def report(measured: dict, *, verbose: bool) -> None:
                       f"median {scores[len(scores) // 2]:5.1f}  max {scores[-1]:5.1f}")
 
 
+def _by_how_much(swept: dict, measured: dict) -> str:
+    """Why the operating point is off the front, in questions rather than percentages.
+
+    "Dominated" on its own reads as an error. It is usually one question: at n=45 and n=78
+    a single case is 2.2pp and 1.3pp, and `gate.dominating` deliberately ignores a
+    one-case gain for exactly that reason. Saying which pair and by how much is the
+    difference between a number a reader can act on and an alarm.
+    """
+    negatives = max(measured["n_negatives"], 1)
+    answerable = max(measured["n_positives"] + measured["n_identifiers"], 1)
+    kept = 1 - measured["over_refusal"]
+    better = [
+        (
+            round((point["caveat_recall"] - measured["caveat_recall"]) * negatives),
+            round((point["answerable_kept"] - kept) * answerable),
+            point,
+        )
+        for point in swept["front"]
+        if point["caveat_recall"] >= measured["caveat_recall"] - 1e-9
+        and point["answerable_kept"] >= kept - 1e-9
+    ]
+    if not better:
+        return ""
+    caveats, answers, point = max(better, key=lambda row: row[0] + row[1])
+    gains = [
+        f"{n} more {noun}" for n, noun in
+        ((caveats, "caveated negative"), (answers, "answerable question")) if n
+    ]
+    if not gains:
+        return ""
+    return f" by {' and '.join(gains)} at {point['min']:g}/{point['strong']:g}"
+
+
 def report_sweep(swept: dict, measured: dict) -> None:
     print(f"\nthreshold sweep ({swept['grid']} pairs) — Pareto front, one row per trade")
     print("   caveat recall   answerable kept   min_confident   strong")
     for point in swept["front"]:
+        mark = "  <- as shipped" if point.get("shipped") else ""
         print(f"   {point['caveat_recall']:12.1%}   {point['answerable_kept']:14.1%}   "
-              f"{point['min']:13d}   {point['strong']:6d}")
-    # Where the app actually stands, so the front is read against something.
+              f"{point['min']:13g}   {point['strong']:6g}{mark}")
+    # Where the app actually stands, so the front is read against something — printed
+    # whether or not the operating point is *on* the front, because "it is dominated" is
+    # the single most important thing this table can say.
+    on_front = any(point.get("shipped") for point in swept["front"])
     print(f"   {measured['caveat_recall']:12.1%}   "
           f"{1 - measured['over_refusal']:14.1%}   "
-          f"{'as shipped':>13s}   {'':>6s}")
+          f"{'as shipped':>13s}   {'':>6s}"
+          + ("" if on_front else "  <- off the front" + _by_how_much(swept, measured)))
     free = gate.dominating(swept, measured)
     if free:
         print("   -> BETTER AT NO COST: "
