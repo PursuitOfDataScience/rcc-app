@@ -1,0 +1,88 @@
+# Makes sure the deployed app is awake, and wakes it when it is not.
+#
+# The deployment is "Sage - RCC Assistant" at https://uchicago-rcc.streamlit.app on
+# Streamlit Community Cloud, which discards an app's container after roughly twelve hours
+# without traffic. Waking it is not resuming a suspended process: the container is
+# rescheduled, the repository re-cloned and the dependencies reinstalled before a line of
+# the app runs, which was measured at fourteen minutes on this account's other
+# deployment. Meanwhile the reader is shown "check back in a minute or two" and leaves.
+#
+# This workflow does not need to live in the repository the app is deployed from. It only
+# needs the app's URL, and it is here because this is the repository the app's code lives
+# in and therefore the place someone looking for it will look.
+#
+# Two schedules, doing two different jobs:
+#
+#   * The four-hourly one keeps the app from sleeping at all, which is the cheap outcome:
+#     nothing to wake, nobody waits. Four hours is a third of the timeout, deliberately.
+#     Twelve-hourly is the one interval that cannot work, because twelve hours IS the
+#     timeout: a ping on that period races the thing it is meant to prevent and loses
+#     whenever GitHub fires late, which it does by ten to thirty minutes as a matter of
+#     course and occasionally by dropping a run outright. At four hours one missed run
+#     still leaves eight, and it takes two consecutive misses to reach the timeout.
+#
+#   * The morning one is the guarantee, and a separate cron entry on purpose: GitHub
+#     throttles frequent schedules hard but honours a once-daily one. 11:30 UTC is 06:30
+#     in Chicago on daylight time and 05:30 on standard, so the cold start finishes
+#     before anyone is reading either way. GitHub cron has no timezone, which is why this
+#     is stated in UTC and why the hour drifts with the season.
+#
+# The probe drives a real browser rather than fetching a URL, because a session is the one
+# thing a reader cannot be distinguished from, and because the obvious cheap version is a
+# trap: the app root is served by the platform's proxy and returns 200 with the React
+# shell whether or not the container is running. A keepalive built on it ran green for
+# eight days on the sibling deployment while the app slept through every night. Nothing
+# here swallows a failure; a run is red when the app is not serving.
+#
+# Caveats, in descending order of how much they should worry you:
+#   * Scheduled workflows are disabled automatically after sixty days with no commit to
+#     this repository. Re-enable from the Actions tab, or move the schedule to
+#     infrastructure without the rule.
+#   * GitHub's scheduled runners are best-effort and fire late.
+#   * Actions minutes are free here because this repository is public.
+#
+# No question is asked, so no provider quota is spent. Delete this file to stop.
+
+name: keepalive
+
+on:
+  schedule:
+    # Keep it awake, on a third of the twelve-hour timeout. See the note above on why
+    # this is not twelve.
+    - cron: '0 */4 * * *'
+    # And guarantee it is up before the morning, whatever the above managed.
+    - cron: '30 11 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: keepalive
+  # NOT cancel-in-progress. A wake from cold takes many minutes, and the next scheduled
+  # run would kill it partway: a keepalive that guarantees the app stays down.
+  cancel-in-progress: false
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install the browser
+        run: |
+          python -m pip install --quiet playwright
+          python -m playwright install --with-deps chromium
+
+      # Every layer of state reading lives in the probe, so there is one account of what
+      # was found and it is the same one whether this runs here or by hand.
+      - name: Make sure the app is awake
+        env:
+          APP_URL: https://uchicago-rcc.streamlit.app
+          WAKE_BUDGET: '900'
+        run: python .github/keepalive_probe.py
