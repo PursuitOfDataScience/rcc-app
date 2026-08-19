@@ -877,6 +877,28 @@ def reasoning_shape(text: str) -> list[Finding]:
     return [Finding("leaked-reasoning", f"{first} ({len(text)} chars)", DEFECT)]
 
 
+def typed_out_tool_call(text: str) -> list[Finding]:
+    """An answer that is a tool call the model typed instead of made.
+
+    Counted for the same reason as `reasoning_shape` above: `ui.turn` now raises on it, so
+    the reader gets the error card and the delivered text cannot show the behaviour — and
+    the behaviour is a fact about the model that belongs in the row describing it. A
+    defect, not a warning, because the turn produced no answer.
+
+    Its own kind rather than folded into `narrated_machinery`, which scores an answer that
+    *mentions* the machinery in prose the reader can read. This is not prose. Withdrawing
+    the tools on the last request of a turn is what surfaces it: one of the two free models
+    answered the reader's question in full and the other emitted six lines of
+    `<tool_call>`, and a single count covering both would say the change had no effect.
+
+    The pattern lives in `sage.normalize`, so the app and this check cannot drift apart.
+    """
+    if not normalize.is_written_out_tool_call(text):
+        return []
+    first = text.strip().splitlines()[0][:60]
+    return [Finding("typed-out-tool-call", f"{first} ({len(text)} chars)", DEFECT)]
+
+
 def caught_internals(redacted) -> list[Finding]:
     """Names `sage.redact` took out of this answer before the reader saw it.
 
@@ -1047,6 +1069,7 @@ def inspect(
     )
     findings += caught_internals(record.get("redacted"))
     findings += reasoning_shape(text)
+    findings += typed_out_tool_call(text)
     findings += narrated_machinery(text)
     findings += stonewalled(text)
 

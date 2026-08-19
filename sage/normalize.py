@@ -261,6 +261,52 @@ def opens_with_deliberation(text: str) -> bool:
     return bool(_DELIBERATION.match(text or ""))
 
 
+# A model handed no tools that writes the call out as prose anyway. Every marker here is
+# an envelope a provider strips when it parses a real tool call — so text still carrying
+# one is text the provider did *not* read as a call, which is exactly the case where it
+# reaches a reader as the answer.
+#
+# Anchored to the start, like `_DELIBERATION` above and for the same reason: an answer that
+# *mentions* a function, or fences a `bash` block, must not be mistaken for one that is
+# nothing but a call. Nothing legitimate opens with these.
+#
+# Observed, not guessed. Withdrawing the tools for the last request of a turn — see
+# `ui.turn` — took one free model from the round-limit sentence to a full cited answer and
+# the other to this, verbatim and complete:
+#
+#     <tool_call>
+#     <function=search>
+#     <parameter=query>
+#     add member to pi account collaborator RCC account
+#     </parameter>
+#     </function>
+#     </tool_call>
+#
+# 136 characters of XML, under a Sources strip of two real sections. The `[TOOL_CALLS]`,
+# `<|...|>` and bare-JSON forms are the other envelopes on this lineup; `grounded()` has
+# always been able to produce all of them, and its docstring counted eight in fourteen
+# turns naming a tool with three of them nothing but the call.
+_WRITTEN_OUT_CALL = re.compile(
+    r"(?i)^\s*(?:</?tool[_▁ ]?calls?>"
+    r"|\[/?tool_calls?\]"
+    r"|<\|?/?(?:tool_call|tool_calls|python_tag|function_call)\|?>"
+    r"|</?function(?:[ =_]|>)"
+    r"|\{\s*\"(?:name|function|tool_name|recipient_name)\"\s*:)"
+)
+
+
+def is_written_out_tool_call(text: str) -> bool:
+    """Is this text a tool call the model typed instead of made?
+
+    Sibling of `opens_with_deliberation`, and it goes the same two places: `ui.turn`
+    raises rather than shipping one, and `evals.checks` counts it. Both outcomes are the
+    model saying what it was about to do instead of doing it, so both take the route to
+    the error card, which offers Try again and another model — recoverable, in a way that
+    a screenful of angle brackets presented as an answer is not.
+    """
+    return bool(_WRITTEN_OUT_CALL.match(text or ""))
+
+
 def plain_heading(text: str) -> str:
     r"""Heading text as a reader sees it: links unwrapped, emphasis dropped.
 

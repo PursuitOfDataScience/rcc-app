@@ -788,6 +788,89 @@ is to announce deliberation — a numbered *answer* is not one, which
 `tests/test_app_smoke.py` pins, because the cost of a false positive here is a good answer
 replaced by an error card.
 
+### The turn that never stopped searching, and the sentence it printed instead
+
+Reported from the running app, not found by anything here. A postdoc asked what a negative
+service-unit balance meant for their PI account, how to add SUs, and how to be added to a
+collaborator's account. The app answered:
+
+> I wasn't able to finish looking that up. Please try rephrasing your question.
+
+They asked why it could not finish. It printed the same sentence again.
+
+Replayed through `evals/harness.py`, the turn is unambiguous. Five provider calls, four
+searches, and the four queries are near-duplicates of each other — "negative balance service
+units allocation consequences Midway3", then "over allocation negative balance
+consequences", then two rephrasings of the second question. The fifth call was another tool
+call, so the loop fell out of the bottom with no prose and printed its own sentence over the
+top of everything the turn had read. **Rephrasing was the one thing that could not help: it
+was what the model had spent every round doing.**
+
+Three things this rules out, each measured rather than argued:
+
+- **Not the corpus.** All three questions retrieve confidently, and two are answered
+  outright — `docs/slurm/main.md#service-units-allocations-and-accounts` says "if a
+  pi-account has a negative balance, you can't charge it for SUs and thus can't run jobs on
+  the shared partitions", and `docs/accounts.md` gives the member-request process including
+  the automated authorization email. The model **read the first of those, twice**, and kept
+  searching.
+- **Not the compound question.** Each of the three asked on its own, in a fresh session,
+  hit the same ceiling with the same sentence.
+- **Not the model, and not the ceiling.** The second model on the lineup failed identically.
+  Raised to ten rounds, both filled ten — six searches and four reads, five rephrasings of
+  the same query, still no answer. The ceiling is not what binds.
+
+What binds is that nothing ever gave the model a stopping condition. Rule 3 of the system
+prompt — "if the first search misses, rephrase the keywords and search again" — has no
+terminating clause, and a fact recorded in a single clause reads as a miss for as long as
+you keep searching for a *page* about it. Meanwhile `MAX_TOOL_ROUNDS` was a bound the app
+enforced and never mentioned.
+
+So the app supplies the stopping condition: **the last request of a turn goes out with the
+tools withdrawn**, carrying `prompts.last_round_instruction` to say why and to ask for the
+covered parts plus a named gap rather than silence. With nothing left to call, the only move
+a model has is the answer. `turn.grounded` has always taken the tools away like this; this
+is the same move at the other end of the loop.
+
+**What it changed, on the reader's question:** 0 of 11 turns produced an answer before — the
+round-limit sentence every time, across two models and both round ceilings. After: **12 of
+12**, each covering all three parts and citing the pages it read.
+
+**And the defect it exposed, which is why the count exists.** Withdrawing the tools moved
+one model straight to a full cited answer and the other to this, complete and verbatim, 136
+characters under a Sources strip of two real sections:
+
+```
+<tool_call>
+<function=search>
+<parameter=query>
+add member to pi account collaborator RCC account
+</parameter>
+</function>
+</tool_call>
+```
+
+A model that wants a tool and has none puts the call where it can — in the stream. It is the
+preamble case again in a third costume, so it leaves by the same door: `ui.turn` raises, the
+reader gets the error card with Try again and another model, and `checks.typed_out_tool_call`
+scores it as a defect on the transcript, because the delivered text no longer shows it.
+`normalize.is_written_out_tool_call` owns the pattern for both, matched at the start of the
+answer only — a fenced `bash` block and an answer that *mentions* searching are both
+ordinary, and `tests/test_answer_checks.py` pins that they do not fire.
+
+Naming the envelopes in the instruction — `<tool_call>`, `<function=…>`, `[TOOL_CALLS]`, a
+bare JSON object with a `name` in it, together with the fact that they are printed to the
+reader verbatim — took the typed-out rate on the reader's question from 9 in 16 to 0 in 12.
+It is not gone; two of six single-part runs still hit it or an empty stream. Both now end at
+the error card, which offers a retry and a different model, rather than at a sentence
+telling the reader to do the thing that already failed.
+
+**Why nothing here caught it first.** The mechanism only fires past round four, and the
+golden set answers at a mean depth of 2.1 reads. `round-limit-reached` was in the card the
+whole time — 2 of 14 turns, then 5 of 28 — sitting in `warning_kinds`, where a warning reads
+as a thing that happened rather than a reader who got nothing. It is the reader who reported
+it, twice, in the same conversation.
+
 ### Anchors a model invented, which no offline check can judge
 
 `tools/anchor_check.py --cited report/transcripts.jsonl` validates the anchors *models*
