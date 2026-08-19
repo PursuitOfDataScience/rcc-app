@@ -1341,3 +1341,58 @@ class TestAnAnswerThatIsThinkingOutLoud:
         }
         kinds = [item.kind for item in checks.inspect(record, real_corpus, haystack)]
         assert "leaked-reasoning" in kinds
+
+
+class TestAnAnswerThatIsATypedOutToolCall:
+    """The failure that withdrawing the tools on a turn's last request surfaced.
+
+    The reader's question — a negative service-unit balance, and two follow-ons — used to
+    end in the round-limit sentence on both free models. With the tools taken away for the
+    last request, one of them answered all of it and cited two pages; the other emitted
+    this, and nothing else, under the same Sources strip. So the count exists for the same
+    reason `leaked-reasoning` does: `ui.turn` raises on it, the reader gets the error card,
+    and without a check the delivered text would show a clean sweep.
+    """
+
+    REAL = (
+        "<tool_call>\n<function=search>\n<parameter=query>\n"
+        "add member to pi account collaborator RCC account\n"
+        "</parameter>\n</function>\n</tool_call>"
+    )
+
+    @pytest.mark.parametrize("opener", [
+        "<tool_call>", "</tool_call>", "<tool_calls>", "<tool▁call>",
+        "[TOOL_CALLS]", "[tool_call]", "<|tool_call|>", "<|python_tag|>",
+        "<function_call>", "<function=search>", "<function name=\"search_docs\">",
+        '{"name": "search_docs", "arguments": {"query": "quota"}}',
+    ])
+    def test_the_envelopes_a_provider_would_have_stripped(self, opener):
+        found = checks.typed_out_tool_call(f"{opener}\nquery: home quota")
+        assert [item.kind for item in found] == ["typed-out-tool-call"]
+        assert found[0].severity == checks.DEFECT
+
+    def test_the_real_one_reports_its_length(self):
+        found = checks.typed_out_tool_call(self.REAL)
+        assert f"({len(self.REAL)} chars)" in found[0].detail
+
+    @pytest.mark.parametrize("answer", [
+        # A fenced block is what a good answer is mostly made of.
+        "Run this ([Batch jobs](docs/slurm/sbatch.md)):\n\n```bash\nsbatch job.sh\n```",
+        # Naming the machinery in prose is `narrated_machinery`'s finding, not this one:
+        # the reader can read it, and scoring it twice would double-charge the model.
+        "I searched the documentation and read the storage page.",
+        # An angle bracket in the middle of a real answer, which is where they belong.
+        "Pass `--gres=gpu:1` and use `<job_id>` ([GPUs](docs/slurm/sbatch.md)).",
+        "A service unit is one core-hour ([SUs](docs/allocations.md)).",
+        "",
+    ])
+    def test_an_ordinary_answer_is_not_a_typed_out_call(self, answer):
+        assert checks.typed_out_tool_call(answer) == []
+
+    def test_inspect_reports_it(self, real_corpus, haystack):
+        record = {
+            "text": self.REAL, "raw": self.REAL, "question": "how do I add a member?",
+            "sources": [], "evidence": {}, "expect": "answer", "must_mention": [],
+        }
+        kinds = [item.kind for item in checks.inspect(record, real_corpus, haystack)]
+        assert "typed-out-tool-call" in kinds

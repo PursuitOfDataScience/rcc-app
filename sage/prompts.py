@@ -130,3 +130,52 @@ def grounded_instruction(context: str, identity: Identity | None = None) -> str:
         "from' sentence, because one is printed for you. If they do not "
         "cover the question, say so.\n\n" + context
     )
+
+
+def last_round_instruction(identity: Identity | None = None) -> str:
+    """What the model is told on the final request of a tool turn.
+
+    The turn has a hard ceiling of `config.MAX_TOOL_ROUNDS` tool rounds, and nothing
+    ever told the model that. A model that answers every round with another tool call
+    therefore never reaches the round that writes prose: it spends the last request the
+    way it spent the first, and the app throws away everything the turn read and prints
+    "I wasn't able to finish looking that up" instead.
+
+    That is not a hypothetical. Asked what a negative service-unit balance means, both
+    free models on the lineup searched, rephrased, searched again, read the one section
+    that answers it in a sentence — "If a pi-account has a negative balance, you can't
+    charge it for SUs and thus can't run jobs on the shared partitions" — and then went
+    back to searching until the rounds ran out. Raising the ceiling to ten did not help;
+    they filled ten. The prompt's own rule 3, "if the first search misses, rephrase the
+    keywords and search again", has no stopping condition, and a fact that is recorded in
+    one clause looks like a miss for as long as you keep looking for a page about it.
+
+    So the last request goes out with the tools withdrawn, and this says why — the same
+    move, for the same reason, as `grounded_instruction`: with nothing left to call, the
+    only thing a model can do is answer. The partial-coverage sentence matters as much as
+    the rest, because the honest reply to that question is three answers and one gap, and
+    a model that believes it has failed writes nothing at all.
+    """
+    who = identity or active().identity
+    pointer = (
+        f", and point the user at {who.contact_label} ({who.contact}) for that part"
+        if who.has_contact
+        else ""
+    )
+    return (
+        "This is the last request of this turn and the tools are gone: there is no "
+        "further search and no further read, so answer now, from the sections already "
+        "retrieved above. Never write a search call, a function call, or any sentence "
+        "about looking something up or being unable to finish — there is nothing left "
+        "to call and no step to describe.\n\n"
+        "That includes writing a call out as text. `<tool_call>`, `<function=...>`, "
+        "`[TOOL_CALLS]` and a bare JSON object with a `name` in it are not tool calls "
+        "here — nothing will parse them, and they are printed to the reader exactly as "
+        "you type them. Prose is the only thing this request can return.\n\n"
+        "What you have retrieved is very likely enough. Answer every part of the "
+        "question it covers, even if it covers only some: give those answers in full, "
+        "say plainly which part the "
+        f"{who.qualifier}documentation did not cover{pointer}. A partial answer with "
+        "its gap named is worth far more to the reader than no answer at all, and "
+        "saying nothing is the one outcome that helps nobody."
+    )

@@ -253,6 +253,130 @@ class TestTurnLoop:
         assert stub.session_state["processing"] is False
 
 
+class TestTheLastRequestHasNoTools:
+    """A turn's last request goes out with the tools withdrawn, and says why.
+
+    The bug, reported from the running app. Asked about a negative service-unit balance
+    — a fact the corpus states in one clause, on a page the model read twice — both free
+    models searched, rephrased, searched again, and never wrote a sentence. The loop ran
+    out of rounds and printed "I wasn't able to finish looking that up. Please try
+    rephrasing your question." over the top of 11k characters of the right documentation.
+    Rephrasing was the one thing that could not help: it was what the model had spent
+    every round doing.
+
+    Raising the ceiling is not the fix and was measured not to be — given ten rounds the
+    models filled ten. Rule 3 of the system prompt ("if the first search misses, rephrase
+    the keywords and search again") has no stopping condition, so the app supplies one:
+    the last request carries no tools, and with nothing left to call the only move a model
+    has is the answer.
+    """
+
+    SEARCH = TestTurnLoop.SEARCH
+    READ = TestTurnLoop.READ
+
+    def session(self):
+        return {
+            "messages": [{"role": "user", "text": "what does a negative balance mean",
+                          "attachments": []}],
+            "processing": True,
+        }
+
+    def looping(self, rounds, last):
+        """A model that would call a tool every round, and `last` when it cannot."""
+        return ScriptedProvider([self.SEARCH] * rounds + [last])
+
+    def test_the_tools_are_offered_until_the_last_request_and_not_on_it(
+        self, monkeypatch
+    ):
+        from sage import config
+
+        client = self.looping(config.MAX_TOOL_ROUNDS, [event("A negative balance.")])
+        run_app(monkeypatch, client=client, session=self.session())
+
+        assert client.calls == config.MAX_TOOL_ROUNDS + 1
+        # Every request but the last one was allowed to search.
+        assert all(client.tools_seen[:-1]), client.tools_seen
+        # And the last one was not, which is the whole mechanism.
+        assert not client.tools_seen[-1]
+
+    def test_a_model_that_answers_when_the_tools_go_is_shipped(self, monkeypatch):
+        """The reader's turn, and the regression this exists for."""
+        client = self.looping(
+            4, [event("A negative balance means you cannot charge SUs "),
+                event("([Service units](docs/slurm/main.md#service-units-allocations-and-accounts)).")],
+        )
+        stub, _module = run_app(monkeypatch, client=client, session=self.session())
+
+        answer = stub.session_state["messages"][-1]
+        assert answer["role"] == "assistant"
+        assert answer["text"].startswith("A negative balance means you cannot charge SUs")
+        assert "wasn't able to finish" not in answer["text"]
+        assert not stub.session_state["error"]
+
+    def test_the_last_request_says_why_the_tools_are_gone(self, monkeypatch):
+        client = self.looping(4, [event("A negative balance.")])
+        run_app(monkeypatch, client=client, session=self.session())
+
+        # `ScriptedProvider.sent` keeps the live list `turn.run` appends to, so every
+        # entry in it is the same object — the earlier requests cannot be read back off
+        # it. What can be checked is stronger anyway: the instruction is the *last*
+        # message of the turn, and there is exactly one of it however many rounds ran.
+        sent = client.sent[-1]
+        last = str(sent[-1].get("content", ""))
+        assert sent[-1]["role"] == "system"
+        assert "This is the last request of this turn" in last
+        # The two things it has to carry: answer now, and name the gap rather than
+        # going silent over it.
+        assert "answer now" in last
+        assert "did not cover" in last
+        once = [m for m in sent if "last request of this turn" in str(m.get("content", ""))]
+        assert len(once) == 1, f"the instruction went out {len(once)} times"
+
+    def test_a_typed_out_call_becomes_the_error_card_not_the_answer(self, monkeypatch):
+        """The other free model's reply to the reader's question, verbatim.
+
+        136 characters of XML, under a Sources strip of two real sections. It is the same
+        failure as a preamble shipped as an answer, so it takes the same route — Try
+        again and another model — rather than reaching a reader as angle brackets.
+        """
+        typed = [event("<tool_call>\n<function=search>\n<parameter=query>\n"),
+                 event("add member to pi account\n</parameter>\n</function>\n</tool_call>")]
+        client = self.looping(4, typed)
+        stub, _module = run_app(monkeypatch, client=client, session=self.session())
+
+        answers = [m for m in stub.session_state["messages"] if m["role"] == "assistant"]
+        assert not answers, f"a typed-out tool call was shipped: {answers}"
+        assert stub.session_state["error"] == llm.AssistantError("empty").user_message
+
+    def test_a_turn_that_finishes_in_budget_never_sees_any_of_this(self, monkeypatch):
+        """The regression guard, and the reason this change cannot cost anything.
+
+        The instruction goes out at the end of the round *before* the last one, so a turn
+        that stops calling tools while it still has rounds left is untouched: tools on
+        every request, no extra system message, the same answer it always gave. The golden
+        set answers at a mean depth of 2.1 reads, which is every ordinary question — worth
+        pinning rather than reasoning about, because the cheap version of this fix
+        withdraws the tools a round early and silently shortens every turn in the app.
+        """
+        client = ScriptedProvider([self.SEARCH, self.READ, TestTurnLoop.ANSWER])
+        stub, _module = run_app(monkeypatch, client=client, session=self.session())
+
+        assert client.calls == 3
+        assert all(client.tools_seen), client.tools_seen
+        sent = client.sent[-1]
+        assert not [m for m in sent if "last request of this turn" in str(m.get("content", ""))]
+        assert stub.session_state["messages"][-1]["text"] == "Your /home quota is 30 GB."
+
+    def test_the_round_limit_sentence_survives_as_the_backstop(self, monkeypatch):
+        """A model that emits a *parsed* call against an empty tool list still lands
+        somewhere honest. Nothing else can reach that branch now."""
+        from sage import config
+
+        client = self.looping(config.MAX_TOOL_ROUNDS + 1, self.READ)
+        stub, _module = run_app(monkeypatch, client=client, session=self.session())
+        assert "wasn't able to finish" in stub.session_state["messages"][-1]["text"]
+
+
 class TestTheMachineryIsNotNamedToTheReader:
     """`sage/redact.py`, in the app, on the answer that is actually stored.
 

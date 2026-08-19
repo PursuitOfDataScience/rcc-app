@@ -321,6 +321,12 @@ def run(view: View) -> None:
             if not turn.tool_calls or not use_tools:
                 break
             if round_number == config.MAX_TOOL_ROUNDS:
+                # A backstop now, not the ordinary way out. The request that produced
+                # this round was sent with no tools at all (see the bottom of the loop),
+                # so reaching here means the model wrote a tool call anyway, against an
+                # empty tool list — which happens, and is the one case left where the
+                # turn genuinely has no prose to show. Kept rather than deleted for
+                # exactly that reason; `tests/test_app_smoke.py` holds it.
                 logger.warning("Tool-round limit reached without a final answer")
                 final_text = final_text or (
                     "I wasn't able to finish looking that up. Please try rephrasing "
@@ -349,7 +355,37 @@ def run(view: View) -> None:
                     )
                 tool_chars += len(result)
                 messages.append(llm.tool_result_message(call, result))
-            turn = start(messages, runtime.tool_schemas)
+
+            # The last request of the turn goes out with the tools withdrawn.
+            #
+            # The ceiling was never told to the model, and a model that answers every
+            # round with another tool call therefore never reached the round that writes
+            # prose: it spent the fifth request the way it spent the first, and the loop
+            # fell out of the bottom and printed "I wasn't able to finish looking that
+            # up" over the top of everything the turn had read. Reported from the running
+            # app — a question about a negative service-unit balance, asked three ways,
+            # answered none of them, while the section that answers it in one clause was
+            # sitting in `messages` having been read twice.
+            #
+            # Withdrawing the tools is the fix rather than a bigger ceiling because the
+            # ceiling is not what binds: given ten rounds both models on the lineup filled
+            # ten, rephrasing the same query five times. Rule 3 of the system prompt — "if
+            # the first search misses, rephrase the keywords and search again" — has no
+            # stopping condition in it, and a fact recorded in a single clause reads as a
+            # miss for as long as you keep searching for a page about it. So the app
+            # supplies the stopping condition: with nothing left to call, the only move a
+            # model has is the answer. `grounded()` above takes the tools away the same
+            # way and for the same reason, and its docstring records what happens when you
+            # do it without saying so — eight answers in fourteen wrote the call out as
+            # text — which is why the instruction goes with it.
+            if round_number + 1 == config.MAX_TOOL_ROUNDS:
+                messages.append({
+                    "role": "system",
+                    "content": prompts.last_round_instruction(runtime.identity),
+                })
+                turn = start(messages, None)
+            else:
+                turn = start(messages, runtime.tool_schemas)
 
         status.clear()
 
@@ -374,6 +410,20 @@ def run(view: View) -> None:
         if normalize.opens_with_deliberation(final_text):
             logger.warning(
                 "%s answered with its own reasoning (%d chars); treating as no answer",
+                model.key, len(final_text),
+            )
+            raise llm.AssistantError("empty")
+
+        # A tool call the model typed instead of making. The same shape of failure one
+        # line up, and it arrives by the same door the round limit used to: the last
+        # request of a turn goes out with no tools, and a model that wanted to call one
+        # anyway has nowhere to put it but the stream. Caught here rather than left to
+        # `redact`, which swaps a tool's *name* out of a sentence and would turn a
+        # screenful of angle brackets into a slightly more readable screenful of angle
+        # brackets. Before the redaction for that reason.
+        if normalize.is_written_out_tool_call(final_text):
+            logger.warning(
+                "%s wrote a tool call out as its answer (%d chars); treating as no answer",
                 model.key, len(final_text),
             )
             raise llm.AssistantError("empty")
