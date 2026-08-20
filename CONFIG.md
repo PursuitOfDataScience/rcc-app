@@ -87,6 +87,48 @@ The practical consequence: treat the free models as a fallback. A funded key (Ze
 paid models are metered per key, per minute) or a provider that meters per account is
 what makes a shared deployment dependable.
 
+### When the lineup moves
+
+Nothing has to be done for a model that appears or disappears. The picker is built from
+`GET /models` and filtered by `free_marks`, so a model Zen starts serving free under a
+`-free` name is offered the moment it exists — `muse-spark-1.2-contributor-free` was in
+the picker before the profile named it — and `SAGE_DEFAULT_MODEL` naming something no
+longer served falls through to the first discovered option rather than failing.
+
+`tools/lineup_check.py` covers the four things that rule cannot do on its own, and
+`.github/workflows/lineup.yml` runs it daily:
+
+| It catches | Because |
+| --- | --- |
+| A free model published under a **stealth codename** | The rule cannot invent the next `big-pickle`. Reported for a human; the tool never edits `free_marks` |
+| A model that is **served but cannot answer** | `north-mini-code-free` was in the list and answering 401 from Zen's upstream. A list-only check calls that healthy |
+| **How long** a model has been gone | The profile keeps a model that broke today, on the grounds that outages end. The ledger makes that a date instead of a hunch |
+| The repo's **own record going false** | The fallback list matters only on the day discovery fails, which is the worst day to find out it is stale |
+
+```bash
+python tools/lineup_check.py                    # drift only — no key, no requests
+python tools/lineup_check.py --probe            # + one completion per unclassified name
+python tools/lineup_check.py --probe --update   # + append served free models
+```
+
+`GET /models` needs no key, so the drift half costs nothing and needs no secret. Probes
+run only against names the ledger has not classified before — the one-time sweep of
+Zen's 55 paid models took 6.5s and spent no allowance, since a paid model on a free key
+is refused before it generates — so a day the lineup does not move costs nothing.
+
+Two things it will not do. It **never reorders or removes**: the first entry of the
+profile's list is what a fresh session starts on and what an automatic failover lands
+on, which is a judgement no catalogue listing can make. And it is **never a CI gate**,
+for the reason [`EVAL.md`](EVAL.md) gives about Axis B — a free tier rotating its lineup
+is not this repository's fault, and a check that is red most weeks gets loosened until
+it is quiet. It opens a pull request when there is an edit to make and updates one issue
+when there is not.
+
+One trap worth knowing if you write your own probe: it must ask for `SAGE_MAX_TOKENS`,
+not a small number. A reasoning model spends the budget on thinking it does not emit —
+`muse-spark-1.2-contributor-free` at `max_tokens=200` returns `completion_tokens: 200`
+and an empty completion, three times out of three, and reads as a dead endpoint.
+
 ## Server settings
 
 [`.streamlit/config.toml`](.streamlit/config.toml). The theme is stated **twice**,
