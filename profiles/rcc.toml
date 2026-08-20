@@ -221,6 +221,16 @@ models = [
     "nemotron-3.5-lightning-free",
     "deepseek-v4-flash-free",
     "big-pickle",
+    # Zen started serving Muse Spark 1.2 free under a `-contributor-free` suffix, which
+    # the rule below already matched, so the picker offered it before this line existed
+    # — the line is here to give it a rank rather than to admit it.
+    #
+    # Not higher, because a reasoning model spends `max_tokens` on thinking it does not
+    # emit: at 200 tokens it returns `completion_tokens: 200` and no content at all, and
+    # three probes in a row read as a dead endpoint. `SAGE_MAX_TOKENS` is 8000 here so
+    # the app never sees that, but a failover target should be a model whose failure
+    # mode is not "silence under a tight budget".
+    "muse-spark-1.2-contributor-free",
     "mimo-v2.5-free",
     "nemotron-3-ultra-free",
     "north-mini-code-free",

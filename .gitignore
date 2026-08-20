@@ -34,3 +34,8 @@ tools/*.html
 # Personal overrides: one developer's allowed commands and MCP servers, which have
 # nothing to say to anybody else's checkout.
 .claude/settings.local.json
+
+# The lineup ledger written by tools/lineup_check.py. Bot state, not source: it exists
+# so "missing since" is a date rather than "gone today, every day", and it lives in the
+# Actions cache between runs. Losing it costs one run's worth of accrual.
+report/lineup.json
