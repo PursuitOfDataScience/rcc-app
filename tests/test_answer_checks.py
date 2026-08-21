@@ -18,6 +18,7 @@ import os
 import pytest
 
 from evals import checks
+from sage import links
 
 # A flag, a path and a module target that appear nowhere in the RCC documentation. If
 # any of these ever turns up in the corpus, `test_the_invented_tokens_are_still_invented`
@@ -1396,3 +1397,43 @@ class TestAnAnswerThatIsATypedOutToolCall:
         }
         kinds = [item.kind for item in checks.inspect(record, real_corpus, haystack)]
         assert "typed-out-tool-call" in kinds
+
+
+class TestARewrittenSentenceIsNotADeletedOne:
+    """`strip_bare_references` is the third pass to rewrite a line in place.
+
+    `_prose` already normalises the second one away — that is what its docstring means
+    by "links collapse to their labels" — and without the same treatment for this one,
+    every sentence it correctly cleaned was reported as `damaging-strip`. Measured on the
+    303 answers in `report/transcripts.jsonl`: ten reports, all ten read by hand, none of
+    them damaged. Passing the corpus is what tells the two apart, because only a
+    *resolvable* identifier is one this app put in the answer.
+    """
+
+    RAW = (
+        "The output lists `used`, `quota` and `grace` for each filesystem "
+        "【docs/storage/main.md#quotas】."
+    )
+
+    def test_taking_the_identifier_out_is_not_damage(self, real_corpus):
+        final = links.strip_bare_references(self.RAW, real_corpus)
+        assert "docs/storage" not in final, "the fixture stopped exercising the pass"
+        assert checks.postprocess_damage(self.RAW, final, real_corpus) == []
+
+    def test_it_is_still_damage_without_the_corpus_to_explain_it(self, real_corpus):
+        """The contrast: with no corpus, `_prose` cannot know the removal was ours.
+
+        Kept as a test rather than left implicit, because it is the reason the parameter
+        exists — a caller that forgets it gets the old false positive back, loudly.
+        """
+        final = links.strip_bare_references(self.RAW, real_corpus)
+        assert [item.kind for item in checks.postprocess_damage(self.RAW, final)] == [
+            "damaging-strip"
+        ]
+
+    def test_a_sentence_that_really_went_missing_is_still_damage(self, real_corpus):
+        raw = f"{self.RAW}\nRequest more with `--mem` when a job is killed for memory."
+        final = links.strip_bare_references(self.RAW, real_corpus)
+        assert [
+            item.kind for item in checks.postprocess_damage(raw, final, real_corpus)
+        ] == ["damaging-strip"]
