@@ -167,9 +167,38 @@ def fix_links(text: str, corpus: Corpus) -> str:
             # A bare in-page anchor has nowhere to go in a chat transcript.
             return label if target.startswith("#") else match.group(0)
         url = resolve(target, corpus)
+        label = _titled(label, target, corpus)
         return f"[{label}]({url})" if url else label
 
     return _MARKDOWN_LINK.sub(replace, text)
+
+
+# The prompt asks for citations "as [Section title](path)", and a model that copies the
+# instruction rather than following it emits that phrase verbatim as the visible label.
+# Observed in a live answer: "The same table in the docs explains each field. Section
+# title" — the reader is shown a fragment of this app's own prompt, and the one thing a
+# citation has to say, which page it is, is the thing missing.
+_PLACEHOLDER_LABELS = frozenset({
+    "section title", "page title", "title", "section", "page", "doc title",
+    "document title", "section name", "link text",
+})
+
+
+def _titled(label: str, target: str, corpus: Corpus) -> str:
+    """The label, unless it is the prompt's own placeholder — then the real title."""
+    if label.strip().lower().strip("*_`") not in _PLACEHOLDER_LABELS:
+        return label
+    chunk = corpus.chunk(target.strip())
+    if chunk is not None:
+        return chunk.label
+    base = target.strip().partition("#")[0].lstrip("./")
+    document = corpus.document(base)
+    if document is None:
+        for source in corpus.sources:
+            document = corpus.document(f"{source.name}/{base}")
+            if document is not None:
+                break
+    return document.title if document is not None and document.title else label
 
 
 # `Sources:`, `**References:**`, `**Citations**:`, `## Sources` — every decoration a
@@ -418,6 +447,173 @@ def _source_names(sources: list[dict], *, floor: int = 2) -> set[str]:
             if name and len(name.split()) >= floor:
                 names.add(name)
     return names
+
+
+# A reference the reader cannot use: the index's own name for a section, printed as
+# prose. The loose shape is deliberate — anything that could be a path gets *offered*,
+# and `resolve()` against the corpus is what decides. That way this cannot invent a rule
+# about file extensions that a second deployment's corpus breaks.
+_REFERENCE_TOKEN = re.compile(
+    r"[A-Za-z0-9][A-Za-z0-9._/-]*\.[A-Za-z0-9]{1,6}(?:#[A-Za-z0-9._-]+)?"
+)
+
+# Wrappers a model puts around one of those when it thinks it is citing. The last two
+# are not decoration: `【…】` and `{…}` both turned up in real answers, and a wrapper
+# missing from here is left behind empty, so the reader is shown `documentation 【】:`
+# instead of the identifier — a worse leak than the one being removed.
+_WRAPPED = {"[": "]", "(": ")", "`": "`", "<": ">", "{": "}", "\u3010": "\u3011"}
+
+
+def strip_bare_references(text: str, corpus: Corpus) -> str:
+    """Remove index identifiers the model printed instead of linking them.
+
+    `search_docs` hands the model strings like `web/about-rcc_our-team.txt#5` and the
+    system prompt asks for them back inside `[Title](path)`, where `fix_links` turns
+    them into URLs. A model that instead writes the identifier as text —
+
+        Source: "Our Team" page on the RCC website [web/about-rcc_our-team.txt#5].
+
+    — has published this app's internal filing system to the reader. It is not a broken
+    link, which is why nothing else here caught it: `unresolved()` is quiet because the
+    id resolves perfectly, `strip_inline_citations` only reads *parenthesised* asides
+    naming a section *title*, and `strip_source_footer` judges the shape of a footer
+    rather than its contents. So the string sails through every existing guard and lands
+    in the answer, where it reads as machine output leaking into prose.
+
+    Only references that RESOLVE are removed, so ordinary text that merely looks like a
+    filename is left alone. Markdown link targets are skipped — `](path)` is the citation
+    the prompt asked for and the one thing here that must survive — as is anything inside
+    code, where a filename is usually the reader's own file and not ours.
+    """
+    if not text or not corpus:
+        return text
+
+    out: list[str] = []
+    fenced = False
+    for line in text.split("\n"):
+        if _FENCE.match(line):
+            fenced = not fenced
+            out.append(line)
+            continue
+        if fenced:
+            out.append(line)
+            continue
+        cleaned, removed = _clean_line(line, corpus)
+        # A citation line whose only citation has just been taken out of it is a label
+        # with nothing under it — "Source: the RCC website ." — and keeping it would
+        # replace one leak with a sentence pointing at nothing. Dropped only when this
+        # function is what emptied it; a `Sources:` line it never touched belongs to
+        # `strip_source_footer`, which has its own rules for judging one.
+        if removed and "](" not in cleaned:
+            label = _LABEL_LINE.match(cleaned)
+            if label or not re.search(r"[A-Za-z0-9]", cleaned):
+                continue
+        out.append(cleaned)
+
+    return "\n".join(out)
+
+
+def _clean_line(line: str, corpus: Corpus) -> tuple[str, bool]:
+    """One line with its resolvable bare references removed, and whether any were.
+
+    Cuts are collected first and applied last, right to left, so each one is spliced
+    against the offsets it was measured at. Every judgement below is about markdown
+    *structure* rather than text, because the first version of this read the line as
+    prose and took a working link apart: `[docs/x.md#y](docs/x.md#y)` lost its label and
+    left the reader `(docs/x.md#y)`, bare, in the middle of a sentence.
+    """
+    spans = _spans(_CODE_SPAN, line)
+    cuts: list[tuple[int, int]] = []
+
+    for match in _REFERENCE_TOKEN.finditer(line):
+        start, end = match.span()
+        if _inside(start, spans):
+            continue
+        if resolve(match.group(0), corpus) is None:
+            continue
+        # `](path)` — the target half of a working citation, and the one thing here that
+        # must survive untouched.
+        if line[:start].endswith("]("):
+            continue
+
+        group = _enclosing_brackets(line, start, end)
+        if group is None:
+            cuts.append(_with_wrapper(line, start, end))
+            continue
+
+        opened, closed = group
+        if line[closed : closed + 1] == "(":
+            # A link *label*. Strip the identifier out of it — `[FAQs (web/faqs.txt#1)]`
+            # should read `[FAQs]` — but never empty it, because a label with nothing in
+            # it is a link the reader cannot see or click. When the label is *only* the
+            # identifier there is nothing to keep, so the link is left as it stands and
+            # `fix_links` gets to render it.
+            cut = _with_wrapper(line, start, end)
+            remainder = line[opened + 1 : cut[0]] + line[cut[1] : closed - 1]
+            if re.search(r"[A-Za-z0-9]", remainder):
+                cuts.append(cut)
+            continue
+
+        # A bracketed group that is not a link and contains an identifier: a citation
+        # the model got wrong, whole. Removing only the identifier is what produced
+        # `[Python #Distributions]` out of `[Python (docs/…/python.md)#Distributions]` —
+        # the title kept, the link never made, the fragment stranded.
+        cuts.append((opened, closed))
+
+    if not cuts:
+        return line, False
+
+    cleaned = line
+    for begin, finish in sorted(set(cuts), reverse=True):
+        cleaned = _cut(cleaned, begin, finish)
+    return cleaned, True
+
+
+def _with_wrapper(line: str, start: int, end: int) -> tuple[int, int]:
+    """The span to cut, widened over a wrapping pair that holds this and nothing else."""
+    opener = line[start - 1] if start else ""
+    if opener in _WRAPPED and line[end : end + 1] == _WRAPPED[opener]:
+        return start - 1, end + 1
+    return start, end
+
+
+def _enclosing_brackets(line: str, start: int, end: int) -> tuple[int, int] | None:
+    """The `[…]` this span sits inside, if any. Flat, which is what models write."""
+    opened = line.rfind("[", 0, start)
+    if opened == -1:
+        return None
+    closed = line.find("]", end)
+    if closed == -1:
+        return None
+    if "]" in line[opened:start] or "[" in line[end:closed]:
+        return None
+    return opened, closed + 1
+
+
+def _cut(line: str, start: int, end: int) -> str:
+    r"""Remove `line[start:end]` and close the hole, touching nothing else on the line.
+
+    This replaces a `_tidy` that ran line-wide regular expressions over the result, and
+    the difference is the whole point. `\s+([,.;:!?])` does not know which comma the
+    removal was near, so it closed a gap three clauses away and turned `Submitting a
+    .sbatch script` into `Submitting a.sbatch script`; `[ \t]{2,}` flattened a
+    three-space markdown indent on any line that happened to contain a citation. Both
+    were edits nobody asked for, in answers the reader was about to read.
+    """
+    before, after = line[:start], line[end:]
+    # A wrapper the cut has just emptied — `()`, `[]`, `{}`, `【】`.
+    if before and after and _WRAPPED.get(before[-1]) == after[:1]:
+        before, after = before[:-1], after[1:]
+    # Leading indentation is structure in markdown, so a hole at the start of a line
+    # closes up to it and no further.
+    left = before if not before.strip() else before.rstrip()
+    right = after.lstrip()
+    spaced = bool(re.match(r"\s", before[-1:] or "x") or re.match(r"\s", after[:1] or "x"))
+    if not left or not right or right[0] in ",.;:!?)]}":
+        joiner = ""
+    else:
+        joiner = " " if spaced else ""
+    return left + joiner + right
 
 
 def strip_inline_citations(text: str, sources: list[dict] | None = None) -> str:

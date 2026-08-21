@@ -455,12 +455,16 @@ def run(view: View) -> None:
                 # own contents, so an unlabelled list of links can be checked against
                 # what the reader is already being shown rather than guessed at.
                 #
-                # Two passes because the duplication has two shapes: a footer under the
-                # answer, and a parenthetical of section titles inside a sentence. The
-                # inline one goes first so the footer rules judge the prose that is
-                # actually left.
+                # Three passes, innermost first, because the duplication has three
+                # shapes: an index identifier printed as prose, a parenthetical of
+                # section titles inside a sentence, and a footer under the answer. The
+                # bare-reference pass goes first so the two title-matching passes judge
+                # the prose that is actually left — and because it is the only one whose
+                # input is a string the reader must never see at all.
                 "text": links.strip_source_footer(
-                    links.strip_inline_citations(final_text, sources),
+                    links.strip_inline_citations(
+                        links.strip_bare_references(final_text, view.corpus), sources
+                    ),
                     view.corpus,
                     sources,
                 ),

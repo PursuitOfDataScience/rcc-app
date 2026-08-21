@@ -926,3 +926,206 @@ class TestWhatTheAnswerLinksTo:
         text = "[good](docs/slurm/sbatch.md) and [bad](docs/nope.md)"
         assert links.cited_pages(text, real_corpus) == {"slurm/sbatch.md"}
         assert links.unresolved(text, real_corpus) == ["docs/nope.md"]
+
+
+class TestBareIndexReferences:
+    """An identifier printed as prose instead of linked.
+
+    `search_docs` hands the model chunk ids — `web/faqs.txt#1` — and the prompt asks for
+    them back inside `[Title](path)`. A model that writes one as text has shown the
+    reader this app's internal filing system, and none of the older guards fire on it:
+    the id RESOLVES, so `unresolved()` is quiet; it is not parenthesised and names no
+    section title, so `strip_inline_citations` passes; and the line is prose rather than
+    a footer shape, so `strip_source_footer` passes. Reported from the running app.
+    """
+
+    def setup_method(self):
+        self.corpus = build()
+
+    def test_the_reported_leak_is_removed_with_its_orphaned_label(self):
+        answer = (
+            "Bailey Howell is a Research Data Scientist.\n"
+            'Source: "Our Team" page on the RCC website [web/faqs.txt#1].'
+        )
+        out = links.strip_bare_references(answer, self.corpus)
+        assert "web/faqs.txt" not in out
+        # The label went with it: "Source: the RCC website ." points at nothing.
+        assert "Source:" not in out
+        assert "Bailey Howell is a Research Data Scientist." in out
+
+    @pytest.mark.parametrize(
+        "answer",
+        [
+            "Details [docs/slurm/sbatch.md#gpu-jobs] apply.",
+            "Details (docs/slurm/sbatch.md#gpu-jobs) apply.",
+            "Details docs/slurm/sbatch.md#gpu-jobs apply.",
+            "Details <docs/slurm/sbatch.md#gpu-jobs> apply.",
+        ],
+    )
+    def test_every_wrapper_takes_its_brackets_with_it(self, answer):
+        out = links.strip_bare_references(answer, self.corpus)
+        assert "docs/slurm" not in out
+        # No empty brackets and no doubled spaces left behind.
+        assert "[]" not in out and "()" not in out and "<>" not in out
+        assert "  " not in out
+        assert out == "Details apply."
+
+    def test_a_working_citation_survives(self):
+        """The one thing here that must never be touched."""
+        answer = "See [Batch jobs](docs/slurm/sbatch.md#gpu-jobs) for the flags."
+        assert links.strip_bare_references(answer, self.corpus) == answer
+
+    def test_a_path_inside_code_survives(self):
+        """In a command it is the reader's own file, not our index."""
+        answer = "Run `wc -l docs/slurm/sbatch.md` to count it."
+        assert links.strip_bare_references(answer, self.corpus) == answer
+
+    def test_a_fenced_block_survives(self):
+        answer = "Do this:\n```bash\ncat docs/slurm/sbatch.md\n```\nThen submit."
+        assert links.strip_bare_references(answer, self.corpus) == answer
+
+    def test_a_path_the_corpus_does_not_have_survives(self):
+        """Only resolvable references are ours to remove."""
+        answer = "Your script is at /home/$USER/my_job.sbatch and the log at out.txt."
+        assert links.strip_bare_references(answer, self.corpus) == answer
+
+    def test_prose_around_an_inline_id_is_kept(self):
+        answer = "The page web/faqs.txt#1 lists everyone."
+        out = links.strip_bare_references(answer, self.corpus)
+        assert "web/faqs.txt" not in out
+        assert out == "The page lists everyone."
+
+    def test_text_with_no_references_is_returned_unchanged(self):
+        answer = "Use sbatch to submit a job. It queues on caslake by default."
+        assert links.strip_bare_references(answer, self.corpus) is answer
+
+
+class TestThePromptsOwnPlaceholderAsALabel:
+    """`[Section title](path)` is the instruction, not a citation.
+
+    The system prompt asks for citations "as [Section title](path)". A model that copies
+    the template rather than filling it in publishes a fragment of the prompt to the
+    reader, and drops the only thing a citation carries: which page it is. Seen in a live
+    answer — "The same table in the docs explains each field. Section title".
+    """
+
+    def setup_method(self):
+        self.corpus = build()
+
+    def test_a_placeholder_label_becomes_the_real_title(self):
+        out = links.fix_links("see [Section title](docs/slurm/sbatch.md#gpu-jobs).", self.corpus)
+        assert "Section title" not in out
+        assert "Batch jobs" in out
+        assert "https://docs.rcc.uchicago.edu/slurm/sbatch/#gpu-jobs" in out
+
+    @pytest.mark.parametrize("label", ["Title", "page title", "SECTION", "link text"])
+    def test_the_other_spellings_too(self, label):
+        out = links.fix_links(f"see [{label}](docs/slurm/sbatch.md#gpu-jobs).", self.corpus)
+        assert label not in out
+
+    def test_a_page_level_target_uses_the_document_title(self):
+        out = links.fix_links("see [Section title](docs/slurm/sbatch.md).", self.corpus)
+        assert "Batch jobs" in out
+
+    def test_a_real_label_is_untouched(self):
+        answer = "see [GPU jobs](docs/slurm/sbatch.md#gpu-jobs) for flags."
+        assert "[GPU jobs](" in links.fix_links(answer, self.corpus)
+
+    def test_an_unresolvable_placeholder_is_left_alone_rather_than_invented(self):
+        out = links.fix_links("see [Section title](docs/nope.md#x).", self.corpus)
+        assert "Section title" in out and "http" not in out
+
+
+class TestWhatTheStripperMustNotDamage:
+    """Four things the first version of `strip_bare_references` broke, in real answers.
+
+    Found by replaying `report/transcripts.jsonl` — 303 stored answers — through the
+    pipeline and counting `postprocess_damage`. It touched six of them and damaged four,
+    which is the whole reason this class is longer than the one above it: the identifier
+    coming out is the easy half, and the line still reading correctly afterwards is the
+    half that has to be measured against real prose rather than invented examples.
+    """
+
+    def setup_method(self):
+        self.corpus = build()
+
+    def test_a_link_whose_label_is_the_identifier_is_left_whole(self):
+        """From "how do I submit a batch job".
+
+        `[docs/…](docs/…)` is a working link with a useless label. Stripping the label
+        emptied the brackets and left the reader `(docs/slurm/sbatch.md#gpu-jobs)` bare
+        in the middle of a sentence — a link destroyed to hide a path that was still
+        there. Left alone instead; `fix_links` renders it.
+        """
+        answer = (
+            "See the **[Submitting a .sbatch script]** section for the full command "
+            "[docs/slurm/sbatch.md#gpu-jobs](docs/slurm/sbatch.md#gpu-jobs)."
+        )
+        assert links.strip_bare_references(answer, self.corpus) == answer
+
+    def test_prose_three_clauses_away_is_not_reflowed(self):
+        """The same answer, and the reason `_tidy` is gone.
+
+        Removing a citation ran `\\s+([,.;:!?])` over the whole line, which does not know
+        which comma the removal was near — so `Submitting a .sbatch script` became
+        `Submitting a.sbatch script`, renaming a section the reader was being sent to.
+        """
+        answer = (
+            "Run a .sbatch script and see [web/faqs.txt#1] for the rest of the detail."
+        )
+        out = links.strip_bare_references(answer, self.corpus)
+        assert "web/faqs.txt" not in out
+        assert "a .sbatch script" in out, "spacing away from the removal was rewritten"
+
+    @pytest.mark.parametrize(
+        ("answer", "expected"),
+        [
+            # From "what are the storage quotas?" — 【】 was not in `_WRAPPED`, so the
+            # reader was shown `documentation 【】:`, which is worse than the identifier.
+            (
+                "a quick overview based on the official documentation "
+                "【web/faqs.txt#1】:",
+                "a quick overview based on the official documentation:",
+            ),
+            # From "did you actually look that up" — same, with braces.
+            (
+                "by default [Why does my job fail]{web/faqs.txt#1}, and users adjust",
+                "by default [Why does my job fail], and users adjust",
+            ),
+        ],
+    )
+    def test_every_wrapper_seen_in_an_answer_leaves_nothing_behind(
+        self, answer, expected
+    ):
+        assert links.strip_bare_references(answer, self.corpus) == expected
+
+    def test_a_bracketed_group_that_is_not_a_link_goes_whole(self):
+        """From "how do I set up a Python environment".
+
+        `[Python (docs/…/python.md)#Distributions]` is a citation the model got wrong.
+        Taking only the path out left `[Python #Distributions]` — the title kept, the
+        link never made, the fragment stranded. The group is the unit.
+        """
+        answer = (
+            "The base module includes numpy, pandas, matplotlib "
+            "[Python (docs/slurm/sbatch.md)#GPU jobs]."
+        )
+        out = links.strip_bare_references(answer, self.corpus)
+        assert out == "The base module includes numpy, pandas, matplotlib."
+
+    def test_leading_indentation_survives(self):
+        """From "did you actually look that up" — three spaces became one.
+
+        `[ \\t]{2,}` collapsed runs anywhere on a line it had edited, and in markdown a
+        leading run is structure rather than spacing.
+        """
+        answer = "   One more check on [web/faqs.txt#1] and what it says about quotas."
+        out = links.strip_bare_references(answer, self.corpus)
+        assert out.startswith("   One more check"), out
+        assert "web/faqs.txt" not in out
+
+    def test_a_label_with_words_of_its_own_keeps_its_link(self):
+        """From "who should I ask instead?" — the one label edit that is correct."""
+        answer = "contact the Help Desk. [FAQs (web/faqs.txt#1)](web/faqs.txt#1)"
+        out = links.strip_bare_references(answer, self.corpus)
+        assert out == "contact the Help Desk. [FAQs](web/faqs.txt#1)"

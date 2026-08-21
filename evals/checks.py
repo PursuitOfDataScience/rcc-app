@@ -944,7 +944,7 @@ _LOAD_BEARING = re.compile(r"```|--[A-Za-z]|/[A-Za-z0-9_.\-]+/")
 _LINK_TO_LABEL = re.compile(r"\[((?:[^\[\]]|\[[^\[\]]*\])+)\]\([^)]*\)")
 
 
-def _prose(line: str) -> str:
+def _prose(line: str, corpus: Corpus | None = None) -> str:
     """A line reduced to what it says, with the citation machinery taken out.
 
     `strip_inline_citations` *rewrites* lines — it unlinks a citation and moves a marker
@@ -952,8 +952,17 @@ def _prose(line: str) -> str:
     sentence as a deletion. Measured on 75 real answers, that was eight false
     `damaging-strip` defects and no true ones. What matters is whether the words
     survived, so links collapse to their labels and markers go.
+
+    `strip_bare_references` is the third pass to rewrite lines, and it needs the same
+    treatment for the same reason: it takes an index identifier out of the middle of a
+    sentence and leaves the words either side standing. Without this, every sentence it
+    correctly cleaned was reported as damage — ten of them across 303 stored answers,
+    all ten read and none of them damaged. Needs the corpus because only a *resolvable*
+    identifier is one this app put there; a path the corpus does not have is the
+    reader's own and its removal really would be a deletion.
     """
-    text = _LINK_TO_LABEL.sub(r"\1", line)
+    text = links.strip_bare_references(line, corpus) if corpus is not None else line
+    text = _LINK_TO_LABEL.sub(r"\1", text)
     text = re.sub(r":small\[:gray\[.*?\]\]", "", text)
     text = re.sub(r"\[\d+\]", "", text)
     return re.sub(r"[\s*_]+", " ", text).strip().lower()
@@ -992,7 +1001,9 @@ def _was_a_citation_line(line: str) -> bool:
     return stripped.endswith(":") or bool(re.match(r"^\s*[-*+•]|^\s*\d+[.)]", line))
 
 
-def postprocess_damage(raw: str, final: str) -> list[Finding]:
+def postprocess_damage(
+    raw: str, final: str, corpus: Corpus | None = None
+) -> list[Finding]:
     """What the citation stripper removed, and whether it should have.
 
     `sage/links.py` rewrites every answer with some 840 lines of regular expressions.
@@ -1003,10 +1014,10 @@ def postprocess_damage(raw: str, final: str) -> list[Finding]:
     """
     if not raw or raw == final:
         return []
-    surviving = _prose(final)
+    surviving = _prose(final, corpus)
     findings = []
     for line in raw.splitlines():
-        content = _prose(line)
+        content = _prose(line, corpus)
         if not content or content in surviving or _was_a_citation_line(line):
             continue
         words = re.findall(r"[A-Za-z]{2,}", line)
@@ -1056,7 +1067,7 @@ def inspect(
     findings += surviving_footer(text)
     findings += form_violations(text)
     findings += bare_title_citations(text, record.get("sources"))
-    findings += postprocess_damage(str(record.get("raw") or ""), text)
+    findings += postprocess_damage(str(record.get("raw") or ""), text, corpus)
     # On every record, not only the ones that asked about the assistant. The answer this
     # was written for came in the middle of a conversation about Slurm, volunteered to a
     # reader who had asked whether the answers were trustworthy — no probe would have
