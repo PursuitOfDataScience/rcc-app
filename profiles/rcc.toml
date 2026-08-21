@@ -239,6 +239,7 @@ models = [
     "ling-3.0-tiny-free",
     "longcat-2.0-free",
     "ling-3.0-flash-free",
+    "x-preview-f-free",
 ]
 # Zen serves paid models from the same endpoint as the free ones — the discovery call
 # came back with the whole Claude and GPT lineup, none of which this deployment has a
