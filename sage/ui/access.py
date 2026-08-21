@@ -63,11 +63,24 @@ def get_provider(name: str):
     return providers.build(name, api_key(name))
 
 
-@st.cache_resource(show_spinner=False)
+# An hour, and the `ttl` is the whole point of this decorator call. `cache_resource`
+# without one holds for the life of the process, and the lineup is discovered rather
+# than configured precisely so that a model the provider starts serving appears with no
+# commit — which a list fetched once at boot and never again cannot do. It used to work
+# by accident: Streamlit Community Cloud hibernates an idle app, so the process died
+# roughly daily and the next reader got a fresh catalogue. `keepalive.yml` then started
+# pinging every four hours to stop the app sleeping, and took that restart away with it,
+# so `x-preview-f-free` was served by the provider, discovered correctly by
+# `openai_compat.models()`, and still absent from the picker for as long as the process
+# stayed up. Costs one keyless `GET /models` an hour; Zen serves it without a key at all.
+@st.cache_resource(show_spinner=False, ttl=3600)
 def available_models(name: str) -> list[providers.Model]:
     try:
         return get_provider(name).models()
     except Exception as exc:
+        # Cached like any other result, so a provider that is briefly unreachable does
+        # not empty the picker for the rest of the process's life — only until the ttl
+        # lapses. Another reason not to leave this unbounded.
         logger.warning("Could not list models for %s: %s", name, exc)
         return []
 
