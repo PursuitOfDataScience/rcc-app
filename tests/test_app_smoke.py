@@ -5,6 +5,8 @@ that the sections actually read become the Sources strip, and that a failure lan
 a typed, user-readable error instead of taking the page down.
 """
 
+import ast
+import pathlib
 import time
 from types import SimpleNamespace
 
@@ -2243,3 +2245,116 @@ class TestAModelThinkingOutLoudIsNotAnAnswer:
         stub, _module = run_app(monkeypatch, client=client, session=self.session())
         assert stub.session_state["error"] is None
         assert stub.session_state["messages"][-1]["text"] == answer
+
+
+class TestTheModelListIsRediscovered:
+    """A discovered lineup has to be re-discovered, or it is a configured one.
+
+    `openai_compat.models()` asks the provider what it serves so that a model appearing
+    under a `-free` name reaches the picker with no commit. `available_models` wraps it
+    in `st.cache_resource`, and that decorator without a `ttl` holds for the life of the
+    process — so the app answers with the catalogue it fetched at boot, forever.
+
+    It used to be hidden by the platform: Streamlit Community Cloud hibernates an idle
+    app, the process died about daily, and the next reader got a fresh list. Then
+    `keepalive.yml` began pinging every four hours specifically to stop the app
+    sleeping, and removed the restart that was doing the work. `x-preview-f-free` was
+    served by the provider and returned by discovery while the picker did not offer it.
+    """
+
+    def test_the_cache_is_bounded(self):
+        # Imported against the stub, which is where `cache_resource`'s ttl is visible
+        # at all — the real decorator keeps it on a private `_info`, and a test written
+        # against that reads a Streamlit internal this repository does not control.
+        stub_streamlit.install()
+        from sage.ui import access  # noqa: PLC0415
+
+        ttl = access.available_models.ttl
+        assert ttl is not None, (
+            "available_models caches for the life of the process, so a model the "
+            "provider adds after boot never reaches the picker"
+        )
+        assert ttl <= 6 * 60 * 60, f"{ttl}s is longer than a reader will wait"
+
+    def test_the_provider_client_is_still_cached_for_the_process(self):
+        """The contrast, so the test above is known to discriminate.
+
+        `get_provider` holds a client, not an answer, and is *meant* to live as long as
+        the process. If a future default gave every `cache_resource` a ttl, the check
+        above would pass without meaning anything.
+        """
+        stub_streamlit.install()
+        from sage.ui import access  # noqa: PLC0415
+
+        assert access.get_provider.ttl is None
+
+
+def _cached_functions() -> list[tuple[str, str, bool]]:
+    """Every `@st.cache_*` function in the app, and whether it declares a `ttl`.
+
+    Read from the source rather than by importing, so a module that needs a stub, a
+    key or a corpus to import is still covered, and so this sees a new cache the day
+    it is written rather than the day someone remembers to check it.
+    """
+    root = pathlib.Path(__file__).resolve().parent.parent
+    files = [root / "app.py", *sorted((root / "sage").rglob("*.py"))]
+    found = []
+    for path in files:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            for decorator in node.decorator_list:
+                call = decorator if isinstance(decorator, ast.Call) else None
+                target = call.func if call else decorator
+                if getattr(target, "attr", None) not in ("cache_resource", "cache_data"):
+                    continue
+                declares_ttl = bool(
+                    call and any(word.arg == "ttl" for word in call.keywords)
+                )
+                found.append(
+                    (str(path.relative_to(root)), node.name, declares_ttl)
+                )
+    return found
+
+
+class TestNoCacheOutlivesWhatItCaches:
+    """The general form of the bug above, so the next one fails here instead.
+
+    A `cache_resource` with no `ttl` holds for the life of the process. That is right
+    for a cache whose source cannot change without a redeploy — a file shipped in the
+    image, or an object rather than an answer — and wrong for anything read over the
+    network, which can change under a running app and did.
+
+    Listing the deliberate ones rather than pattern-matching the accidental ones means
+    a cache added later has to be classified before this passes. The failure mode is a
+    named test, not a model quietly missing from a picker for a week.
+    """
+
+    UNBOUNDED_BY_DESIGN = {
+        ("app.py", "load_runtime"): "indexes the docs trees shipped in the image",
+        ("sage/ui/access.py", "get_provider"): "holds a client, not an answer",
+        ("sage/ui/assets.py", "load"): "reads static/, shipped in the image",
+        ("sage/ui/state.py", "get_limiter"): "the rate budget is a process-wide total",
+    }
+
+    def test_every_unbounded_cache_is_one_somebody_chose(self):
+        for path, function, declares_ttl in _cached_functions():
+            if declares_ttl:
+                continue
+            assert (path, function) in self.UNBOUNDED_BY_DESIGN, (
+                f"{path}::{function} caches for the life of the process. If what it "
+                "reads can change while the app is running — as the provider's model "
+                "list can — give it a ttl. If it genuinely cannot, add it to "
+                "UNBOUNDED_BY_DESIGN with the reason."
+            )
+
+    def test_the_list_has_no_names_that_have_gone_away(self):
+        """So a rename leaves a stale exemption behind instead of a silent one."""
+        actual = {(path, function) for path, function, _ in _cached_functions()}
+        stale = set(self.UNBOUNDED_BY_DESIGN) - actual
+        assert not stale, f"exempted but no longer cached: {sorted(stale)}"
+
+    def test_the_model_list_is_not_exempt(self):
+        """The one this whole class exists for."""
+        assert ("sage/ui/access.py", "available_models") not in self.UNBOUNDED_BY_DESIGN

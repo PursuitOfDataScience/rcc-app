@@ -271,6 +271,12 @@ class StubStreamlit(ModuleType):
                 return cache[key]
 
             wrapper.clear = cache.clear
+            # Kept so a test can assert a cache is *bounded*. `cache_resource` with no
+            # ttl holds for the life of the process, which for anything discovered from
+            # a provider means a list that never changes again — see
+            # `sage.ui.access.available_models` for the one that cost a model its place
+            # in the picker.
+            wrapper.ttl = dkwargs.get("ttl")
             return wrapper
 
         if dargs and callable(dargs[0]) and not dkwargs:
