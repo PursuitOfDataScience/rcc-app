@@ -167,6 +167,24 @@ class TestTurnLoop:
         # happens if the post-tool turn was consumed as a live generator.
         assert stub.stream_chunks[-1] == 2
 
+    def test_a_long_answer_is_not_redrawn_once_per_delta(self, monkeypatch):
+        """The wiring, which none of `TestRepaintPacing` can see.
+
+        `paced` is only worth having if it is actually in the chain handed to
+        `write_stream`, and a call site that lost it would leave every unit test above
+        passing while the running app went back to redrawing a growing answer a
+        thousand times. So this drives the real loop with an answer of the shape that
+        made it hurt — many small deltas, arriving as fast as they can — and asserts
+        both halves: far fewer repaints, and not one word lost to the joining.
+        """
+        words = [f"word{n} " for n in range(400)]
+        client = ScriptedProvider([self.SEARCH, self.READ, [event(w) for w in words]])
+        stub, _module = run_app(monkeypatch, client=client, session=self.session())
+
+        assert stub.stream_chunks[-1] < 20, "the answer is still drawn per delta"
+        stored = stub.session_state["messages"][-1]["text"]
+        assert stored.strip() == "".join(words).strip()
+
     def test_sections_that_were_read_become_sources(self, monkeypatch):
         client = ScriptedProvider([self.SEARCH, self.READ, self.ANSWER])
         stub, _module = run_app(monkeypatch, client=client, session=self.session())
@@ -253,6 +271,92 @@ class TestTurnLoop:
         stub, _module = run_app(monkeypatch, client=client, session=self.session())
         assert stub.session_state["error"]
         assert stub.session_state["processing"] is False
+
+
+class TestRepaintPacing:
+    """`ui.turn.paced` — how often a streaming answer is handed to the browser.
+
+    `st.write_stream` redraws the whole element per delta, so every delta reparses the
+    entire answer so far and re-highlights every code block in it. A 7.6 KB answer
+    arriving a word at a time was therefore drawn 1237 times: 1.9 MB over the socket to
+    deliver 7.6 KB, 2.6 of 5.3 seconds with the main thread blocked, 14 fps and a 1.4s
+    freeze, measured in the running app against a 4x-throttled CPU.
+
+    What is tested here is the thing that makes that safe to fix: the reader must get
+    the same answer, the same first word at the same moment, and no added wait on a
+    stream that was never fast enough to need pacing. The frame rate itself is not
+    testable from a stub — it is measured by driving the real app, which is where the
+    numbers above come from.
+    """
+
+    @staticmethod
+    def turn_module():
+        stub_streamlit.install()
+        from sage.ui import turn  # noqa: PLC0415
+
+        return turn
+
+    # Longer than any test can take, so "inside one interval" is not a race.
+    HELD = 10_000
+
+    def test_the_answer_is_identical_however_it_is_paced(self):
+        turn = self.turn_module()
+        deltas = [f"word{n} " for n in range(200)]
+        painted = list(turn.paced(iter(deltas), interval_ms=self.HELD))
+        assert "".join(painted) == "".join(deltas)
+
+    def test_a_fast_stream_is_painted_far_fewer_times(self):
+        """The whole point: 200 deltas inside one interval are two repaints, not 200."""
+        turn = self.turn_module()
+        painted = list(turn.paced(iter(f"word{n} " for n in range(200)),
+                                  interval_ms=self.HELD))
+        assert len(painted) == 2
+
+    def test_the_first_word_is_never_held_back(self):
+        """`clearing` takes the status row down when text arrives. Hold that text and
+        the reader watches an empty bubble where the row was, which is the twitch the
+        `Status` class exists to prevent — and time to first word is the one moment of
+        a turn anybody is watching."""
+        turn = self.turn_module()
+        painted = list(turn.paced(iter(["Your /home quota is ", "30 GB."]),
+                                  interval_ms=self.HELD))
+        assert painted[0] == "Your /home quota is "
+
+    def test_a_stream_slower_than_the_interval_is_untouched(self):
+        """A model producing a word every few frames is already easy to draw, and must
+        not be made to wait for a repaint budget it never spends."""
+        turn = self.turn_module()
+
+        def slowly():
+            for text in ("one ", "two ", "three "):
+                time.sleep(0.005)
+                yield text
+
+        assert list(turn.paced(slowly(), interval_ms=1)) == ["one ", "two ", "three "]
+
+    def test_zero_restores_a_repaint_per_delta(self):
+        """The escape hatch a deployment can reach for, so it has to work."""
+        turn = self.turn_module()
+        deltas = [f"word{n} " for n in range(20)]
+        assert list(turn.paced(iter(deltas), interval_ms=0)) == deltas
+
+    def test_an_empty_delta_is_not_a_repaint(self):
+        """44 of 46 chunks on a real tool round carry nothing. They must not each cost
+        a redraw of the answer, and must not paint an empty first bubble either."""
+        turn = self.turn_module()
+        painted = list(turn.paced(iter(["", "", "Your /home quota is ", ""]),
+                                  interval_ms=self.HELD))
+        assert painted == ["Your /home quota is "]
+
+    def test_pacing_is_on_by_default(self):
+        """Read from config, not hard-coded — and not defaulted to off, which would
+        leave every test above passing about a path the app never takes."""
+        turn = self.turn_module()
+        from sage import config as live  # noqa: PLC0415
+
+        assert live.STREAM_REPAINT_MS > 0
+        painted = list(turn.paced(iter(f"word{n} " for n in range(200))))
+        assert len(painted) < 200
 
 
 class TestTheLastRequestHasNoTools:

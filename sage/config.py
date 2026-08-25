@@ -148,6 +148,28 @@ HISTORY_CHAR_BUDGET = _env_int("SAGE_HISTORY_CHAR_BUDGET", 48000, minimum=1)
 ATTACHMENT_FULL_TEXT_TURNS = _env_int("SAGE_ATTACHMENT_FULL_TEXT_TURNS", 1, minimum=0)
 MAX_PROMPT_CHARS = _env_int("SAGE_MAX_PROMPT_CHARS", 8000, minimum=1)
 
+# The shortest gap between two repaints of an answer that is still streaming.
+#
+# `st.write_stream` redraws the element once per delta, and the whole element: every
+# repaint hands the browser the entire answer so far, which re-parses all of it and
+# re-highlights every code block in it from scratch. Cost per repaint therefore grows
+# with the answer, and a long reply arrives in a few thousand deltas, so the work is
+# quadratic in something the reader cannot see.
+#
+# Measured against a 7.6 KB answer streamed a word at a time, on a CPU throttled 4x to
+# stand in for a slower laptop: 1237 deltas moved 1.9 MB over the socket, held the main
+# thread for 2.6 of the 5.3 seconds it took, ran at 14 fps and froze once for 1.4s.
+# Almost all of that is re-rendering text that had already been rendered.
+#
+# So deltas that arrive inside the same interval are painted together. Nothing is
+# dropped or reordered and the finished answer is identical; what changes is how many
+# times the browser is asked to draw it. 40ms is 25 repaints a second — well above the
+# rate a throttled browser was actually managing, so the text flows at least as evenly
+# as it did while costing an order of magnitude less to draw.
+#
+# 0 restores a repaint per delta.
+STREAM_REPAINT_MS = _env_int("SAGE_STREAM_REPAINT_MS", 40, minimum=0)
+
 # --- uploads ---------------------------------------------------------------
 
 MAX_UPLOAD_BYTES = _env_int("SAGE_MAX_UPLOAD_BYTES", 10 * 1024 * 1024, minimum=1)
