@@ -199,12 +199,21 @@ models_env = "SAGE_OPENCODE_MODELS"
 # is not supported"}` and was not in the served catalogue at all; two days later Zen
 # serves it again and it answers. Nothing about this deployment changed.
 #
-# So nothing is removed for being broken today. `north-mini-code-free` returns 401
-# from Zen's own upstream and `ling-3.0-tiny-free` returns 503 "Endpoint is
-# unavailable", and both stay: a free tier's lineup moves, an endpoint that is down
-# this week is back the next, and a blocklist that quietly outlives the outage it was
-# written for is worse than no blocklist. What the app does with them is already
-# right — a 401 fails over, a 503 offers Try again and a different model.
+# So nothing comes off this list for being broken today. `north-mini-code-free`
+# returned 401 from Zen's own upstream and `ling-3.0-tiny-free` returned 503 "Endpoint
+# is unavailable" while both were still being served, and neither was removed for it: an
+# endpoint that is down this week is back the next, and a blocklist that quietly
+# outlives the outage it was written for is worse than no blocklist. What the app does
+# with a broken model is already right — a 401 fails over, a 503 offers Try again and a
+# different model.
+#
+# Being gone is a different thing from being broken, and it is the one this list has to
+# follow. Those two, with `longcat-2.0-free` and `ling-3.0-flash-free`, then left the
+# catalogue altogether and stayed away, and sat here for three days being reported every
+# morning to an issue nobody had a reason to open. `.github/workflows/lineup.yml` now
+# opens a pull request for a removal the way it always did for an addition, once an
+# absence has run seven days — comfortably past `hy3-free`'s two. That is what keeps this
+# list true without a person having to read a daily report.
 #
 # Ordering is a separate job from membership: the OpenAI-compatible adapter keeps a
 # family's models adjacent in the picker whatever order they appear in here, so this
@@ -233,12 +242,8 @@ models = [
     "muse-spark-1.2-contributor-free",
     "mimo-v2.5-free",
     "nemotron-3-ultra-free",
-    "north-mini-code-free",
     "hy3-free",
     "laguna-s-2.1-free",
-    "ling-3.0-tiny-free",
-    "longcat-2.0-free",
-    "ling-3.0-flash-free",
     "x-preview-f-free",
 ]
 # Zen serves paid models from the same endpoint as the free ones — the discovery call
