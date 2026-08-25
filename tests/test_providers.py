@@ -488,9 +488,12 @@ class TestFreeZenModels:
         fake = ModuleType("httpx")
         fake.get = lambda *a, **k: Response()
         monkeypatch.setitem(sys.modules, "httpx", fake)
-        return OpenAICompatProvider(
-            zen(models=("deepseek-v4-flash-free",), **overrides), "sk-zen-test"
-        )
+        # `deny=()` unless a test asks otherwise. These tests are about the free/paid
+        # rule, and inheriting the shipped profile's deny list would make them fail the
+        # day a model on it is used here as a sample — which is exactly what happened.
+        settings = {"models": ("deepseek-v4-flash-free",), "deny": ()}
+        settings.update(overrides)
+        return OpenAICompatProvider(zen(**settings), "sk-zen-test")
 
     def test_the_paid_lineup_is_not_offered(self, monkeypatch):
         served = [
@@ -499,6 +502,41 @@ class TestFreeZenModels:
         ]
         offered = [model.id for model in self.endpoint(monkeypatch, served).models()]
         assert set(offered) == {"deepseek-v4-flash-free", "big-pickle", "hy3-free"}
+
+    def test_a_denied_model_is_not_offered_however_it_is_served(self, monkeypatch):
+        """The gap the reader met as an error card.
+
+        A model can be free by the rule, listed by `GET /models`, and dead — the
+        catalogue goes on advertising a name whose endpoint returns 500. Taking it out
+        of the profile's `models` does not help, because membership in the picker comes
+        from discovery and the provider is still serving it. `deny` is the only thing
+        that removes it, and it has to happen here rather than in the picker so that
+        nothing downstream, failover included, can select one.
+        """
+        served = ["good-free", "dead-free", "big-pickle"]
+        offered = [
+            model.id
+            for model in self.endpoint(
+                monkeypatch, served, deny=("dead-free",)
+            ).models()
+        ]
+        assert "dead-free" not in offered
+        assert set(offered) == {"good-free", "big-pickle"}
+
+    def test_denying_everything_offers_everything_rather_than_nothing(
+        self, monkeypatch
+    ):
+        """A deny list that empties the picker has turned a broken model into a broken
+        app, and the list is written by a daily job that cannot be assumed right on a
+        day the provider is having a bad time."""
+        served = ["good-free", "dead-free"]
+        offered = [
+            model.id
+            for model in self.endpoint(
+                monkeypatch, served, deny=("good-free", "dead-free")
+            ).models()
+        ]
+        assert set(offered) == set(served)
 
     def test_the_rule_is_a_convention_not_a_hardcoded_list(self, monkeypatch):
         """Zen's free lineup changes without notice, so a model this repo has never

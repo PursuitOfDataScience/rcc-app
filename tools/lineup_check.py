@@ -594,6 +594,41 @@ def retire_models(text: str, provider: str, removals: list[str]) -> str:
     return "".join(line for index, line in enumerate(lines) if index not in drop)
 
 
+def set_deny(text: str, provider: str, names: list[str]) -> str:
+    """Rewrite one provider's `deny = [...]` to exactly `names`.
+
+    Wholesale rather than surgical, because unlike `models` this array is machine
+    state: it has no ordering to preserve — nothing ranks off it — and no per-entry
+    comments to orphan, so the simplest edit is also the safest one. The array is
+    created if the provider has none, immediately above `free_marks`, which is the
+    other question about which models get offered.
+
+    Sorted, so a day with no change produces no diff and the pull request stays a
+    signal. An empty list is written as `deny = []` rather than removed, because the
+    line going missing reads as a profile that never had one.
+    """
+    lines = text.splitlines(keepends=True)
+    wanted = f'deny = [{", ".join(sorted(chr(34) + n + chr(34) for n in names))}]\n'
+    start = _array_line(lines, provider, "deny")
+    if start is not None:
+        indent = lines[start][: len(lines[start]) - len(lines[start].lstrip())]
+        if "]" not in lines[start].split("[", 1)[1]:
+            close = next(
+                (i for i in range(start + 1, len(lines))
+                 if lines[i].lstrip().startswith("]")), None
+            )
+            if close is None:
+                raise ValueError(f"unterminated `deny` for provider {provider!r}")
+            return "".join(lines[:start] + [indent + wanted] + lines[close + 1:])
+        return "".join(lines[:start] + [indent + wanted] + lines[start + 1:])
+
+    marks = _array_line(lines, provider, "free_marks")
+    if marks is None:
+        raise ValueError(f"nowhere to put `deny` for provider {provider!r}")
+    indent = lines[marks][: len(lines[marks]) - len(lines[marks].lstrip())]
+    return "".join(lines[:marks] + [indent + wanted] + lines[marks:])
+
+
 def _entry_id(line: str) -> str | None:
     """The model id on a `"name",` line of a TOML array, or None for anything else."""
     found = re.match(r"""^\s*["']([^"']+)["']\s*,?\s*$""", line)
@@ -647,6 +682,11 @@ def failing(report: dict, after_days: int) -> list[str]:
 
 def _models_line(lines: list[str], provider: str) -> int | None:
     """Index of the `models = [` line inside `provider`'s `[[providers]]` block."""
+    return _array_line(lines, provider, "models")
+
+
+def _array_line(lines: list[str], provider: str, key: str) -> int | None:
+    """Index of `key = [` inside `provider`'s `[[providers]]` block, or None."""
     inside = False
     for index, line in enumerate(lines):
         stripped = line.strip()
@@ -659,7 +699,7 @@ def _models_line(lines: list[str], provider: str) -> int | None:
         if re.match(r'name\s*=\s*["\']' + re.escape(provider) + r'["\']', stripped):
             inside = True
             continue
-        if inside and re.match(r"models\s*=\s*\[", stripped):
+        if inside and re.match(re.escape(key) + r"\s*=\s*\[", stripped):
             return index
     return None
 
@@ -962,15 +1002,19 @@ def run(parsed: argparse.Namespace) -> tuple[int, str, bool]:
             # right one when the anchor is a dead model, but it is not a thing to slip
             # into a diff unannounced.
             path = _active().origin
-            # Two ways a model stops existing, one threshold. Gone from the catalogue,
-            # and still in the catalogue but unable to answer for as long — the second
-            # is what `muse-spark-1.2-contributor-free` was doing while every run
-            # reported the lineup healthy.
+            # Two ways a model stops existing, and they need opposite edits.
+            #
+            # Gone from the catalogue: take it out of `models`, which is the stale
+            # record. It is already absent from the picker, because the picker's
+            # membership comes from discovery.
+            #
+            # Served and dead: `models` is the wrong lever entirely — removing a name
+            # from it only demotes it in the ranking, and the provider goes on serving
+            # it, so it goes on being offered. That was the bug behind the error card:
+            # the profile had been corrected and the reader still met the model. The
+            # lever is `deny`, which the adapter applies to the discovered list.
             retirements = retiring(report, parsed.retire_after)
-            retirements += [
-                name for name in failing(report, parsed.retire_after)
-                if name not in retirements
-            ]
+            denied = failing(report, parsed.retire_after)
             if retirements and not path:
                 sections.append(
                     "Nothing to retire: this profile is the built-in defaults, so "
@@ -1015,6 +1059,40 @@ def run(parsed: argparse.Namespace) -> tuple[int, str, bool]:
                             f"moves the default and the failover target to "
                             f"`{surviving[0]}`. Worth agreeing with before merging.\n"
                         )
+
+            # The deny list, rewritten to what is true today. Additions are models that
+            # have failed every probe for the threshold; removals are models on the
+            # list that answered this run, and they matter more — a blocklist that
+            # cannot let go is the failure mode the profile warns about, and `hy3-free`
+            # is the standing proof that a dead free model can come back.
+            if path:
+                was = list(entry.deny)
+                recovered = [
+                    name for name in was
+                    if (verdicts.get(name) or {}).get("answered")
+                ]
+                now_denied = sorted(
+                    {name for name in was if name not in recovered} | set(denied)
+                )
+                if now_denied != sorted(was):
+                    with open(path, encoding="utf-8") as handle:
+                        text = handle.read()
+                    updated = set_deny(text, entry.name, now_denied)
+                    if updated != text:
+                        with open(path, "w", encoding="utf-8") as handle:
+                            handle.write(updated)
+                        added = [n for n in now_denied if n not in was]
+                        if added:
+                            sections.append(
+                                "Taken out of the picker, failing for "
+                                f"{parsed.retire_after} days or more: "
+                                + ", ".join(f"`{n}`" for n in added) + "\n"
+                            )
+                        if recovered:
+                            sections.append(
+                                "Put back in the picker, answering again: "
+                                + ", ".join(f"`{n}`" for n in recovered) + "\n"
+                            )
 
     ledger["checked"] = now()
     os.makedirs(os.path.dirname(parsed.ledger) or ".", exist_ok=True)
