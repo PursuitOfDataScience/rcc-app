@@ -23,11 +23,12 @@ do on its own, each of which has already cost something here:
    in the catalogue while neither could answer a question. A list-only check would
    have called that lineup healthy.
 
-3. **How long a thing has been gone.** The profile declines to remove a model for
-   being broken today, on the grounds that a free tier's outages come back — and it is
-   right, `hy3-free` left and returned. What it could not say is whether a given
-   absence is two days old or two months. The ledger accrues `missing_since`, which
-   turns that judgement into a date the owner can act on.
+3. **How long a thing has been gone.** A free tier's outages come back — `hy3-free`
+   left the catalogue and returned two days later, with nothing about this deployment
+   changed — so no single day's listing is evidence of a retirement. The ledger accrues
+   `missing_since`, and `--retire-after` is what turns a sustained absence into an
+   edit: at seven days, comfortably past the one recurrence on record. Below that
+   threshold an absence is still only reported.
 
 4. **Whether the repository's own record is still true.** The fallback list, the
    default model, `EVAL.md`'s per-model table: all of them go stale silently, because
@@ -35,13 +36,20 @@ do on its own, each of which has already cost something here:
 
     python tools/lineup_check.py                    # drift, no requests spent at all
     python tools/lineup_check.py --probe            # + a real completion per new name
-    python tools/lineup_check.py --probe --update   # + append the new free ones
+    python tools/lineup_check.py --probe --update   # + append new, retire long-gone
+    python tools/lineup_check.py --update --retire-after 0   # append only, never remove
     python tools/lineup_check.py --summary-out drift.md
 
-`GET /models` on Zen needs no key — measured, with no header and with a bogus one, both
-200 with the full catalogue — so the drift half of this runs in CI with no secret. Only
-`--probe` spends a request, and only on a name the ledger has not classified before: a
-day Zen changes nothing costs nothing.
+**None of it needs a key.** `GET /models` on Zen answers with no header and with a bogus
+one — both 200, both the full catalogue — and so does a *completion* on a free model:
+no `Authorization` header at all returns 200 and a full streamed answer with a tool
+offered. So `--probe` runs in CI with no secret, and a keyless refusal is the better
+evidence of tier, because "Missing API key" can only mean the model requires one. A key
+adds exactly one thing — the ability to probe a paid model as something other than paid
+— which is of no use to a deployment whose lineup is the free tier.
+
+Only `--probe` spends a request at all, and only on a name the ledger has not classified
+before: a day Zen changes nothing costs nothing.
 
 **Probes send `config.MAX_TOKENS`, and that is not incidental.** A reasoning model
 spends the budget on thinking it does not emit: `muse-spark-1.2-contributor-free` at
@@ -51,8 +59,14 @@ would libel every reasoning model Zen adds from here on.
 
 Never a CI gate, for the reason `EVAL.md` gives about Axis B: a free tier rotating its
 lineup is not this repository's fault, and a red build for it would get loosened until
-it was quiet. The output is a report, a ledger and — when there is something to add — a
-diff.
+it was quiet. The output is a report, a ledger and — when the lineup has moved in either
+direction — a diff.
+
+**Both directions, now.** This used to append only, and leave a model that had left the
+catalogue on the list for a person to remove. Four of them sat there for three days
+being reported daily to an issue nobody had reason to open, which is the failure mode a
+report-only mechanism always has. Additions and retirements both arrive as the same
+pull request; the threshold is what keeps a two-day outage from becoming an edit.
 """
 
 from __future__ import annotations
@@ -107,7 +121,26 @@ PROBE_TOOL = {
 # Bodies that mean "this model is real, you just cannot pay for it". Zen answers a paid
 # model on a free key with `401 CreditsError: Insufficient balance`, which is a
 # different fact from a 401 on a model that does not exist.
-PAID_MARKS = ("insufficient balance", "creditserror", "payment", "quota exceeded")
+# What a refusal says about the tier. The first four are what a *keyed* probe gets from
+# a model this key cannot pay for. The fifth is the keyless case, and it is the more
+# useful one: with no `Authorization` header at all, "missing api key" can only mean
+# this model requires one, which is the definition of paid here.
+#
+# `missing`, not `api key`. A probe carrying a bogus key is told "Invalid API key." —
+# that is a broken key, not a paid model, and classifying it as paid would put every
+# model Zen serves into the paid ledger on one typo. Measured both ways: no header at
+# all returns `AuthError: Missing API key.`, a wrong one returns `AuthError: Invalid API
+# key.`, and only the first is a fact about the model.
+PAID_MARKS = (
+    "insufficient balance", "creditserror", "payment", "quota exceeded",
+    "missing api key",
+)
+
+# And the other direction. A free-usage limit is a thing only a free model has, so this
+# is positive evidence of the tier even though the probe learned nothing about whether
+# the model answers. `big-pickle` returns it keyless — the stealth codename the whole
+# probing path exists to catch, telling us what it is by refusing.
+FREE_MARKS_IN_ERROR = ("freeusagelimiterror", "free usage limit")
 
 # An error body is whatever a gateway feels like sending, and this one ends up in a
 # ledger committed to a public repository. Zen's `CreditsError` embeds a billing URL
@@ -212,7 +245,15 @@ def probe(entry: ProviderEntry, key: str, model_id: str, *, tools: bool = True) 
         payload["tools"] = [PROBE_TOOL]
         payload["tool_choice"] = "auto"
 
-    headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
+    # No key means no header, not an empty one. Two separate reasons, and both were
+    # measured: `Authorization: Bearer ` is an illegal header value that httpx refuses
+    # locally before the request is sent, and Zen serves its free models to a request
+    # carrying no header at all — 200 and a full streamed completion with tools offered.
+    # A probe therefore needs no key for the free lineup, which is the whole lineup this
+    # repository cares about.
+    headers = {"Content-Type": "application/json"}
+    if key:
+        headers["Authorization"] = f"Bearer {key}"
     if entry.user_agent:
         headers["User-Agent"] = entry.user_agent
 
@@ -236,7 +277,7 @@ def probe(entry: ProviderEntry, key: str, model_id: str, *, tools: bool = True) 
                 verdict.update(
                     status=response.status_code,
                     error=body,
-                    tier="paid" if _looks_paid(body) else "unknown",
+                    tier=_tier_of(body),
                     answered=False,
                 )
                 verdict["seconds"] = round(time.time() - started, 2)
@@ -270,6 +311,34 @@ def _looks_paid(body: str) -> bool:
     return any(mark in lowered for mark in PAID_MARKS)
 
 
+def _unmeasured(verdict: dict) -> bool:
+    """Did this probe learn nothing, as opposed to learning something bad?
+
+    A free-usage limit is the case, and it is common enough to matter: a keyless
+    request is rate-limited per address rather than per key, and `big-pickle` returned
+    one on the very first probe. Counting that as "this model is broken" would retire a
+    working model for being popular, which is the worst failure this file could have.
+    """
+    if verdict.get("status") == 429:
+        return True
+    lowered = (verdict.get("error") or "").lower()
+    return any(mark in lowered for mark in FREE_MARKS_IN_ERROR)
+
+
+def _tier_of(body: str) -> str:
+    """What a refusal says the model's tier is: `free`, `paid`, or `unknown`.
+
+    Free is checked first, because a rate-limited free model is a free model and its
+    error is the more specific of the two. `answered` stays False either way — this
+    says what the model *is*, not that it works, and the candidate list still wants an
+    answer before it will suggest widening `free_marks`.
+    """
+    lowered = (body or "").lower()
+    if any(mark in lowered for mark in FREE_MARKS_IN_ERROR):
+        return "free"
+    return "paid" if _looks_paid(lowered) else "unknown"
+
+
 # --- the ledger ------------------------------------------------------------
 
 
@@ -288,6 +357,7 @@ def load_ledger(path: str) -> dict:
 def _slot(ledger: dict, name: str) -> dict:
     slot = ledger["providers"].setdefault(name, {})
     slot.setdefault("missing_since", {})
+    slot.setdefault("failing_since", {})
     slot.setdefault("verdicts", {})
     slot.setdefault("paid", [])
     return slot
@@ -339,6 +409,9 @@ def review(entry: ProviderEntry, catalogue: list[str], ledger: dict) -> dict:
         "vanished": vanished,
         "unclassified": unclassified,
         "missing_since": missing,
+        # Carried through untouched when nothing is probed, so a `--probe`-less run
+        # neither invents a failure nor forgets one that is already accruing.
+        "failing_since": dict(slot["failing_since"]),
         "default_missing": default_missing,
         # The rule matching nothing at all is the one failure that makes the picker
         # offer every paid model as if it worked. The adapter logs it; nobody reads a
@@ -380,6 +453,13 @@ def material(before: dict, after: dict) -> list[str]:
             reasons.append(f"`{model_id}` {state}")
     for model_id in sorted(after.get("candidates") or []):
         reasons.append(f"`{model_id}` answered without matching `free_marks`")
+    was_failing = set((before or {}).get("failing_since") or {})
+    now_failing = set(after.get("failing_since") or {})
+    for model_id in sorted(now_failing - was_failing):
+        reasons.append(f"`{model_id}` is served but stopped answering")
+    for model_id in sorted(was_failing - now_failing):
+        if model_id in set(after["free"]):
+            reasons.append(f"`{model_id}` is answering again")
     if after["default_missing"]:
         reasons.append(f"`{config.DEFAULT_MODEL}` is not in the catalogue")
     if after["rule_matched_nothing"]:
@@ -403,9 +483,10 @@ def append_models(text: str, provider: str, additions: list[str]) -> str:
     * **Appending is close to a no-op.** Discovery already offers anything the rule
       matches, and `_order` puts unlisted models after listed ones, which is where an
       appended one lands anyway. So this makes the record true without moving anything.
-    * **Removal is the profile's call, and it has already made it** — nothing goes for
-      being broken today. The ledger reports how long an absence has run; a human ends
-      it.
+    * **Being broken is still not being gone.** `retire_models` takes a model off the
+      list for having left the catalogue and stayed away; nothing comes off for
+      answering 401 today. A 401 fails over and a 503 offers another model, which is
+      already the right behaviour, and `hy3-free` is the standing argument for it.
     """
     if not additions:
         return text
@@ -438,6 +519,130 @@ def append_models(text: str, provider: str, additions: list[str]) -> str:
     indent = _indent_of(lines[start + 1 : close]) or "    "
     added = [f'{indent}"{name}",\n' for name in additions]
     return "".join(lines[:close] + added + lines[close:])
+
+
+def retire_models(text: str, provider: str, removals: list[str]) -> str:
+    """Take ids out of one provider's `models = [...]`, comments and all.
+
+    The counterpart to `append_models`, and it exists because of an instruction that
+    reverses what that function's docstring says: a model the provider has stopped
+    serving is to come off the list, not sit on it waiting for someone to notice. What
+    stays from the old rule is the *evidence* behind it — `hy3-free` was gone from the
+    catalogue for two days and came back — so absence is not retirement. `retiring()`
+    decides when an absence has run long enough; this only performs the edit.
+
+    A removed entry takes the comment block directly above it, because that block is
+    the note on why *that* model is in the list and an orphaned one is worse than no
+    note: it reads as documentation of whichever entry it lands above. The exception is
+    a run that names some other model in the list — the first entry's comment explains
+    its rank by comparison with `nemotron-3-ultra-free`, so it is about more than the
+    line it sits on. Those are left in place and reported, for a person to resolve.
+    """
+    if not removals:
+        return text
+
+    lines = text.splitlines(keepends=True)
+    start = _models_line(lines, provider)
+    if start is None:
+        raise ValueError(f"no `models = [` for provider {provider!r}")
+    going = set(removals)
+
+    opening = lines[start]
+    if "]" in opening.split("[", 1)[1]:
+        # `models = ["a", "b"]` on one line. Rewritten in place, same shape.
+        head, rest = opening.split("[", 1)
+        body, tail = rest.rsplit("]", 1)
+        kept = [
+            part.strip()
+            for part in body.split(",")
+            if part.strip() and part.strip().strip("\"'") not in going
+        ]
+        lines[start] = f"{head}[{', '.join(kept)}]{tail}"
+        return "".join(lines)
+
+    close = next(
+        (
+            index
+            for index in range(start + 1, len(lines))
+            if lines[index].lstrip().startswith("]")
+        ),
+        None,
+    )
+    if close is None:
+        raise ValueError(f"unterminated `models` list for provider {provider!r}")
+
+    present = {
+        name
+        for name in (_entry_id(lines[index]) for index in range(start + 1, close))
+        if name
+    }
+    drop: set[int] = set()
+    for index in range(start + 1, close):
+        name = _entry_id(lines[index])
+        if name is None or name not in going:
+            continue
+        drop.add(index)
+        run = []
+        for above in range(index - 1, start, -1):
+            if not lines[above].strip().startswith("#"):
+                break
+            run.append(above)
+        others = present - {name}
+        text_of_run = " ".join(lines[line] for line in run)
+        if not any(other in text_of_run for other in others):
+            drop.update(run)
+    return "".join(line for index, line in enumerate(lines) if index not in drop)
+
+
+def _entry_id(line: str) -> str | None:
+    """The model id on a `"name",` line of a TOML array, or None for anything else."""
+    found = re.match(r"""^\s*["']([^"']+)["']\s*,?\s*$""", line)
+    return found.group(1) if found else None
+
+
+def retiring(report: dict, after_days: int) -> list[str]:
+    """Which absences have run long enough to be retirements.
+
+    Not "gone today". `hy3-free` was absent from the catalogue and answering 401, and
+    two days later it was served again with nothing about this deployment changed — so
+    a check that acted on a single day's listing would have removed a working model and
+    then had to put it back. The ledger's `missing_since` is what makes the difference
+    expressible, and this is the only place the threshold is applied.
+
+    `after_days <= 0` retires nothing, which is the behaviour this file had before
+    there was a threshold at all.
+    """
+    if after_days <= 0:
+        return []
+    out = []
+    for model_id in report["vanished"]:
+        days = _days_since(report["missing_since"].get(model_id))
+        if days is not None and days >= after_days:
+            out.append(model_id)
+    return out
+
+
+def failing(report: dict, after_days: int) -> list[str]:
+    """Which models have been served and unable to answer for long enough to go.
+
+    The companion to `retiring`, and the case that motivated it:
+    `muse-spark-1.2-contributor-free` sat in the picker returning `500 Internal server
+    error` to every request while `GET /models` went on listing it. Absence was already
+    handled; this is the other way a model stops existing, and from a reader's chair it
+    is the same event — they pick it and get an error card.
+
+    Same threshold as absence, and for the same reason. `hy3-free` answered 401 for two
+    days and then answered properly, so one bad morning is not a verdict. A model that
+    has failed every probe for a week is not having a bad morning.
+    """
+    if after_days <= 0:
+        return []
+    out = []
+    for model_id, since in sorted((report.get("failing_since") or {}).items()):
+        days = _days_since(since)
+        if days is not None and days >= after_days:
+            out.append(model_id)
+    return out
 
 
 def _models_line(lines: list[str], provider: str) -> int | None:
@@ -488,7 +693,7 @@ def summarise(report: dict, reasons: list[str]) -> str:
             out.append(f"- `{model_id}`{_verdict_note(verdict)}")
         out.append("")
     if report["vanished"]:
-        out.append("**Named in the profile, not served** — kept, per the profile's rule")
+        out.append("**Named in the profile, not served**")
         for model_id in report["vanished"]:
             since = report["missing_since"].get(model_id)
             days = _days_since(since)
@@ -505,14 +710,17 @@ def summarise(report: dict, reasons: list[str]) -> str:
             verdict = (report.get("verdicts") or {}).get(model_id) or {}
             out.append(f"- `{model_id}`{_verdict_note(verdict)}")
         out.append("")
-    broken = [
-        model_id
-        for model_id, verdict in sorted((report.get("verdicts") or {}).items())
-        if verdict.get("status") == 200 and not verdict.get("answered")
-    ]
-    if broken:
-        out.append("**Served, and answered nothing**")
-        out += [f"- `{model_id}`" for model_id in broken]
+    if report.get("failing_since"):
+        out.append(
+            "**Served, and could not answer** — in the catalogue, in the picker, and "
+            "failing every probe"
+        )
+        for model_id, since in sorted(report["failing_since"].items()):
+            days = _days_since(since)
+            verdict = (report.get("verdicts") or {}).get(model_id) or {}
+            aged = f" ({days} days)" if days is not None and days > 0 else ""
+            out.append(f"- `{model_id}` — failing since {since}{aged}"
+                       f"{_verdict_note(verdict)}")
         out.append("")
     if report["default_missing"]:
         out.append(
@@ -596,40 +804,90 @@ def run(parsed: argparse.Namespace) -> tuple[int, str, bool]:
 
         report = review(entry, catalogue, ledger)
         slot = _slot(ledger, entry.name)
-        before = {"free": slot.get("free"), "verdicts": slot.get("verdicts")}
+        before = {
+            "free": slot.get("free"),
+            "verdicts": slot.get("verdicts"),
+            "failing_since": dict(slot.get("failing_since") or {}),
+        }
 
         verdicts: dict = {}
         candidates: list[str] = []
         skipped = 0
         if parsed.probe:
+            # A key is not required, and this used to think it was. Absent, it skipped
+            # the probing pass and said so, which turned the two findings that need a
+            # completion — a stealth codename, and a model that is served but answers
+            # nothing — into features only a deployment with a secret ever got. The
+            # workflow has no secret, so in practice they were never checked at all.
+            #
+            # Zen serves a free model to a request with no `Authorization` header:
+            # measured, 200 and a full streamed completion with a tool offered. So the
+            # key is an option, not a prerequisite, and the only thing it changes is
+            # whether a *paid* model can be probed as anything but paid. Said out loud
+            # either way, because "probed" and "probed keyless" are different evidence.
             if not key:
                 # No heading: `summarise` writes one for this provider a few lines
                 # down, and two in a row reads as two providers.
                 sections.append(
-                    f"No key in `{entry.key_env}`, so nothing was probed. What follows "
-                    "is from the catalogue alone.\n"
+                    f"No key in `{entry.key_env}`, so the probes below carried no "
+                    "`Authorization` header. The free lineup answers without one; a "
+                    "paid model replies `Missing API key`, which is what prices it.\n"
                 )
+            # Three groups, in the order they are worth a request.
+            #
+            # New free models, because served is not working. Then **the free lineup
+            # itself**, which is the group this queue used to omit and the omission that
+            # made finding #2 unreachable: a model both named in the profile and free by
+            # the rule was in neither list, so the only models ever probed were the ones
+            # nothing knew about yet. `muse-spark-1.2-contributor-free` returned `500
+            # Internal server error` to every request for as long as anyone had been
+            # watching, was listed by `GET /models` throughout, and no run ever asked it
+            # a question. Then the unclassified names, which are the stealth-codename
+            # hunt and the only group that can afford to wait.
+            #
+            # Budgeted together so a day Zen rewrites its catalogue cannot spend sixty
+            # requests, and what the budget dropped is reported rather than silently
+            # omitted. Ordering is the priority: the lineup a reader can actually pick
+            # gets checked before the catalogue is trawled for the next `big-pickle`.
+            queue = report["appeared"] + report["free"] + report["unclassified"]
+            queue = list(dict.fromkeys(queue))
+            budget = parsed.probe_budget if parsed.probe_budget > 0 else len(queue)
+            skipped = max(0, len(queue) - budget)
+            for model_id in queue[:budget]:
+                verdict = probe(entry, key, model_id)
+                verdicts[model_id] = verdict
+                if verdict.get("tier") == "paid":
+                    if model_id not in slot["paid"]:
+                        slot["paid"].append(model_id)
+                elif (
+                    model_id in report["unclassified"]
+                    and verdict.get("tier") == "free"
+                    and verdict.get("answered")
+                ):
+                    candidates.append(model_id)
+
+        # A served free model that could not answer, for how long. Only the free
+        # lineup: a paid model refusing a keyless request is the expected answer, not a
+        # fault, and a name nobody has classified yet has no place on this list either.
+        #
+        # Accrued like `missing_since` rather than recomputed, because one bad morning
+        # is not a verdict and the whole question is how many mornings there have been.
+        # Cleared the moment a probe answers, so a model that comes back starts again
+        # from nothing — `hy3-free` did exactly that.
+        health = dict(slot.get("failing_since") or {})
+        for model_id, verdict in verdicts.items():
+            if model_id not in report["free"] or _unmeasured(verdict):
+                continue
+            if verdict.get("answered"):
+                health.pop(model_id, None)
             else:
-                # New free models get a probe because served is not working. Then the
-                # unclassified names, which are the stealth-codename hunt. Budgeted
-                # together so a day Zen rewrites its catalogue cannot spend sixty
-                # requests, and what the budget dropped is reported rather than
-                # silently omitted.
-                queue = report["appeared"] + report["unclassified"]
-                budget = parsed.probe_budget if parsed.probe_budget > 0 else len(queue)
-                skipped = max(0, len(queue) - budget)
-                for model_id in queue[:budget]:
-                    verdict = probe(entry, key, model_id)
-                    verdicts[model_id] = verdict
-                    if verdict.get("tier") == "paid":
-                        if model_id not in slot["paid"]:
-                            slot["paid"].append(model_id)
-                    elif (
-                        model_id in report["unclassified"]
-                        and verdict.get("tier") == "free"
-                        and verdict.get("answered")
-                    ):
-                        candidates.append(model_id)
+                health.setdefault(model_id, today())
+        for model_id in list(health):
+            # Gone from the catalogue is a different finding with its own clock, and a
+            # model on both lists would be reported and retired twice.
+            if model_id not in catalogue:
+                del health[model_id]
+        report["failing_since"] = health
 
         report["verdicts"] = {**(slot.get("verdicts") or {}), **verdicts}
         report["candidates"] = candidates
@@ -645,6 +903,7 @@ def run(parsed: argparse.Namespace) -> tuple[int, str, bool]:
             free=report["free"],
             listed=report["listed"],
             missing_since=report["missing_since"],
+            failing_since=report["failing_since"],
             verdicts=report["verdicts"],
             candidates=candidates,
             checked=now(),
@@ -690,6 +949,73 @@ def run(parsed: argparse.Namespace) -> tuple[int, str, bool]:
                     + "\n"
                 )
 
+        if parsed.update:
+            # The other half, and the one this workflow used only to report. A model
+            # absent from the catalogue for `--retire-after` days comes off the list.
+            #
+            # Two guards, and neither is style. The list must not be emptied — an empty
+            # fallback is what the app falls back *to* when discovery fails, and a
+            # provider with no names at all offers nothing at all — so a catalogue that
+            # came back short of every listed model is a provider-side fault and gets
+            # reported instead of committed. And the first entry is the default and the
+            # failover target, so retiring it moves both; that is a real edit and the
+            # right one when the anchor is a dead model, but it is not a thing to slip
+            # into a diff unannounced.
+            path = _active().origin
+            # Two ways a model stops existing, one threshold. Gone from the catalogue,
+            # and still in the catalogue but unable to answer for as long — the second
+            # is what `muse-spark-1.2-contributor-free` was doing while every run
+            # reported the lineup healthy.
+            retirements = retiring(report, parsed.retire_after)
+            retirements += [
+                name for name in failing(report, parsed.retire_after)
+                if name not in retirements
+            ]
+            if retirements and not path:
+                sections.append(
+                    "Nothing to retire: this profile is the built-in defaults, so "
+                    "there is no file to edit. Set `SAGE_PROFILE`.\n"
+                )
+                retirements = []
+            surviving = [name for name in report["listed"] if name not in retirements]
+            if retirements and not surviving:
+                sections.append(
+                    "⚠️ Every model named in the profile has been absent for "
+                    f"{parsed.retire_after} days or more. Nothing was removed: an "
+                    "empty fallback list is what a failed discovery call falls back "
+                    "to. This reads as a provider-side outage, not a retirement.\n"
+                )
+                retirements = []
+            if retirements:
+                anchor_going = report["listed"][:1] and report["listed"][0] in retirements
+                with open(path, encoding="utf-8") as handle:
+                    text = handle.read()
+                updated = retire_models(text, entry.name, retirements)
+                if updated != text:
+                    with open(path, "w", encoding="utf-8") as handle:
+                        handle.write(updated)
+                    why = {
+                        **dict.fromkeys(report["vanished"], "absent"),
+                        **dict.fromkeys(
+                            report.get("failing_since") or {}, "not answering"
+                        ),
+                    }
+                    sections.append(
+                        f"Removed from `{os.path.relpath(path, ROOT)}`, "
+                        f"{parsed.retire_after} days or more: "
+                        + ", ".join(
+                            f"`{name}` ({why.get(name, 'gone')})"
+                            for name in retirements
+                        )
+                        + "\n"
+                    )
+                    if anchor_going:
+                        sections.append(
+                            f"⚠️ `{report['listed'][0]}` was the first entry, so this "
+                            f"moves the default and the failover target to "
+                            f"`{surviving[0]}`. Worth agreeing with before merging.\n"
+                        )
+
     ledger["checked"] = now()
     os.makedirs(os.path.dirname(parsed.ledger) or ".", exist_ok=True)
     with open(parsed.ledger, "w", encoding="utf-8") as handle:
@@ -723,6 +1049,17 @@ def main() -> int:
         "--update",
         action="store_true",
         help="append served free models the profile does not name",
+    )
+    parser.add_argument(
+        "--retire-after",
+        type=int,
+        default=7,
+        metavar="DAYS",
+        help=(
+            "with --update, remove profile entries absent from the catalogue for this "
+            "many days (0 keeps them for ever, which was the old behaviour). Seven "
+            "because `hy3-free` came back after two"
+        ),
     )
     parser.add_argument("--summary-out", default="", help="write the markdown here")
     parser.add_argument(

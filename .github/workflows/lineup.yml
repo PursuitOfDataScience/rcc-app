@@ -15,13 +15,24 @@
 #
 # Two outputs, because there are two kinds of finding and only one of them is an edit:
 #
-#   * **A pull request**, when a served free model is missing from the profile's list.
-#     That is a diff, so it arrives as one — on a fixed branch, rebuilt from `main` each
-#     time and force-pushed, so the diff is always just today's drift and never a pile
-#     of superseded ones. Appended at the end of the list, never reordered: the first
-#     entry decides what every fresh session starts on and what an automatic failover
-#     lands on, and a job that rewrote that daily from a catalogue listing would be
-#     choosing the reader's model on no evidence about whether it is any good.
+#   * **A pull request**, when the profile's list and the served catalogue have parted
+#     company in either direction — a free model served and not named, or a named model
+#     the provider stopped serving `--retire-after` days ago. That is a diff, so it
+#     arrives as one: on a fixed branch, rebuilt from `main` each time and force-pushed,
+#     so the diff is always just today's drift and never a pile of superseded ones.
+#     Additions go at the end and nothing is reordered — the first entry decides what
+#     every fresh session starts on and what an automatic failover lands on, and a job
+#     that rewrote that daily from a catalogue listing would be choosing the reader's
+#     model on no evidence about whether it is any good. A removal that takes the first
+#     entry does move both, and the report says so in as many words.
+#
+#     Removal waits seven days on purpose. `hy3-free` was absent from the catalogue and
+#     answering 401, and was served again two days later with nothing about this
+#     deployment changed, so a job that acted on one morning's listing would remove a
+#     working model and put it back on Thursday. The ledger below is what makes the
+#     difference between "gone today" and "gone since the 22nd" expressible at all.
+#     Until this existed the retirement half was a line in an issue: four models sat in
+#     the profile for three days, reported every morning, removed by nobody.
 #     This one has a prerequisite the workflow cannot grant itself: *Allow GitHub
 #     Actions to create and approve pull requests*, under Settings -> Actions ->
 #     General. A `permissions:` block does not cover it, and with it off the create
@@ -30,11 +41,11 @@
 #     diff then has to be opened by hand.
 #
 #   * **One issue, updated in place**, when there is news that is not an edit — a name
-#     that answered without matching `free_marks` (only a person can widen a rule), a
-#     model gone from the catalogue (the profile keeps those on purpose), a configured
-#     default that is no longer served, or `free_marks` matching nothing at all, which
-#     is the one urgent state here because it makes the picker offer the whole paid
-#     lineup. Updated rather than reopened, so a month of quiet drift is one thread.
+#     that answered without matching `free_marks` (only a person can widen a rule), an
+#     absence too recent to act on, a configured default that is no longer served, or
+#     `free_marks` matching nothing at all, which is the one urgent state here because
+#     it makes the picker offer the whole paid lineup. Updated rather than reopened, so
+#     a month of quiet drift is one thread.
 #
 # Every run writes the report to the job summary whether or not it opens anything, so
 # there is always somewhere to look that is not a diff.
@@ -45,13 +56,13 @@
 # red most weeks gets loosened until it is quiet. CI stays green; this reports.
 #
 # Cost, in the two currencies that matter:
-#   * **Provider allowance: about zero.** `GET /models` on Zen needs no key at all
+#   * **Provider allowance: about zero, and no key.** `GET /models` on Zen needs none
 #     (measured with no header and with a bogus one — 200 and the full catalogue both
 #     times), so the drift half spends nothing. Only `--probe` sends a completion, and
 #     only for a name the ledger has not classified before. The one-time sweep of Zen's
-#     55 paid models took 6.5s and spent no allowance, because a paid model on a free
-#     key is rejected before it generates anything. A day Zen changes nothing costs
-#     nothing at all.
+#     55 paid models spends no allowance either, because a keyless request for a paid
+#     model is refused with `Missing API key` before it generates anything — which is
+#     also what prices it. A day Zen changes nothing costs nothing at all.
 #   * **Actions minutes:** free, this repository being public.
 #
 # The ledger lives in the Actions cache rather than in the repository, because it is bot
@@ -117,9 +128,19 @@ jobs:
       - name: Read the lineup
         id: check
         env:
-          # Absent is a supported state, not a failure: without it the catalogue is
-          # still read and the drift still reported, and only the probes are skipped.
-          # The script says so in its output rather than pretending it probed.
+          # Deliberately not required, and deliberately still read. Zen serves its free
+          # models to a request with no `Authorization` header at all — 200 and a full
+          # streamed completion — so every check here works with no secret, and a
+          # keyless refusal is the *better* evidence of tier: "Missing API key" can only
+          # mean the model requires one. A key adds one thing, the ability to probe a
+          # paid model as something other than paid, which a free-tier deployment does
+          # not need. This line stays so a deployment that has a balance can use it.
+          #
+          # It used to be load-bearing by accident: the checker skipped the probing pass
+          # without a key, this repository has no such secret, and so the two findings
+          # that need a completion — a stealth codename, and a model that is served but
+          # answers nothing — were never once checked. Adding the secret was never the
+          # fix; sending no header was.
           OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
         run: |
           probe=--probe
@@ -127,7 +148,8 @@ jobs:
              && [ "${{ inputs.probe }}" = "false" ]; then
             probe=
           fi
-          python tools/lineup_check.py $probe --update --summary-out drift.md
+          python tools/lineup_check.py $probe --update --retire-after 7 \
+            --summary-out drift.md
           {
             echo "## Model lineup"
             echo
@@ -173,12 +195,15 @@ jobs:
           # backticked model ids, and inside a double-quoted -m argument bash would
           # read `muse-spark-1.2-contributor-free` as a command to run.
           {
-            echo 'profile: name the free models the provider is serving'
+            echo 'profile: follow the free models the provider is serving'
             echo
-            echo 'Opened by .github/workflows/lineup.yml. Appended at the end of the'
-            echo 'list, because the first entry is what a fresh session starts on and'
-            echo 'what an automatic failover lands on, and that is a judgement this'
-            echo 'workflow does not make. Nothing was removed or reordered.'
+            echo 'Opened by .github/workflows/lineup.yml. Additions go at the end of'
+            echo 'the list and nothing is reordered, because the first entry is what a'
+            echo 'fresh session starts on and what an automatic failover lands on, and'
+            echo 'that is a judgement this workflow does not make. Removals are models'
+            echo 'the provider has not served for seven days or more; an absence'
+            echo 'shorter than that is reported and left alone, because hy3-free came'
+            echo 'back after two. The report below says which is which.'
             echo
             cat drift.md
           } > commit.txt
