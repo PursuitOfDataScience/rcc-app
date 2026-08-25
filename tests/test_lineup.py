@@ -32,7 +32,7 @@ from dataclasses import replace
 
 import pytest
 
-from sage import config, profile
+from sage import config, profile, providers
 from tools import lineup_check
 
 ZEN = profile.active().provider("opencode")
@@ -576,7 +576,20 @@ class TestAModelThatIsServedAndCannotAnswer:
         assert "Served, and could not answer" not in body
         assert "answering again" in body
 
-    def test_a_week_of_failing_retires_it(self, monkeypatch, tmp_path):
+    @staticmethod
+    def offered(target):
+        """What the picker would actually show, which is the only thing that counts.
+
+        Asserted through the adapter rather than off the profile field, because the
+        two came apart and that gap is what the reader met as an error card: the
+        picker's membership comes from discovery, so a name removed from `models` is
+        still offered for as long as the provider serves it.
+        """
+        entry = profile.load(str(target)).provider("opencode")
+        adapter = providers.adapters.get(entry.kind)(entry, "k")
+        return [model.id for model in adapter.models()]
+
+    def test_a_week_of_failing_takes_it_out_of_the_picker(self, monkeypatch, tmp_path):
         old = (dt.date.today() - dt.timedelta(days=9)).isoformat()
         ledger = {"providers": {"opencode": {
             "free": ["good-free", "sick-free"], "listed": ["good-free", "sick-free"],
@@ -588,8 +601,42 @@ class TestAModelThatIsServedAndCannotAnswer:
             {"good-free": self.HEALTHY, "sick-free": self.DEAD},
             ledger=ledger, update=True,
         )
-        assert profile.load(str(target)).provider("opencode").models == ("good-free",)
-        assert "not answering" in body, "the diff has to say which kind of gone"
+        entry = profile.load(str(target)).provider("opencode")
+        assert "sick-free" in entry.deny
+        assert "sick-free" in entry.models, (
+            "denying is not delisting: the record of what the provider is expected to "
+            "serve is a different statement from what works today"
+        )
+        assert "Taken out of the picker" in body
+
+    def test_a_denied_model_is_put_back_when_it_answers(self, monkeypatch, tmp_path):
+        """The property that makes a blocklist safe to have at all. `hy3-free` was
+        down for two days and came back; a list that could not let go would have kept
+        it out of the picker for ever."""
+        target = tmp_path / "rcc.toml"
+        target.write_text(
+            '[[providers]]\nname = "opencode"\nkind = "openai"\n'
+            'base_url = "http://x/v1"\nkey_env = "OPENCODE_API_KEY"\n'
+            'models = [\n    "good-free",\n    "sick-free",\n]\n'
+            'deny = ["sick-free"]\nfree_marks = ["-free"]\nfree_only = true\n'
+        )
+        loaded = profile.load(str(target))
+        assert "sick-free" in loaded.provider("opencode").deny
+        monkeypatch.setattr(lineup_check, "_active", lambda: loaded)
+        monkeypatch.setattr(lineup_check, "discoverable", lambda: list(loaded.providers))
+        monkeypatch.setattr(
+            lineup_check, "served", lambda entry, key="": ["good-free", "sick-free"]
+        )
+        monkeypatch.setattr(lineup_check.providers, "api_key", lambda name: "")
+        monkeypatch.setattr(
+            lineup_check, "probe",
+            lambda entry, key, model_id, tools=True: dict(self.HEALTHY, model=model_id),
+        )
+        _, body, _ = lineup_check.run(
+            options(ledger=str(tmp_path / "l.json"), probe=True, update=True)
+        )
+        assert profile.load(str(target)).provider("opencode").deny == ()
+        assert "Put back in the picker" in body
 
     def test_one_bad_day_retires_nothing(self, monkeypatch, tmp_path):
         target, (_code, body, _changed) = self.run_with(

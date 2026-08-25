@@ -209,6 +209,20 @@ class ProviderEntry:
     `free_marks` and `free_only` exist because a free tier serves its paid lineup from
     the same endpoint, and offering a model there is no balance for is offering a
     button that returns a 402. Empty `free_marks` means every model served is offered.
+
+    `deny` is the other half of that, and it is a different question: not "can this
+    deployment pay for the model" but "does the model work at all". A free tier will
+    serve a name from `GET /models` long after the thing behind it has stopped
+    answering — `muse-spark-1.2-contributor-free` returned `500 Internal server error`
+    to every request for a day while the catalogue went on listing it, and the reader
+    met it as an error card. Nothing in `free_marks` can express that, because the name
+    is genuinely free and genuinely served; it is just dead.
+
+    Maintained by `tools/lineup_check.py` rather than by hand, and *self-clearing*: a
+    model goes on when it has failed every probe for the retirement threshold and comes
+    off the moment it answers again. That property is the whole licence for having a
+    denylist at all — `hy3-free` was down for two days and came back, and a blocklist
+    that quietly outlives the outage it was written for is worse than no blocklist.
     """
 
     name: str
@@ -218,6 +232,9 @@ class ProviderEntry:
     models: tuple[str, ...] = ()
     free_marks: tuple[str, ...] = ()
     free_only: bool = False
+    #: Model ids never offered, however the provider lists them. See the class
+    #: docstring: this is "known not to work", not "cannot be paid for".
+    deny: tuple[str, ...] = ()
     #: One sentence shown when no key is set anywhere — where to get one, what it
     #: looks like. The only screen a reader sees before the app stops.
     hint: str = ""
@@ -363,6 +380,10 @@ def _provider(raw: dict) -> ProviderEntry:
     free_only_env = str(raw.get("free_only_env", "")).strip()
     if free_only_env:
         free_only = env.flag(free_only_env, free_only)
+    deny = _strings(raw.get("deny"))
+    deny_env = str(raw.get("deny_env", "")).strip()
+    if deny_env:
+        deny = env.items(deny_env, deny)
     return ProviderEntry(
         name=name,
         kind=str(raw.get("kind", "openai")),
@@ -371,6 +392,7 @@ def _provider(raw: dict) -> ProviderEntry:
         models=models,
         free_marks=marks,
         free_only=free_only,
+        deny=deny,
         hint=str(raw.get("hint", "")),
         user_agent=str(raw.get("user_agent", "")),
     )

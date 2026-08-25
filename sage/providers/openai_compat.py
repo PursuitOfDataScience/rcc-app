@@ -33,10 +33,15 @@ class OpenAICompatProvider:
         self._preferred = tuple(entry.models)
 
     def _headers(self) -> dict:
-        headers = {
-            "Authorization": f"Bearer {self._key}",
-            "Content-Type": "application/json",
-        }
+        # No key means no header, not an empty one. `Authorization: Bearer ` is an
+        # illegal header value and httpx raises on it locally, so a keyless discovery
+        # call failed before it was sent and fell through to the configured list —
+        # reported in the log as "could not list models", which reads as the provider
+        # being unreachable. It is also not academic: this endpoint serves its free
+        # models to a request with no header at all.
+        headers = {"Content-Type": "application/json"}
+        if self._key:
+            headers["Authorization"] = f"Bearer {self._key}"
         # Only when the profile asks for one; otherwise httpx sends its own, which is
         # the honest default. See `ProviderEntry.user_agent` for why this exists.
         if self.entry.user_agent:
@@ -68,6 +73,25 @@ class OpenAICompatProvider:
             # one, and offering a model there is no balance for is offering a button
             # that returns a 402. Filtered here rather than in the picker so nothing
             # downstream — failover included — can select one.
+            # Denied names go first, and for the same reason the free filter is here
+            # rather than in the picker: nothing downstream — failover included — can
+            # select a model that never reaches the list. A model the provider serves
+            # and cannot run is not a cheaper option to fall back to, it is an error
+            # card with an extra step, and `deepseek-v4-flash-free` was second in the
+            # ranking while answering `400 Model is unavailable` to everything.
+            #
+            # Never all of them. A denylist that empties the picker has turned a broken
+            # model into a broken app, and the list is maintained by a daily job that
+            # cannot be assumed correct on a day the provider is having a bad time.
+            if found and self.entry.deny:
+                kept = [name for name in found if name not in set(self.entry.deny)]
+                if kept:
+                    found = kept
+                else:
+                    logger.warning(
+                        "%s: every served model is on the deny list; offering all of "
+                        "them rather than nothing.", self.name,
+                    )
             if found and self.entry.free_only and self.entry.free_marks:
                 free = [name for name in found if self._is_free(name)]
                 if free:

@@ -255,6 +255,20 @@ models = [
 # with a `-free` suffix, the exception being the stealth models it publishes under a
 # codename while they are free. Naming the convention keeps working when the list
 # changes; naming the list does not.
+# Served, and dead. Maintained by `.github/workflows/lineup.yml`, which adds a model
+# that has failed every probe for the retirement threshold and REMOVES it the moment it
+# answers again — that self-clearing property is the only thing that makes a blocklist
+# safe here, because `hy3-free` was down for two days and came back.
+#
+# Not the same question as `free_marks`. These names are free and are genuinely served:
+# `GET /models` lists them, the rule matches them, the picker offered them, and the
+# reader got an error card. `muse-spark-1.2-contributor-free` answered `500 Internal
+# server error` three times out of three and `deepseek-v4-flash-free` answered `400
+# Model is unavailable` three out of three, the second of them ranked high enough to be
+# what an automatic failover reached for. Filtering happens in the adapter's `models()`,
+# so nothing downstream can select one.
+deny = ["deepseek-v4-flash-free", "muse-spark-1.2-contributor-free"]
+deny_env = "SAGE_ZEN_DENY"
 free_marks = ["-free", "big-pickle"]
 free_marks_env = "SAGE_ZEN_FREE_MARKS"
 # Off for a deployment with a paid Zen balance, which should see everything it can use.
