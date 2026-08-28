@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import ast
 import os
+import pathlib
 
 import pytest
 
@@ -75,7 +76,9 @@ class TestTheProfileIsTheDeployment:
         assert profile.origin.endswith("rcc.toml")
         assert profile.identity.name == "Sage"
         assert [source.name for source in profile.sources] == ["docs", "web"]
-        assert [entry.name for entry in profile.providers] == ["mistral", "opencode"]
+        assert [entry.name for entry in profile.providers] == [
+            "openrouter", "mistral", "opencode",
+        ]
         assert profile.prompt, "the prompt file beside the profile was not read"
 
     def test_a_second_profile_changes_who_the_assistant_is(self, atlas):
@@ -113,6 +116,81 @@ class TestTheProfileIsTheDeployment:
         assert built.corpus.chunks == []
         assert built.identity.name == "Atlas"
         assert built.toolset.schemas
+
+
+class TestAProviderThatNeedsNoLineupMaintenance:
+    """One provider is a router, and the rule that offers it is the whole mechanism.
+
+    Zen needs `.github/workflows/lineup.yml`: its free lineup rotates without notice,
+    the fallback list goes stale, and a model that stops answering has to be noticed by
+    something. OpenRouter's entry is one id — `openrouter/free`, a router that picks a
+    working free model per request — so all three of those jobs happen on the provider's
+    side and there is no list here to keep true.
+
+    That only holds while the entry stays a single self-selecting id. These tests are
+    what stops it quietly becoming a list again: widen `free_marks` to `:free` and the
+    picker offers eighteen models nothing is checking, which is exactly the state the
+    workflow exists to prevent for the other provider.
+    """
+
+    def router(self, profile):
+        """The provider whose rule names its own models: no discovery can widen it."""
+        return next(
+            (entry for entry in profile.providers
+             if entry.free_only and set(entry.free_marks) == set(entry.models)),
+            None,
+        )
+
+    def test_one_provider_selects_itself(self, profile):
+        assert self.router(profile) is not None, (
+            "no provider whose free rule names exactly its own model list; if the "
+            "router entry was widened, lineup.yml has to start checking it"
+        )
+
+    def test_the_router_offers_exactly_one_model(self, profile):
+        assert len(self.router(profile).models) == 1
+
+    def test_its_rule_cannot_admit_anything_the_list_does_not_name(self, profile):
+        """`free_only` plus a mark that *is* the id is what makes discovery a
+        no-op — the adapter filters 387 served models down to this one."""
+        entry = self.router(profile)
+        assert entry.free_only is True
+        assert entry.free_marks == entry.models
+
+    def test_it_has_no_denylist_because_it_has_nothing_to_deny(self, profile):
+        """A denylist is for a name the provider serves and cannot run. With one id,
+        and that id being the thing that routes around a broken model, there is no
+        such name — and a stale entry here would empty the provider instead."""
+        assert self.router(profile).deny == ()
+
+    def test_the_lineup_workflow_checks_the_other_provider_and_not_this_one(self):
+        """The workflow's `--provider` is the other half of this arrangement. Left
+        unscoped, the 386 models OpenRouter fronts and the rule does not match land in
+        the stealth-codename queue, and every run spends its probe budget asking paid
+        models whether they are secretly free."""
+        workflow = pathlib.Path(__file__).resolve().parents[1] / (
+            ".github/workflows/lineup.yml"
+        )
+        text = workflow.read_text(encoding="utf-8")
+        assert "--provider" in text, (
+            "lineup_check.py runs over every discoverable provider by default, which "
+            "now includes one that needs no checking"
+        )
+
+    def test_the_default_model_names_a_provider_this_profile_has(self, profile):
+        """`SAGE_DEFAULT_MODEL` naming a provider the profile dropped is a session
+        that starts on nothing. Checked here rather than trusted, because the default
+        and the profile are edited in different files."""
+        from sage import config
+
+        provider, _, model_id = config.DEFAULT_MODEL.partition(":")
+        assert model_id, f"DEFAULT_MODEL is not `provider:model-id`: {config.DEFAULT_MODEL!r}"
+        entry = profile.provider(provider)
+        assert entry is not None, f"no `{provider}` provider in the profile"
+        assert model_id in entry.models, (
+            f"`{model_id}` is not in {provider}'s list, so a fresh session falls "
+            f"through to whatever discovery happens to return first"
+        )
 
 
 class TestEveryDeploymentIsToldNotToNameItsMachinery:

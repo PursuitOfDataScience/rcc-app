@@ -10,7 +10,7 @@ Streamlit UI, BM25 retrieval, any OpenAI-compatible model. No invented commands.
 
 ```bash
 pip install -r requirements.txt
-export OPENCODE_API_KEY=sk-zen-...    # free tier; or MISTRAL_API_KEY=...
+export OPENROUTER_API_KEY=sk-or-v1-...   # free router; or OPENCODE_API_KEY=sk-zen-...
 streamlit run app.py                  # → localhost:8501
 ```
 
