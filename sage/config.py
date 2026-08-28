@@ -23,9 +23,15 @@ from .env import text as _env_text
 
 # Which provider/model a fresh session starts on, as "provider:model-id". The
 # provider half has to name an entry in the profile's provider list.
-DEFAULT_MODEL = _env_text(
-    "SAGE_DEFAULT_MODEL", "opencode:nemotron-3.5-lightning-free"
-)
+#
+# OpenRouter's free router, because the model this used to name stopped answering.
+# `opencode:nemotron-3.5-lightning-free` was chosen for being the fastest thing on Zen's
+# free tier at 2.2s; measured again on 2026-08-28 it returns an empty stream, and so does
+# `nemotron-3-ultra-free` behind it — the same two models on OpenRouter return zero
+# chunks too, so this is the model family and not the gateway. `openrouter/free` answered
+# six of six with a tool call, median 1.4s, by routing each request to whichever free
+# model is actually up. See `profiles/rcc.toml` for what that trades away.
+DEFAULT_MODEL = _env_text("SAGE_DEFAULT_MODEL", "openrouter:openrouter/free")
 
 # Substrings marking models that cannot call tools. Those answer from a single
 # retrieval pass instead of the search/read loop. The app also falls back

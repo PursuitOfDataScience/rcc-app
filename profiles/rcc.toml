@@ -175,6 +175,56 @@ synonyms = [
 # reaches for. A provider with no key set is skipped entirely.
 
 [[providers]]
+name = "openrouter"
+kind = "openai"
+key_env = "OPENROUTER_API_KEY"
+hint = "OpenRouter keys start with `sk-or-v1-`; the free router needs no balance."
+# One model, and it is a router rather than a model — which is the whole point of
+# choosing it. `openrouter/free` ("Free Models Router") picks a free model per request
+# from whatever OpenRouter is serving, filtered to the ones that support the parameters
+# the request actually carries, so a tool-calling turn is never routed to a model that
+# cannot call a tool.
+#
+# That is the same job `.github/workflows/lineup.yml` does for Zen — find the free
+# models, notice which have stopped answering, keep the profile's list true — done on
+# the provider's side, for free, per request, with no ledger and no daily pull request.
+# The reason to hand it over is that the Zen half is genuinely hard to keep right: a
+# free tier rotates its lineup without notice, `hy3-free` left the catalogue and came
+# back two days later, and the workflow exists because four dead models once sat in this
+# file for three days.
+#
+# Measured before trusting it (2026-08-28, six requests, the app's own question and tool
+# schema): six tool calls out of six, routed across `liquid/lfm-2.5-2.6b:free`,
+# `cohere/north-mini-code:free`, `inclusionai/ling-3.0-flash-fin:free`,
+# `minimax/minimax-m2.7:free` and `dots-studio/dots-3-note-preview:free`, median 1.4s.
+# One of those — `liquid/lfm-2.5-2.6b:free` — answered `429 … temporarily rate-limited
+# upstream` when asked directly in the same minute, so the router is absorbing the
+# upstream failures rather than passing them on. That is the behaviour being bought.
+#
+# What it costs, and it is a real trade: the model changes from turn to turn, so answer
+# quality and speed vary in a way a pinned model's do not, and a reader cannot tell
+# which model wrote the answer they are looking at. Availability over consistency,
+# deliberately — a 2.6B model that answers beats a 550B one that returns an empty
+# stream, which is what Zen's Nemotron models were doing when this was added.
+base_url = "https://openrouter.ai/api/v1"
+base_url_env = "OPENROUTER_BASE_URL"
+# Discovery still runs — it is how the app learns the router is being served at all —
+# and `free_marks` below narrows all 387 models to this one.
+models = ["openrouter/free"]
+models_env = "SAGE_OPENROUTER_MODELS"
+# The mark is the router's own id, so the rule reads "offer exactly this". Unusual, and
+# deliberate: OpenRouter fronts 387 models of which 18 are free and this key holds
+# $1.80, so a wider rule is a picker full of buttons that return 402. Widening it to
+# `:free` would offer all 18 — every zero-priced model there carries that suffix, and
+# every model carrying it is zero-priced — and that is the lineup this entry chose not
+# to have, because nine of the eighteen were rate-limited or dead on the same sweep the
+# router sailed through.
+free_marks = ["openrouter/free"]
+free_marks_env = "SAGE_OPENROUTER_FREE_MARKS"
+free_only = true
+free_only_env = "SAGE_OPENROUTER_FREE_ONLY"
+
+[[providers]]
 name = "mistral"
 kind = "mistral"
 key_env = "MISTRAL_API_KEY"

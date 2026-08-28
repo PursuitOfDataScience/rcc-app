@@ -1,5 +1,11 @@
 # Reads what the provider serves against what this repository says it serves, daily.
 #
+# **Zen only** — `--provider opencode` on the run below. The profile's other
+# OpenAI-compatible provider is OpenRouter, and its entry is one id, `openrouter/free`,
+# a router that picks a working free model per request. Every job this workflow does
+# happens on that provider's side, so scoping is not a limitation here but the point:
+# see the comment on the run step for what leaving it unscoped would spend.
+#
 # The app does not depend on this. Model lists are discovered from `GET /models` at
 # runtime and filtered by a rule, so a model Zen starts serving free under a `-free`
 # name is in the picker the moment it exists, and one that disappears is dropped the
@@ -148,8 +154,25 @@ jobs:
              && [ "${{ inputs.probe }}" = "false" ]; then
             probe=
           fi
-          python tools/lineup_check.py $probe --update --retire-after 7 \
-            --summary-out drift.md
+          # Zen only, and that is a statement about the other provider rather than a
+          # narrowing of this one. OpenRouter is in the profile as a single entry,
+          # `openrouter/free`, which is a router that picks a working free model per
+          # request — so the three jobs this workflow does for Zen have no work to do
+          # there. There is no list to keep true (one id, and it is the rule as well),
+          # no retirement clock (a free model going dark is the router's problem, and
+          # measurably its behaviour: it routed around a 429 in the same minute Zen's
+          # equivalent model returned one), and no stealth codename to hunt, because
+          # OpenRouter publishes exact per-model pricing and every zero-priced model it
+          # serves says so in its id.
+          #
+          # Left in and this would be active harm, not just waste: the rule matches one
+          # of the 387 models OpenRouter fronts, so the other 386 land in
+          # `unclassified` — the stealth-codename queue — and every run would spend its
+          # whole probe budget asking paid models whether they are secretly free, then
+          # report the answer. Twelve requests a day and a section of noise, for a
+          # question that provider's catalogue already answers.
+          python tools/lineup_check.py $probe --provider opencode --update \
+            --retire-after 7 --summary-out drift.md
           {
             echo "## Model lineup"
             echo

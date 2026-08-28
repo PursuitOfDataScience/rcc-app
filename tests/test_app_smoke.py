@@ -50,17 +50,32 @@ class ScriptedProvider:
         yield from self.turns.pop(0)
 
 
+def clear_provider_keys(monkeypatch):
+    """Unset every key the profile declares, so the machine's own environment cannot
+    decide what a test sees.
+
+    Named from the profile rather than listed here. It used to set `MISTRAL_API_KEY` and
+    clear `OPENCODE_API_KEY`, which was every provider the profile had — so the day a
+    third was added, five tests changed behaviour depending on whether the developer
+    happened to have that key exported. Locally they failed; in CI, where no such secret
+    exists, they would have passed, which is the worse of the two outcomes.
+    """
+    for name in providers.names():
+        variable = providers.key_var(name)
+        if variable:
+            monkeypatch.delenv(variable, raising=False)
+
+
 def run_app(monkeypatch, *, client=None, session=None, extra=None,
             opencode=False, **stub_kwargs):
     """Import app.py under the stub and return (stub, module-or-None).
 
     `opencode=True` configures a second provider, so the model picker appears.
     """
+    clear_provider_keys(monkeypatch)
     monkeypatch.setenv("MISTRAL_API_KEY", "test-key")
     if opencode:
         monkeypatch.setenv("OPENCODE_API_KEY", "sk-zen-test")
-    else:
-        monkeypatch.delenv("OPENCODE_API_KEY", raising=False)
     stub = stub_streamlit.install(**stub_kwargs)
     if session:
         stub.session_state.update(session)
@@ -127,7 +142,7 @@ class TestWelcome:
         assert {f"example-card-{n}" for n in range(6)} <= keys
 
     def test_missing_api_key_stops_with_a_clear_message(self, monkeypatch):
-        monkeypatch.delenv("MISTRAL_API_KEY", raising=False)
+        clear_provider_keys(monkeypatch)
         stub = stub_streamlit.install()
         with pytest.raises(stub_streamlit.Stop):
             import app  # noqa: F401, PLC0415
@@ -558,7 +573,15 @@ class TestModelPicker:
         assert "big-pickle" in offered
 
     def test_the_trigger_names_the_model_in_use(self, monkeypatch):
-        """Otherwise the only way to see which model answers is to open the menu."""
+        """Otherwise the only way to see which model answers is to open the menu.
+
+        The default is pinned to a model this test's own provider serves, rather than
+        borrowed from `config`. Borrowed, it broke the day the shipped default moved to a
+        provider the test does not configure: the app fell through to the first available
+        model and the assertion named one nothing was serving.
+        """
+        monkeypatch.setattr(config, "DEFAULT_MODEL",
+                            "opencode:nemotron-3.5-lightning-free")
         mistral = ScriptedProvider([], name="mistral", models=("mistral-small-latest",))
         zen = ScriptedProvider([], name="opencode",
                                models=("nemotron-3.5-lightning-free",))
@@ -567,16 +590,23 @@ class TestModelPicker:
         assert ("popover", "nemotron-3.5-lightning") in stub.events
 
     def test_a_fresh_session_starts_on_the_configured_default(self, monkeypatch):
-        """Not on whichever provider happens to be listed first. `configured_providers`
-        puts Mistral at the head of the list, so the two orders differ and a default
-        that was quietly being ignored would look identical to one that was honoured.
+        """Not on whichever provider happens to be listed first.
+
+        The default is pointed at the provider that is *not* at the head of
+        `configured_providers` here, which is the only arrangement that can tell the two
+        apart. It used to rely on the shipped profile ranking Mistral first and the
+        shipped default naming Zen — true when it was written, and then the default moved
+        to `openrouter:openrouter/free` and the profile ranked OpenRouter first, so the
+        two orders agreed and a default being quietly ignored would have passed.
         """
+        monkeypatch.setattr(config, "DEFAULT_MODEL",
+                            "opencode:nemotron-3.5-lightning-free")
         mistral = ScriptedProvider([], name="mistral", models=("mistral-small-latest",))
         zen = ScriptedProvider([], name="opencode",
                                models=("nemotron-3.5-lightning-free",))
         stub, _m = run_app(monkeypatch, client=mistral, extra={"opencode": zen},
                            session=self.session(), opencode=True)
-        assert stub.session_state["model"] == config.DEFAULT_MODEL
+        assert stub.session_state["model"] == "opencode:nemotron-3.5-lightning-free"
         assert stub.session_state["model"] == "opencode:nemotron-3.5-lightning-free"
 
     def test_it_is_not_a_selectbox(self, monkeypatch):
@@ -655,8 +685,11 @@ class TestComposerStrip:
 
     def two_providers(self, monkeypatch, session, **kwargs):
         mistral = ScriptedProvider([], name="mistral", models=("mistral-small-latest",))
-        # Serving the model `SAGE_DEFAULT_MODEL` names, so the picker shows what a
-        # fresh session actually starts on rather than a fallback.
+        # Serving the model the default names — and naming it here rather than reading
+        # `config.DEFAULT_MODEL`, so the picker shows what a fresh session actually
+        # starts on whatever the shipped deployment has chosen this week.
+        monkeypatch.setattr(config, "DEFAULT_MODEL",
+                            "opencode:nemotron-3.5-lightning-free")
         zen = ScriptedProvider(
             [], name="opencode",
             models=("nemotron-3.5-lightning-free", "deepseek-v4-flash-free"),

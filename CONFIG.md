@@ -11,7 +11,7 @@ has to change and none of them are settings.
 | Variable | Default | Purpose |
 |---|---|---|
 | `SAGE_PROFILE` | `./profiles/rcc.toml` | The deployment profile |
-| `SAGE_DEFAULT_MODEL` | `opencode:nemotron-3.5-lightning-free` | Model a fresh session starts on, `provider:model-id` |
+| `SAGE_DEFAULT_MODEL` | `openrouter:openrouter/free` | Model a fresh session starts on, `provider:model-id` |
 | `SAGE_TOOLLESS_MODELS` | *(empty)* | Substrings of models that cannot call tools |
 | `SAGE_VISION_MODELS` | `pixtral,claude` | Substrings of models that can be shown an image |
 | `SAGE_MAX_TOKENS` | `8000` | Response cap. Generous: 1600 cut answers off mid-sentence |
@@ -23,6 +23,8 @@ has to change and none of them are settings.
 | `SAGE_SYNONYM_WEIGHT` | `0.8` | Weight of expanded synonym terms |
 | `SAGE_HISTORY_CHAR_BUDGET` | `48000` | History size before oldest turns are trimmed |
 | `SAGE_MAX_PROMPT_CHARS` | `8000` | Longest question accepted |
+| `SAGE_OPENROUTER_FREE_MARKS` | `openrouter/free` | Which OpenRouter models the picker offers. The default is the router's own id, so exactly one is offered; `:free` would offer all 18 free models and hand their upkeep back to you |
+| `SAGE_OPENROUTER_FREE_ONLY` | `1` | Off, the picker offers all 387 models OpenRouter fronts, most of which need a balance |
 | `SAGE_ZEN_DENY` | *(see profile)* | Model ids never offered, however the provider lists them. For a model that is served and cannot answer — maintained by `lineup.yml`, and cleared when the model answers again |
 | `SAGE_STREAM_REPAINT_MS` | `40` | Shortest gap between repaints of a streaming answer. Deltas arriving inside one interval are drawn together, because `write_stream` redraws the whole answer every time. `0` = one repaint per delta |
 | `SAGE_MAX_UPLOAD_BYTES` | `10485760` | Upload size limit, per file |
@@ -41,6 +43,9 @@ These exist because [`profiles/rcc.toml`](profiles/rcc.toml) asks for them by na
 
 | Variable | Default | Purpose |
 |---|---|---|
+| `OPENROUTER_API_KEY` | *(one key required)* | OpenRouter key (`sk-or-v1-…`). The free router needs no balance |
+| `OPENROUTER_BASE_URL` | `https://openrouter.ai/api/v1` | OpenAI-compatible endpoint |
+| `SAGE_OPENROUTER_MODELS` | `openrouter/free` | Fallback list if `GET /models` fails |
 | `MISTRAL_API_KEY` | *(one key required)* | Mistral API key |
 | `OPENCODE_API_KEY` | *(one key required)* | OpenCode Zen key (`sk-zen-…`), free tier |
 | `OPENCODE_BASE_URL` | `https://opencode.ai/zen/v1` | OpenAI-compatible endpoint |
@@ -54,8 +59,10 @@ These exist because [`profiles/rcc.toml`](profiles/rcc.toml) asks for them by na
 | `SAGE_EXCLUDE_HOSTS` | radiology + vislab hosts | Scraped hosts to keep out of the index (`SAGE_EXCLUDE_HOSTS=` indexes everything) |
 | `SAGE_EXCLUDE_FILES` | publication lists | Files to keep out of the index |
 
-Either API key can go in `.streamlit/secrets.toml` (gitignored) instead of the
-environment. At least one is needed; set both and the picker offers both.
+Any of these keys can go in `.streamlit/secrets.toml` (gitignored) instead of the
+environment — on Streamlit Community Cloud that is **Settings → Secrets**, as
+`OPENROUTER_API_KEY = "sk-or-v1-..."`. At least one is needed; set several and the
+picker offers all of them, and an automatic failover can cross between them.
 
 ## Providers
 
@@ -63,6 +70,22 @@ Both shipped adapters normalise onto the same streaming chunk, so nothing downst
 knows which is in use.
 
 - **Mistral** — the official SDK.
+- **OpenRouter** — `https://openrouter.ai/api/v1`, and the entry is one model id:
+  `openrouter/free`, OpenRouter's *Free Models Router*. It picks a free model per
+  request from whatever is currently up, filtered to the ones supporting the parameters
+  the request carries, so a tool-calling turn is never routed to a model that cannot
+  call a tool. This is the provider that needs no lineup maintenance — see
+  [When the lineup moves](#when-the-lineup-moves).
+
+  Measured before it was trusted (2026-08-28, six requests, the app's own question and
+  tool schema): six tool calls out of six, median 1.4s, routed across five different
+  free models — one of which answered `429 … temporarily rate-limited upstream` when
+  asked directly in the same minute. It absorbs the upstream failures rather than
+  passing them on, which is the point.
+
+  What it costs: the model changes turn to turn, so speed and answer quality vary in a
+  way a pinned model's do not, and the reader cannot tell which model wrote what they
+  are reading. Availability over consistency, deliberately.
 - **OpenCode Zen** — the OpenAI-compatible endpoint at `https://opencode.ai/zen/v1`.
   Its model list comes from `GET /models` at runtime, because a free tier's lineup
   changes without notice; the profile's list is only the fallback. Zen serves its paid
@@ -92,7 +115,23 @@ what makes a shared deployment dependable.
 
 ### When the lineup moves
 
-Nothing has to be done for a model that appears or disappears. The picker is built from
+**On OpenRouter, nothing at all — including by this repository.** Its entry is the
+router, and `free_marks` is the router's own id, so `free_only` narrows the 387 models
+OpenRouter fronts to exactly that one and discovery cannot widen it. There is no
+fallback list to go stale, no retirement clock (a free model going dark is the router's
+problem, and demonstrably its behaviour), and no stealth codename to hunt, because
+OpenRouter publishes exact per-model pricing and every zero-priced model it serves says
+so in its id. `lineup.yml` therefore runs with `--provider opencode`: unscoped, the 386
+models the rule does not match would land in the stealth-codename queue and every run
+would spend its whole probe budget asking paid models whether they are secretly free.
+
+Widening that rule to `:free` would offer all 18 of OpenRouter's free models — the
+suffix is exact in both directions — and would put them back under the maintenance
+below, which is the arrangement the router was chosen to avoid. On the sweep it was
+measured against, nine of those eighteen were rate-limited or dead.
+
+The rest of this section is about Zen. Nothing has to be done there either for a model
+that appears or disappears. The picker is built from
 `GET /models` and filtered by `free_marks`, so a model Zen starts serving free under a
 `-free` name is offered the moment it exists — `muse-spark-1.2-contributor-free` was in
 the picker before the profile named it — and `SAGE_DEFAULT_MODEL` naming something no
