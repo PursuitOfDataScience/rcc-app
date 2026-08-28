@@ -617,8 +617,30 @@
             return;
         }
 
-        // Bring the question to the TOP of the viewport and let the answer stream in
-        // beneath it, the way every chat UI behaves.
+        // Keep the newest text on screen while the answer arrives. NOT "bring the
+        // question to the top of the viewport": that is what this comment used to
+        // claim, and it has not been true since the two-rule version below was
+        // reverted. `TOP_GAP` survives only in `settle()` now, as a guard against
+        // buying space by pushing a still-visible question off the top.
+        //
+        // Asked for again on 2026-08-28 — a follow-up leaves the previous answer
+        // filling the screen above it, which is real and is the cost of the rule
+        // below — and declined, with the reasoning recorded here so it is not
+        // re-litigated from scratch. Putting a question at the top of the window needs
+        // a viewport of content beneath it, and at send time there is none: the page
+        // reserves only the measured bar height plus `--tail-gap`, so the scroll clamps
+        // at `limit` and the question lands at an arbitrary height. Doing it properly
+        // means reserving a screen of space under the newest question for the length of
+        // the turn, which changes `scrollHeight` twice more per turn precisely where
+        // `settle()` spends its two once-per-turn stamps — the stamps that exist
+        // because a pass running mid-rebuild burned the turn's one chance — and which
+        // `render_check.py` would read as dead space above the input bar. The bound it
+        // would fail is the only thing standing between that design and a screen of
+        // blank space nobody notices for a day.
+        //
+        // The rule that is here never freezes the page, which is the property the
+        // reverted version lost. That was judged worth more than the screen a
+        // previous answer occupies.
         //
         // This used to pin to the document's absolute bottom on every frame. On
         // anything but a tall window that scrolls the question clean off the top —
