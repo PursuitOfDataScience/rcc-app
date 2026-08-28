@@ -177,6 +177,63 @@ class TestAProviderThatNeedsNoLineupMaintenance:
             "now includes one that needs no checking"
         )
 
+    def test_the_router_is_shown_under_a_name_the_profile_chose(self, profile):
+        """A served id is sometimes an implementation detail wearing a name.
+
+        `openrouter/free` describes which free tier the request draws on. A reader
+        choosing a row in a picker is not choosing a billing arrangement, and the row is
+        a different model every turn, so no specific model name would be right either.
+        """
+        from sage.providers import Model
+
+        entry = self.router(profile)
+        served = entry.models[0]
+        shown = Model(entry.name, served).label
+        assert shown, "the router has no label at all"
+        assert shown != served
+        assert "free" not in shown.lower(), (
+            "the tier is the one thing the label exists to stop saying"
+        )
+        assert "/" not in shown, "a vendor path is an id, not a name"
+
+    def test_renaming_it_changes_nothing_that_is_measured(self, profile):
+        """The label is the only thing that moves. Everything that identifies a model
+        to the provider, to the feedback log, to `tools/agent_bench.py` or to the
+        error card's technical-details panel is built from the id — so a nickname
+        cannot end up standing in for a model in a measurement."""
+        from sage.providers import Model
+
+        entry = self.router(profile)
+        served = entry.models[0]
+        model = Model(entry.name, served)
+        assert model.id == served
+        assert model.key == f"{entry.name}:{served}"
+
+    def test_a_provider_that_names_nothing_still_gets_a_label(self, profile):
+        """The mechanism has to be optional, because two of the three providers here
+        use none of it and a deployment may use none at all."""
+        from sage.providers import Model
+
+        for entry in profile.providers:
+            if entry.labels:
+                continue
+            for served in entry.models:
+                assert Model(entry.name, served).label, served
+
+    def test_the_name_lives_in_the_profile_and_not_in_the_package(self, profile):
+        """The standing rule for this repository, applied to one more word. A label is
+        copy, and `sage/` holds no copy — so the check is that the shown name appears
+        nowhere under the package, which is what would happen if a lookup table were
+        added to `sage/providers/base.py` instead of to the profile."""
+        from sage.providers import Model
+
+        entry = self.router(profile)
+        shown = Model(entry.name, entry.models[0]).label
+        for path in pathlib.Path(SAGE).rglob("*.py"):
+            assert shown not in path.read_text(encoding="utf-8"), (
+                f"{path.name} names the deployment's word for a model"
+            )
+
     def test_the_default_model_names_a_provider_this_profile_has(self, profile):
         """`SAGE_DEFAULT_MODEL` naming a provider the profile dropped is a session
         that starts on nothing. Checked here rather than trusted, because the default

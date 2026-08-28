@@ -306,6 +306,50 @@ def probe(entry: ProviderEntry, key: str, model_id: str, *, tools: bool = True) 
     return verdict
 
 
+def verdict_for(entry: ProviderEntry, key: str, model_id: str) -> dict:
+    """`probe`, and then again with the tools withdrawn if the first said nothing.
+
+    A tool call is not an answer to *this* app, and treating it as one let a broken
+    model through. `nemotron-3-ultra-free` was recorded `answered: true` with
+    `tool_calls: 2` and `chars: 0` — two calls, not one word — while readers were
+    getting "the model returned an empty answer" from it. `failing_since` never opened
+    an entry, so its seven-day clock never started, and the daily report called the
+    lineup healthy.
+
+    The asymmetry is in the app, so the probe has to mirror it: `turn.run` sends the
+    last request of a turn with the tools *withdrawn* (see `prompts.last_round_instruction`
+    and the comment above it), because a model that answers every round with another
+    tool call otherwise never reaches the round that writes prose. Whatever that final
+    request returns is the answer, and if it is empty the turn is empty.
+
+    So a model that emits calls and no text gets asked the way that round asks. Passing
+    that is what "working" means here; failing it starts the clock. The second request
+    is only spent on a model that produced no prose the first time, which is rare — a
+    day when the lineup is well costs exactly what it did before.
+    """
+    verdict = probe(entry, key, model_id)
+    if (
+        verdict.get("status") != 200
+        or (verdict.get("chars") or 0) > 0
+        or not verdict.get("tool_calls")
+    ):
+        return verdict
+
+    withdrawn = probe(entry, key, model_id, tools=False)
+    # The first request is what the verdict still describes — its latency, its tool
+    # calls, its tier — because that is the one the app's early rounds make. Only the
+    # judgement changes, and it says which request reached it.
+    verdict = {
+        **verdict,
+        "answered": bool(withdrawn.get("chars") or 0) and withdrawn.get("status") == 200,
+        "prose_seconds": withdrawn.get("seconds"),
+        "prose_chars": withdrawn.get("chars", 0),
+        "prose_error": withdrawn.get("error", ""),
+        "prose_status": withdrawn.get("status"),
+    }
+    return verdict
+
+
 def _looks_paid(body: str) -> bool:
     lowered = (body or "").lower()
     return any(mark in lowered for mark in PAID_MARKS)
@@ -793,6 +837,19 @@ def _verdict_note(verdict: dict) -> str:
     if verdict.get("error"):
         return f" — {verdict['error'][:120]}"
     if not verdict.get("answered"):
+        if verdict.get("tool_calls"):
+            # The case `verdict_for` exists for, and the report has to distinguish it
+            # from a stream that carried nothing at all — one is a model that is up and
+            # cannot finish a turn, the other is a dead endpoint, and they read the same
+            # to a reader who only sees the error card.
+            note = (
+                f" — {verdict['tool_calls']} tool call(s) and no prose in "
+                f"{verdict.get('seconds')}s; asked again with the tools withdrawn "
+                f"and got {verdict.get('prose_chars', 0)} chars"
+            )
+            if verdict.get("prose_error"):
+                return note + f" ({verdict['prose_error'][:80]})"
+            return note
         return f" — 200 and an empty completion in {verdict.get('seconds')}s"
     parts = [f"{verdict.get('seconds')}s", f"{verdict.get('chars', 0)} chars"]
     if verdict.get("tool_calls"):
@@ -894,7 +951,7 @@ def run(parsed: argparse.Namespace) -> tuple[int, str, bool]:
             budget = parsed.probe_budget if parsed.probe_budget > 0 else len(queue)
             skipped = max(0, len(queue) - budget)
             for model_id in queue[:budget]:
-                verdict = probe(entry, key, model_id)
+                verdict = verdict_for(entry, key, model_id)
                 verdicts[model_id] = verdict
                 if verdict.get("tier") == "paid":
                     if model_id not in slot["paid"]:

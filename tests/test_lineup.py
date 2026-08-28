@@ -80,6 +80,114 @@ class TestFreeIsTheProfilesRule:
         assert not lineup_check.is_free(zen(), "muse-anything")
 
 
+class TestATOolCallIsNotAnAnswer:
+    """The gap that let a broken model stay in the picker for a day.
+
+    `nemotron-3-ultra-free` was recorded `answered: true` with `tool_calls: 2` and
+    `chars: 0` — two calls and not one word — while readers were being told "the model
+    returned an empty answer". `probe` counts either as answering, `failing_since` never
+    opened an entry, and the seven-day clock that would have denied it never started.
+
+    The asymmetry is in the app: `turn.run` sends the last request of a turn with the
+    tools withdrawn, because a model that answers every round with another tool call
+    otherwise never reaches the round that writes prose. Whatever that request returns
+    is the answer. So the probe has to ask that question too.
+    """
+
+    def replies(self, monkeypatch, *rounds):
+        """Script `probe` by call order, and record how it was asked each time."""
+        asked = []
+
+        def fake(entry, key, model_id, *, tools=True):
+            asked.append(tools)
+            return {"model": model_id, **rounds[len(asked) - 1]}
+
+        monkeypatch.setattr(lineup_check, "probe", fake)
+        return asked
+
+    def test_prose_on_the_first_ask_is_the_end_of_it(self, monkeypatch):
+        """The common case must not cost a second request."""
+        asked = self.replies(
+            monkeypatch, {"status": 200, "chars": 40, "tool_calls": 1, "answered": True}
+        )
+        verdict = lineup_check.verdict_for(zen(), "", "m1")
+        assert verdict["answered"] is True
+        assert asked == [True], "a working model was probed twice"
+
+    def test_a_tool_call_with_no_prose_is_asked_again_without_tools(self, monkeypatch):
+        asked = self.replies(
+            monkeypatch,
+            {"status": 200, "chars": 0, "tool_calls": 2, "answered": True, "seconds": 21},
+            {"status": 200, "chars": 180, "answered": True, "seconds": 2},
+        )
+        verdict = lineup_check.verdict_for(zen(), "", "m1")
+        assert asked == [True, False], "the second ask must withdraw the tools"
+        assert verdict["answered"] is True, (
+            "it can write prose when nothing else is on offer, which is all the app "
+            "needs of it"
+        )
+        assert verdict["prose_chars"] == 180
+
+    def test_a_model_that_only_ever_calls_tools_is_failing(self, monkeypatch):
+        """The verdict that was wrong. Two calls, no words, and nothing to say when
+        the tools are taken away — which is every turn this app runs."""
+        asked = self.replies(
+            monkeypatch,
+            {"status": 200, "chars": 0, "tool_calls": 2, "answered": True, "seconds": 21},
+            {"status": 200, "chars": 0, "answered": False, "seconds": 19},
+        )
+        verdict = lineup_check.verdict_for(zen(), "", "m1")
+        assert asked == [True, False]
+        assert verdict["answered"] is False
+
+    def test_the_first_request_is_still_what_the_verdict_describes(self, monkeypatch):
+        """Only the judgement changes. Latency and tool calls stay the early rounds'
+        numbers, because those are the requests the app actually makes most of."""
+        self.replies(
+            monkeypatch,
+            {"status": 200, "chars": 0, "tool_calls": 2, "answered": True,
+             "seconds": 21, "tier": "free"},
+            {"status": 200, "chars": 0, "answered": False, "seconds": 19},
+        )
+        verdict = lineup_check.verdict_for(zen(), "", "m1")
+        assert verdict["seconds"] == 21
+        assert verdict["tool_calls"] == 2
+        assert verdict["tier"] == "free"
+
+    def test_a_refusal_is_not_asked_twice(self, monkeypatch):
+        """A 4xx or 5xx already said everything. Spending a second request on it is
+        the one direction this change must not add cost in."""
+        asked = self.replies(
+            monkeypatch,
+            {"status": 500, "error": "Internal server error", "answered": False},
+        )
+        assert lineup_check.verdict_for(zen(), "", "m1")["answered"] is False
+        assert asked == [True]
+
+    def test_the_report_says_which_of_the_two_shapes_it_is(self, monkeypatch):
+        """A model that is up and cannot finish a turn reads the same to a reader as a
+        dead endpoint — both are the error card — so the report has to tell them
+        apart or nobody can act on either."""
+        self.replies(
+            monkeypatch,
+            {"status": 200, "chars": 0, "tool_calls": 2, "answered": True, "seconds": 21},
+            {"status": 200, "chars": 0, "answered": False, "seconds": 19},
+        )
+        note = lineup_check._verdict_note(lineup_check.verdict_for(zen(), "", "m1"))
+        assert "tool call" in note
+        assert "no prose" in note
+        assert "tools withdrawn" in note
+
+    def test_a_stream_that_carried_nothing_at_all_still_reads_that_way(self):
+        """The other shape, unchanged: no calls and no text is a dead endpoint."""
+        note = lineup_check._verdict_note(
+            {"status": 200, "chars": 0, "tool_calls": 0, "answered": False,
+             "seconds": 300.23}
+        )
+        assert "empty completion" in note
+        assert "tool call" not in note
+
+
 class TestReview:
     def test_it_separates_appeared_from_vanished_from_unclassified(self):
         entry = zen(models=("a-free", "gone-free"))

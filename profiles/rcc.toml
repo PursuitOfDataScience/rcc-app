@@ -221,6 +221,15 @@ models_env = "SAGE_OPENROUTER_MODELS"
 # router sailed through.
 free_marks = ["openrouter/free"]
 free_marks_env = "SAGE_OPENROUTER_FREE_MARKS"
+# What the picker calls it, because the served id is not a name — it is the billing
+# arrangement, and a reader choosing a row is not choosing a billing arrangement. The id
+# is untouched everywhere it counts: it is what goes upstream, what the feedback log and
+# `tools/agent_bench.py` record, and what the error card's technical-details panel
+# prints, so nothing that measures a model is measuring the nickname.
+#
+# "enigma" rather than a model name, because there is no one model to name: the row is a
+# different model every turn and any specific name would be wrong most of the time.
+labels = { "openrouter/free" = "enigma" }
 free_only = true
 free_only_env = "SAGE_OPENROUTER_FREE_ONLY"
 
@@ -317,7 +326,25 @@ models = [
 # Model is unavailable` three out of three, the second of them ranked high enough to be
 # what an automatic failover reached for. Filtering happens in the adapter's `models()`,
 # so nothing downstream can select one.
-deny = ["deepseek-v4-flash-free", "muse-spark-1.2-contributor-free"]
+#
+# The two Nemotrons joined on 2026-08-28, reported from the running app and confirmed by
+# probe: both still in `GET /models`, neither able to answer. `nemotron-3.5-lightning-free`
+# was this deployment's default model, chosen for being the fastest thing on the tier at
+# 2.2s, and it now returns an empty stream; `nemotron-3-ultra-free` was what an automatic
+# failover reached for. The same two models on OpenRouter return zero chunks as well, so
+# this is the model family rather than the gateway, and no amount of retrying reaches an
+# answer through them.
+#
+# Left in `models` above rather than deleted from it, deliberately: that list is the
+# preference order, this list is what is offered, and a model that comes back should come
+# back at the rank it had. `lineup_check.py` takes a name off here the moment a probe
+# answers.
+deny = [
+    "deepseek-v4-flash-free",
+    "muse-spark-1.2-contributor-free",
+    "nemotron-3.5-lightning-free",
+    "nemotron-3-ultra-free",
+]
 deny_env = "SAGE_ZEN_DENY"
 free_marks = ["-free", "big-pickle"]
 free_marks_env = "SAGE_ZEN_FREE_MARKS"

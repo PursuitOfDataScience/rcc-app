@@ -235,6 +235,21 @@ class ProviderEntry:
     #: Model ids never offered, however the provider lists them. See the class
     #: docstring: this is "known not to work", not "cannot be paid for".
     deny: tuple[str, ...] = ()
+    #: `(served id, what the reader is shown)` pairs. The id is untouched everywhere it
+    #: matters — it is what goes upstream, what `Model.key` is built from, what the
+    #: feedback log and `tools/agent_bench.py` record, and what the error card's
+    #: technical-details panel prints — so nothing that measures a model is measuring a
+    #: nickname.
+    #:
+    #: It exists because a served id is sometimes an implementation detail wearing a
+    #: name. A router that picks a free model per request has to be *called* something
+    #: in a picker a reader chooses from, and the provider's own id for it describes the
+    #: billing arrangement rather than the thing. Naming is deployment copy, which is
+    #: why it lives here and not in `sage/`: a second deployment renames it or does not.
+    #:
+    #: Pairs rather than a dict because every other field on this frozen dataclass is a
+    #: tuple, and `label_for` is the only reader.
+    labels: tuple[tuple[str, str], ...] = ()
     #: One sentence shown when no key is set anywhere — where to get one, what it
     #: looks like. The only screen a reader sees before the app stops.
     hint: str = ""
@@ -253,6 +268,12 @@ class ProviderEntry:
     #: product's string is claiming to BE that product to obtain its quota, so
     #: nothing here does it for you: the shipped profile leaves it empty.
     user_agent: str = ""
+
+    def label_for(self, model_id: str) -> str:
+        """What to show for this served id, or "" to let the id speak for itself."""
+        return next(
+            (shown for served, shown in self.labels if served == model_id), ""
+        )
 
 
 @dataclass(frozen=True)
@@ -384,6 +405,16 @@ def _provider(raw: dict) -> ProviderEntry:
     deny_env = str(raw.get("deny_env", "")).strip()
     if deny_env:
         deny = env.items(deny_env, deny)
+    # No `labels_env`, unlike every field above it. The others are lists of ids or a
+    # flag, which an environment variable can carry; a mapping cannot be spelled in one
+    # without inventing a syntax to get it wrong in. A deployment that wants different
+    # names has a profile of its own — that is what a profile is.
+    shown = raw.get("labels")
+    labels = tuple(
+        (str(served), str(text).strip())
+        for served, text in (shown.items() if isinstance(shown, dict) else ())
+        if str(served).strip() and str(text).strip()
+    )
     return ProviderEntry(
         name=name,
         kind=str(raw.get("kind", "openai")),
@@ -393,6 +424,7 @@ def _provider(raw: dict) -> ProviderEntry:
         free_marks=marks,
         free_only=free_only,
         deny=deny,
+        labels=labels,
         hint=str(raw.get("hint", "")),
         user_agent=str(raw.get("user_agent", "")),
     )

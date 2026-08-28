@@ -23,6 +23,7 @@ has to change and none of them are settings.
 | `SAGE_SYNONYM_WEIGHT` | `0.8` | Weight of expanded synonym terms |
 | `SAGE_HISTORY_CHAR_BUDGET` | `48000` | History size before oldest turns are trimmed |
 | `SAGE_MAX_PROMPT_CHARS` | `8000` | Longest question accepted |
+| *(no variable)* | `openrouter/free` → `enigma` | The picker name, set by `labels` in the profile. See [Naming a model](#naming-a-model) — it has no environment override on purpose |
 | `SAGE_OPENROUTER_FREE_MARKS` | `openrouter/free` | Which OpenRouter models the picker offers. The default is the router's own id, so exactly one is offered; `:free` would offer all 18 free models and hand their upkeep back to you |
 | `SAGE_OPENROUTER_FREE_ONLY` | `1` | Off, the picker offers all 387 models OpenRouter fronts, most of which need a balance |
 | `SAGE_ZEN_DENY` | *(see profile)* | Model ids never offered, however the provider lists them. For a model that is served and cannot answer — maintained by `lineup.yml`, and cleared when the model answers again |
@@ -71,7 +72,9 @@ knows which is in use.
 
 - **Mistral** — the official SDK.
 - **OpenRouter** — `https://openrouter.ai/api/v1`, and the entry is one model id:
-  `openrouter/free`, OpenRouter's *Free Models Router*. It picks a free model per
+  `openrouter/free`, OpenRouter's *Free Models Router*, shown in the picker as
+  **`enigma`** because the served id names a billing arrangement and a reader choosing a
+  row is not choosing one — see [Naming a model](#naming-a-model). It picks a free model per
   request from whatever is currently up, filtered to the ones supporting the parameters
   the request carries, so a tool-calling turn is never routed to a model that cannot
   call a tool. This is the provider that needs no lineup maintenance — see
@@ -100,6 +103,27 @@ Models that cannot call tools answer from a **single retrieval pass** instead of
 search/read loop — searched up front, matching sections in the prompt, still cited.
 Set `SAGE_TOOLLESS_MODELS`, or let the app detect it: a provider that rejects tools is
 retried that way.
+
+### Naming a model
+
+A picker row is normally the model id with the tier marker taken off — billing plumbing
+is not part of a name. That is not enough for an id that is not a name at all:
+`openrouter/free` says which free tier the request draws on, and the row behind it is a
+different model every turn, so no specific model name would be right either.
+
+So a provider entry may carry `labels`, a mapping of served id to the word the reader
+sees:
+
+```toml
+labels = { "openrouter/free" = "enigma" }
+```
+
+The id is untouched everywhere it counts — upstream, in `Model.key`, in the feedback
+log, in `tools/agent_bench.py`, and in the error card's technical-details panel — so
+nothing that measures a model ends up measuring a nickname. There is deliberately no
+`SAGE_*` override: a mapping cannot be spelled in an environment variable without
+inventing a syntax to get wrong, and a deployment that wants different names has a
+profile of its own.
 
 ### A note on the free tier
 
