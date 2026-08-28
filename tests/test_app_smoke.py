@@ -1464,7 +1464,14 @@ class TestWalkingTheLineup:
     def test_every_reason_a_turn_can_fail_over_for_reads_as_english(self):
         """The two lists have to be held together, because the failover set is now
         derived from `llm.KINDS` — a kind added there joins the walk automatically and
-        would otherwise print its own name to the reader."""
+        would otherwise print its own name to the reader.
+
+        Under the stub like every other test in this file, and not as an incidental:
+        CI installs pytest, ruff, pypdf and httpx and *not* Streamlit — that is what
+        keeps the job fast — so `sage.ui.turn` cannot be imported bare. It passed here
+        and failed there, which is the one direction a check must not fail in.
+        """
+        stub_streamlit.install()
         from sage.ui import turn as turn_module
 
         missing = sorted(turn_module.FAILOVER_KINDS - set(turn_module.REASONS))
