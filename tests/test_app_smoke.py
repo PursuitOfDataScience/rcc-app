@@ -593,12 +593,12 @@ class TestModelPicker:
     def test_choosing_a_model_switches_to_it(self, monkeypatch):
         mistral = ScriptedProvider([], name="mistral", models=("m1",))
         zen = ScriptedProvider([], name="opencode", models=("z1",))
-        session = self.session() | {"failed_over": True, "notice": "stale"}
+        session = self.session() | {"tried": ["mistral:m1"], "notice": "stale"}
         stub, _m = run_app(monkeypatch, client=mistral, extra={"opencode": zen},
                            session=session, opencode=True, buttons={"pick-1": True})
         assert stub.session_state["model"] == "opencode:z1"
         # A deliberate choice re-arms the automatic one and drops its message.
-        assert stub.session_state["failed_over"] is False
+        assert stub.session_state["tried"] == []
         assert stub.session_state["notice"] == ""
 
     def test_the_selected_model_is_the_one_used(self, monkeypatch):
@@ -710,12 +710,12 @@ class TestComposerStrip:
             "messages": [{"role": "user", "text": "hi", "attachments": []}],
             "processing": False,
             "notice": "stale",
-            "failed_over": True,
+            "tried": ["mistral:m1"],
         }
         stub, _m = self.two_providers(monkeypatch, session, buttons={"clear": True})
         assert stub.session_state["messages"] == []
         assert stub.session_state["notice"] == ""
-        assert stub.session_state["failed_over"] is False
+        assert stub.session_state["tried"] == []
 
     def test_nothing_under_the_input_but_controls(self, monkeypatch):
         """The caveat line is gone, and nothing may quietly replace it.
@@ -999,7 +999,7 @@ class TestQuotaFailover:
         mistral = ScriptedProvider([], name="mistral", models=("m1",))
         session = self.session() | {
             "model": "opencode:z1",
-            "failed_over": True,
+            "tried": ["mistral:m1"],
             "switched_from": ("Mistral · m1", "quota"),
             "notice": "Mistral · m1 is unavailable (out of credit). Retrying…",
         }
@@ -1026,7 +1026,8 @@ class TestQuotaFailover:
         mistral = ScriptedProvider([], name="mistral", models=("m1",))
         session = self.session() | {
             "model": "opencode:z1",
-            "failed_over": True,
+            # The lineup is m1 and z1, and m1 has had its turn: nothing is left.
+            "tried": ["mistral:m1"],
             "switched_from": ("Mistral · m1", "quota"),
             "notice": "Mistral · m1 is unavailable (out of credit). Retrying…",
         }
@@ -1059,7 +1060,7 @@ class TestQuotaFailover:
         zen = ScriptedProvider([], name="opencode", models=("z1",))
         session = self.session() | {
             "processing": False, "error": "out of credit", "error_detail": "HTTP 402",
-            "failed_over": True,
+            "tried": ["mistral:m1"],
         }
         stub, _m = run_app(monkeypatch, client=mistral, extra={"opencode": zen},
                            session=session, opencode=True,
@@ -1067,7 +1068,10 @@ class TestQuotaFailover:
         assert stub.session_state["model"] == "opencode:z1"
         assert stub.session_state["processing"] is True
         assert stub.session_state["error"] is None
-        assert stub.session_state["failed_over"] is False
+        assert stub.session_state["tried"] == [], (
+            "a hand-picked model is a fresh attempt at the question, so the walk's "
+            "ledger has to be empty or the retry cannot fail over"
+        )
 
     def test_no_switch_button_when_there_is_nowhere_to_switch_to(self, monkeypatch):
         provider = ScriptedProvider([], models=("m1",))
@@ -1085,13 +1089,21 @@ class TestQuotaFailover:
         stub, _m = run_app(monkeypatch, client=provider, session=session)
         assert stub.session_state["notice"] == ""
 
-    def test_it_only_fails_over_once_so_it_cannot_ping_pong(self, monkeypatch):
+    def test_it_never_asks_a_model_twice_so_it_cannot_ping_pong(self, monkeypatch):
+        """What bounds the walk is `tried`, not a count of hops.
+
+        Two providers, both spent. The turn started on m1, failed over to z1, and z1
+        refused too — and the only model that could come next is the one that has
+        already refused. `View.alternative` skips it, the walk is out of lineup, and
+        the error card is what is left. There is no hop budget doing this work: a
+        finite lineup asked without repeats terminates on its own.
+        """
         mistral = ScriptedProvider([], name="mistral", models=("m1",),
                                    error=self._payment_required())
         zen = ScriptedProvider([], name="opencode", models=("z1",),
                                error=self._payment_required())
         session = self.session()
-        session["failed_over"] = True
+        session["tried"] = ["mistral:m1"]
         session["model"] = "opencode:z1"
         stub, _m = run_app(monkeypatch, client=mistral, extra={"opencode": zen},
                            session=session, opencode=True)
@@ -1173,10 +1185,10 @@ class TestASpentFreeAllowance:
     def test_when_every_model_is_spent_it_stops_and_says_so(self, monkeypatch):
         """The state a shared IP puts a deployment in near the end of a UTC day.
 
-        The hop limit is what makes this end: without it a turn would walk the whole
-        picker, one provider call per model, on a tier where every one of them is
-        going to refuse. It stops with an error card the reader can act on rather
-        than a spinner."""
+        The walk does go through the whole picker now — that is the point of it — so
+        what ends this is running out of lineup rather than running out of budget. With
+        every model asked, there is no alternative left and the turn stops on an error
+        card the reader can act on rather than on a spinner."""
         zen = ScriptedProvider(
             [], name="opencode", error=self._free_limit_429(),
             models=("nemotron-3.5-lightning-free", "deepseek-v4-flash-free",
@@ -1186,9 +1198,9 @@ class TestASpentFreeAllowance:
             "messages": [{"role": "user", "text": "hello", "attachments": []}],
             "processing": True,
             "model": "opencode:nemotron-3.5-lightning-free",
-            # Three models already refused this turn: the hop budget is spent.
+            # Four of the five already refused this turn, and this is the fifth.
             "tried": ["opencode:deepseek-v4-flash-free", "opencode:hy3-free",
-                      "opencode:mimo-v2.5-free"],
+                      "opencode:mimo-v2.5-free", "opencode:big-pickle"],
         }
         stub, _m = run_app(monkeypatch, client=zen, session=session, opencode=True)
         assert stub.session_state["processing"] is False, "it must not spin"
@@ -1350,6 +1362,184 @@ class TestSwitchingWithinAProvider:
         stub, _m = run_app(monkeypatch, client=mistral, extra={"opencode": zen},
                            session=self.session(), opencode=True)
         assert stub.button_labels.get("switch-model") == "→ Use m1"
+
+
+class TestWalkingTheLineup:
+    """A model that is not working hands the question on, until nothing is left.
+
+    Reported from the running app, on `opencode:nemotron-3-ultra-free`:
+
+        Could not complete that request
+        The model returned an empty answer. Try again, or use a different model.
+
+    Six models that would have answered were one row down the picker, and the machinery
+    for walking to them was already in this file — reserved for three of the eleven ways
+    a turn can fail, and the one the reader hit was not among them. The reader should
+    never have been shown that card: the app can read the advice on it and act on it.
+
+    So the failover set is now everything except `context`, and what bounds the walk is
+    the lineup rather than a hop count. These tests drive the app the way Streamlit
+    does — one import per script run — because a failover happens on the run *after* the
+    one that failed.
+    """
+
+    LINEUP = ("z1", "z2", "z3", "z4", "z5")
+
+    class Lineup:
+        """One provider whose models differ, because which model answers is the point.
+
+        `ScriptedProvider` replays turns by call order; this replays by model, so a
+        lineup where the fourth one works is expressible.
+        """
+
+        name = "opencode"
+
+        def __init__(self, ids, answers=(), error=None):
+            self._ids = tuple(ids)
+            self._answers = dict(answers)
+            self._error = error
+            self.asked: list[str] = []
+
+        def models(self):
+            return [providers.Model(self.name, name) for name in self._ids]
+
+        def stream(self, model, messages, tools):
+            self.asked.append(model)
+            if self._error is not None and model not in self._answers:
+                raise self._error
+            said = self._answers.get(model)
+            # No deltas at all is the shape the report came in as: the request
+            # succeeds, the stream ends, and nothing was said.
+            yield from ([event(said)] if said else [])
+
+    def session(self, **extra):
+        return {
+            "messages": [{"role": "user", "text": "what is a service unit?",
+                          "attachments": []}],
+            "processing": True,
+            "model": "opencode:z1",
+        } | extra
+
+    CARRIED = ("messages", "processing", "model", "tried", "switched_from", "notice")
+
+    def drive(self, monkeypatch, provider, *, session=None, runs=12):
+        """Re-enter the app until the turn settles, carrying the walk's state along.
+
+        The bound is a guard, not a budget: a turn that has not settled in twelve runs
+        is spinning, and saying so beats hanging the suite.
+        """
+        session = session or self.session()
+        for _ in range(runs):
+            stub, _module = run_app(monkeypatch, client=provider, session=session,
+                                    opencode=True)
+            state = stub.session_state
+            if not state.get("processing"):
+                return stub
+            session = {key: state.get(key) for key in self.CARRIED}
+        raise AssertionError(f"still spinning after {runs} runs: {provider.asked}")
+
+    def test_an_empty_answer_hands_the_question_to_the_next_model(self, monkeypatch):
+        """The bug, at its smallest: one model says nothing, so ask another."""
+        zen = self.Lineup(self.LINEUP)
+        stub, _module = run_app(monkeypatch, client=zen, session=self.session(),
+                                opencode=True)
+        assert stub.session_state["error"] is None, (
+            "an empty answer is not something to show a card about while models remain"
+        )
+        assert stub.session_state["model"] != "opencode:z1"
+        assert stub.session_state["processing"] is True, "the turn should be retried"
+        assert stub.session_state["tried"] == ["opencode:z1"]
+
+    def test_the_notice_says_why_in_words_rather_than_in_kinds(self, monkeypatch):
+        """`REASONS` is what keeps an internal name off the screen. Without an entry
+        the line reads "z1 is unavailable (empty)"."""
+        zen = self.Lineup(self.LINEUP)
+        stub, _module = run_app(monkeypatch, client=zen, session=self.session(),
+                                opencode=True)
+        notice = stub.session_state["notice"]
+        assert "returned no answer" in notice
+        assert "(empty)" not in notice
+        assert "Retrying with" in notice
+
+    def test_every_reason_a_turn_can_fail_over_for_reads_as_english(self):
+        """The two lists have to be held together, because the failover set is now
+        derived from `llm.KINDS` — a kind added there joins the walk automatically and
+        would otherwise print its own name to the reader."""
+        from sage.ui import turn as turn_module
+
+        missing = sorted(turn_module.FAILOVER_KINDS - set(turn_module.REASONS))
+        assert not missing, f"no reader-facing reason for: {missing}"
+
+    def test_it_keeps_going_until_the_whole_lineup_is_spent(self, monkeypatch):
+        """"Until all the models have been used" — five, not three of five."""
+        zen = self.Lineup(self.LINEUP)
+        stub = self.drive(monkeypatch, zen)
+        assert zen.asked == list(self.LINEUP), (
+            f"the walk stopped early: {zen.asked}"
+        )
+        assert stub.session_state["error"], "and then it says so"
+        assert stub.session_state["processing"] is False, "it must not spin"
+        assert stub.session_state["notice"] == "", (
+            "no 'retrying with…' left over promising something that never happened"
+        )
+
+    def test_a_working_model_further_down_the_lineup_gets_to_answer(self, monkeypatch):
+        zen = self.Lineup(self.LINEUP, answers={"z4": "A service unit is an hour."})
+        stub = self.drive(monkeypatch, zen)
+        assert zen.asked == ["z1", "z2", "z3", "z4"], "it stops when one answers"
+        reply = stub.session_state["messages"][-1]
+        assert reply["role"] == "assistant"
+        assert reply["text"] == "A service unit is an hour."
+        assert reply["model"] == "opencode:z4"
+        assert stub.session_state["error"] is None
+        # Past tense only now, and about the model the reader actually left behind.
+        assert "z4 answered instead" in stub.session_state["notice"]
+        assert stub.session_state["tried"] == []
+
+    def test_a_failure_that_is_not_about_the_model_is_walked_too(self, monkeypatch):
+        """A 5xx used to be an error card on the first model that hiccupped, however
+        many were left. `llm.start` has already spent its retries by the time this
+        runs, so there is nothing else to try but somebody else."""
+        error = RuntimeError("Internal Server Error")
+        error.status_code = 503
+        zen = self.Lineup(self.LINEUP, answers={"z3": "Answered."}, error=error)
+        stub = self.drive(monkeypatch, zen)
+        assert stub.session_state["messages"][-1]["text"] == "Answered."
+        assert "not responding" in stub.session_state["notice"]
+
+    def test_a_conversation_too_long_for_one_model_is_too_long_for_all_of_them(
+        self, monkeypatch
+    ):
+        """The one exception, and the reason it is one: the request is oversized, so
+        every model in the lineup refuses the same message the same way. Walking them
+        is a certain failure per model, and the remedy is the reader's."""
+        error = RuntimeError("This model's maximum context length is 8192 tokens")
+        error.status_code = 400
+        zen = self.Lineup(self.LINEUP, error=error)
+        stub, _module = run_app(monkeypatch, client=zen, session=self.session(),
+                                opencode=True)
+        assert zen.asked == ["z1"], "it must not try the same oversized request again"
+        assert "too long" in stub.session_state["error"]
+        assert stub.session_state["processing"] is False
+
+    def test_the_walk_can_be_switched_off(self, monkeypatch):
+        """One attempt is the off position, and `evals/harness.py` sets it: a per-model
+        benchmark that let the app substitute a working model would score the model it
+        asked on another model's answer."""
+        monkeypatch.setattr(config, "MAX_MODEL_ATTEMPTS", 1)
+        zen = self.Lineup(self.LINEUP)
+        stub, _module = run_app(monkeypatch, client=zen, session=self.session(),
+                                opencode=True)
+        assert zen.asked == ["z1"]
+        assert stub.session_state["error"] == llm.AssistantError("empty").user_message
+        assert stub.session_state["processing"] is False
+
+    def test_a_ceiling_below_the_lineup_is_honoured(self, monkeypatch):
+        monkeypatch.setattr(config, "MAX_MODEL_ATTEMPTS", 2)
+        zen = self.Lineup(self.LINEUP)
+        stub = self.drive(monkeypatch, zen)
+        assert zen.asked == ["z1", "z2"]
+        assert stub.session_state["error"]
 
 
 class TestConversationRendering:

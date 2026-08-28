@@ -41,14 +41,21 @@ if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
 import stub_streamlit  # noqa: E402
-from sage import links, llm, providers, redact, runtime  # noqa: E402
+from sage import config, links, llm, providers, redact, runtime  # noqa: E402
 from sage import tools as tools_module  # noqa: E402
 from sage.profile import active as _active  # noqa: E402
 
 # How many script runs one question may take. A turn that fails over asks the next
 # model on the *following* run — that is what `failover_to` and `st.rerun()` mean — so a
 # harness that imports the app once would record the failure and never see the answer.
-# Six covers MAX_MODEL_HOPS plus the cross-provider hop with room to spare.
+#
+# Six was sized against the app's old three-hop ceiling. The app now walks the whole
+# lineup, but this harness pins each turn to the model it was asked about
+# (`config.MAX_MODEL_ATTEMPTS = 1`, set in `prepare`), so no hop happens here at all
+# and six is headroom rather than a bound. The pin is the point: a per-model benchmark
+# that let the app substitute a working model would score the model it asked on another
+# model's answer, and the record it writes — `model` beside `answered_by` — would be
+# the only trace of it.
 MAX_SCRIPT_RUNS = 6
 
 
@@ -147,7 +154,7 @@ _ORIGINALS: dict[str, object] = {}
 
 
 def restore() -> None:
-    """Put the five patched seams back.
+    """Put the patched seams back.
 
     Not housekeeping: these are patches on modules the whole process shares, so a test
     that prepared the harness and did not restore it would hand `sage.providers.build`
@@ -161,12 +168,13 @@ def restore() -> None:
     tools_module.ToolRunner.run = _ORIGINALS["ToolRunner.run"]
     links.strip_inline_citations = _ORIGINALS["strip_inline_citations"]
     redact.apply = _ORIGINALS["redact.apply"]
+    config.MAX_MODEL_ATTEMPTS = _ORIGINALS["config.MAX_MODEL_ATTEMPTS"]
     _ORIGINALS.clear()
     _PROVIDERS.clear()
 
 
 def prepare(build_provider=None, *, fresh: bool = False) -> runtime.Runtime:
-    """Patch the five seams and build the index once. Idempotent unless `fresh`.
+    """Patch the seams and build the index once. Idempotent unless `fresh`.
 
     Every patch is on a module `stub_streamlit.forget_importers()` leaves alone
     (`sage.providers`, `sage.runtime`, `sage.tools`, `sage.links`, `sage.redact`), which
@@ -192,8 +200,22 @@ def prepare(build_provider=None, *, fresh: bool = False) -> runtime.Runtime:
             "ToolRunner.run": tools_module.ToolRunner.run,
             "strip_inline_citations": links.strip_inline_citations,
             "redact.apply": redact.apply,
+            "config.MAX_MODEL_ATTEMPTS": config.MAX_MODEL_ATTEMPTS,
         }
     )
+    # One model per turn, whatever the app would do for a reader. The app walks the
+    # lineup when a model fails in a way another model might not — an empty stream, a
+    # spent allowance, a 5xx — which is right in front of a reader and exactly wrong in
+    # front of a benchmark: the record would name the model that was asked and carry
+    # another model's answer, and `answered_by` would be the only trace of it.
+    #
+    # Patched on `config` for the reason `_toolless` explains, and it holds across the
+    # script runs one turn may take because `sage.config` survives
+    # `forget_importers()`. It is in `_ORIGINALS` because that durability is also how
+    # it would leak: a test file that prepared the harness and did not restore would
+    # hand a lineup-of-one to every test that ran afterwards, `tests/test_app_smoke.py`
+    # included, where failing over is the thing being measured.
+    config.MAX_MODEL_ATTEMPTS = 1
     make = build_provider or _ORIGINALS["providers.build"]
 
     def build(name: str, api_key: str):
@@ -297,8 +319,6 @@ def without_tools(model_key: str):
     this way. `sage.config` survives `forget_importers()` (it drops only `streamlit`,
     `app` and `sage.ui.*`), so the patch holds across the script runs one turn may take.
     """
-    from sage import config  # noqa: PLC0415
-
     mark = model_key.split(":", 1)[-1].strip().lower() or model_key.strip().lower()
     before = config.TOOLLESS_MODELS
     config.TOOLLESS_MODELS = (*before, mark)
@@ -385,9 +405,9 @@ def _drive(
 
     Kept separate from `run_turn` so a conversation can reuse the same session, and so
     the state reset below happens in exactly one place. That reset mirrors
-    `state.start_new_turn`, minus the limiter: `tried` and `failed_over` belong to the
-    turn that just ended, and a second question that inherits them would believe every
-    model had already refused it.
+    `state.start_new_turn`, minus the limiter: `tried` belongs to the turn that just
+    ended, and a second question that inherits it would believe every model had
+    already refused it.
     """
     global _TRACE
 
@@ -404,7 +424,6 @@ def _drive(
     state["error"] = None
     state["error_detail"] = ""
     state["notice"] = ""
-    state["failed_over"] = False
     state["tried"] = []
     state["switched_from"] = None
     before = len(state["messages"])

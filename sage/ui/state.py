@@ -56,10 +56,12 @@ SESSION_DEFAULTS: tuple[tuple[str, object], ...] = (
     ("error_detail", ""),
     ("model", ""),
     ("notice", ""),
-    ("failed_over", False),
-    # Models this turn has already asked and been refused by. A refusal about a
-    # model — a spent free allowance — may be walked past to the next one, and
-    # this is what stops the walk landing back where it started.
+    # Models this turn has already asked and been refused by. A failure another
+    # model might not have — which is nearly all of them; see `turn.FAILOVER_KINDS`
+    # — is walked past to the next one, and this is the ledger that both stops the
+    # walk landing back where it started and ends it once the lineup is spent. It
+    # replaced a separate boolean for key-level failures, which capped those at one
+    # hop however many models were left.
     ("tried", []),
     # (label, kind) of a model an automatic failover moved off. Held until the
     # replacement has actually answered, so the notice can never claim a switch
@@ -170,16 +172,14 @@ def start_new_turn(
     # Both of these belong to the turn that just ended, and a new question is where
     # they stop being true.
     #
-    # `failed_over` is the once-per-turn guard that stops a bad key ping-ponging
-    # between providers. Cleared only on a *successful* answer, it survived a failover
-    # that then failed for some other reason and stayed set for the rest of the
-    # session — so every later quota error showed an error card instead of failing
+    # `tried` is the walk's ledger. Cleared only on a *successful* answer, it survived
+    # a failover that then failed for some other reason and stayed set for the rest of
+    # the session — so every later refusal showed an error card instead of failing
     # over, until the reader picked a model by hand.
     #
     # `notice` is the "X was unavailable, Y answered instead" line. It renders under
     # the transcript, which puts a notice about the previous turn directly above the
     # new question while the new one generates, reading as if it belonged to it.
-    st.session_state.failed_over = False
     st.session_state.tried = []
     st.session_state.notice = ""
     st.session_state.attachments = []
@@ -205,7 +205,6 @@ def clear_conversation() -> None:
     st.session_state.upload_refusals = {}
     st.session_state.error = None
     st.session_state.notice = ""
-    st.session_state.failed_over = False
     st.session_state.tried = []
     st.session_state.switched_from = None
     st.session_state.uploader_key += 1

@@ -46,8 +46,18 @@ class View:
         return self.runtime.toolset.public_names
 
     #: Failures whose remedy is a different model on the SAME provider, because the
-    #: key is fine and only this model is unavailable.
-    PER_MODEL = frozenset({"allowance"})
+    #: key is fine and only this model is unavailable. Each of these is the *model*
+    #: declining: a spent free allowance is metered per model, an empty stream and a
+    #: written-out reasoning monologue are things one model does and another does not,
+    #: a 5xx is that model's backend, and an unclassified failure has nothing pointing
+    #: at the key. The ones left out — a spent key, a rejected key, an unreachable
+    #: host — are about the credential or the connection, and the only useful jump
+    #: from those is to a different provider.
+    #:
+    #: This decides *direction*, not whether to hop at all: `turn.FAILOVER_KINDS` and
+    #: `config.MAX_MODEL_ATTEMPTS` decide that, and a key-level failure walks the
+    #: lineup too — starting with the other provider.
+    PER_MODEL = frozenset({"allowance", "empty", "rate_limit", "unavailable", "unknown"})
 
     def alternative(self, kind: str = "", skip: Sequence[str] = ()) -> Model | None:
         """The best other model to try, given what went wrong.

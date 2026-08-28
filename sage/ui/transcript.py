@@ -462,7 +462,6 @@ def render_error_card(view: View) -> None:
             # On both paths, not just the deliberate switch: "Try again" is the reader
             # asking for another attempt, and leaving the guard set means the retry
             # cannot fail over even though this is a fresh attempt at the question.
-            st.session_state.failed_over = False
             st.session_state.tried = []
             st.session_state.error = None
             st.session_state.error_detail = ""

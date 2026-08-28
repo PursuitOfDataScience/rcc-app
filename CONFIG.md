@@ -17,6 +17,7 @@ has to change and none of them are settings.
 | `SAGE_MAX_TOKENS` | `8000` | Response cap. Generous: 1600 cut answers off mid-sentence |
 | `SAGE_TEMPERATURE` | `0.2` | Sampling temperature |
 | `SAGE_MAX_TOOL_ROUNDS` | `4` | Search/read rounds before the turn must answer |
+| `SAGE_MAX_MODEL_ATTEMPTS` | `0` *(the whole lineup)* | Models one turn may ask before it gives up. A model that fails in a way another model might not — an empty reply, a spent allowance, a 5xx — hands the question to the next one automatically. `1` switches that off; a lineup of eight can cost forty provider calls in the worst case, which is what `SAGE_CALL_BUDGET` is for |
 | `SAGE_SEARCH_RESULTS` | `6` | Results per search |
 | `SAGE_MAX_PER_PAGE` | `2` | Sections of one page allowed in a result set |
 | `SAGE_SYNONYM_WEIGHT` | `0.8` | Weight of expanded synonym terms |
