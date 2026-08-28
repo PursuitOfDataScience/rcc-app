@@ -168,8 +168,7 @@ def render_model_picker(view: View) -> None:
             ):
                 st.session_state.model = option.key
                 # A deliberate choice clears the record of the automatic one,
-                # so the next quota error can fail over again.
-                st.session_state.failed_over = False
+                # so the next refusal can fail over again.
                 st.session_state.tried = []
                 st.session_state.switched_from = None
                 st.session_state.notice = ""

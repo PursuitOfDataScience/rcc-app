@@ -64,6 +64,22 @@ MAX_TOOL_ROUNDS = _env_int("SAGE_MAX_TOOL_ROUNDS", 4, minimum=1)
 # told "this conversation got too long" about a conversation of one question.
 TOOL_RESULT_CHAR_BUDGET = _env_int("SAGE_TOOL_RESULT_CHAR_BUDGET", 60000, minimum=1)
 REQUEST_RETRIES = _env_int("SAGE_REQUEST_RETRIES", 2, minimum=0)
+# How many models one turn may ask before it gives up, counting the one it started on.
+#
+# 0 means the whole lineup, and that is the default because the alternative was a dead
+# end the reader could do nothing about. A model that answers nothing at all — the
+# request succeeds, the stream carries no text — used to end the turn with "the model
+# returned an empty answer, try a different model" while six models that would have
+# answered sat one row down the picker, and the failover machinery that walks to them
+# already existed and was reserved for three of the eleven ways a turn can fail.
+#
+# Bounded only by the lineup, so the worst case is real and worth stating: a model that
+# fails *after* a full tool loop costs MAX_TOOL_ROUNDS + 1 provider calls, so a lineup
+# of eight can spend forty on one question. That is the price of not dead-ending, and
+# it is the same key CALL_BUDGET is there to protect — set that if the arithmetic
+# matters more than the answer. Set this to 1 to switch failover off entirely, which is
+# what `evals/harness.py` does so a per-model benchmark measures the model it asked.
+MAX_MODEL_ATTEMPTS = _env_int("SAGE_MAX_MODEL_ATTEMPTS", 0, minimum=0)
 
 # --- chunking --------------------------------------------------------------
 #

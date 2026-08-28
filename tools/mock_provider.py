@@ -20,6 +20,8 @@ script can switch scenarios between turns without restarting anything:
 
     echo '{"mode": "tools"}'            > /tmp/mock_provider.json   # search → read → answer
     echo '{"mode": "empty"}'            > /tmp/mock_provider.json   # a completion with no text
+    echo '{"mode": "empty", "empty_except": ["mock-toolless-free"]}' \
+                                        > /tmp/mock_provider.json   # …except one model
     echo '{"status": 402}'              > /tmp/mock_provider.json   # out of credit
     echo '{"mode": "long", "pace": 0.1}'> /tmp/mock_provider.json   # a slow, long answer
     echo '{"mode": "quiet"}'            > /tmp/mock_provider.json   # 40 empty deltas, then text
@@ -209,7 +211,14 @@ class Handler(BaseHTTPRequestHandler):
             if mode == "long":
                 text = "\n\n".join(f"Paragraph {n}. {ANSWER}" for n in range(6))
             if mode == "empty":
-                text = ""
+                # Every model says nothing, unless it is named in `empty_except` —
+                # which is how a lineup where the *fourth* model works is expressible,
+                # and that is the shape the app's failover walk has to be driven
+                # through. One flat mode could only show the walk ending in the error
+                # card, never the answer that is the point of walking.
+                text = "" if request.get("model") not in (
+                    settings.get("empty_except") or []
+                ) else text
             words = text.split(" ") if text else []
             for start in range(0, len(words), 3):
                 yield sse(delta(text=" ".join(words[start:start + 3]) + " "))

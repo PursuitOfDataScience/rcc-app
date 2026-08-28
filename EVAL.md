@@ -188,15 +188,21 @@ env -u MISTRAL_API_KEY python tools/agent_bench.py --models all --limit 8 --nega
   --sleep 0.5 --out report/
 ```
 
-**One provider per run.** With two configured, a turn that loses its allowance fails
-over and is answered by a different model than the row it lands in — `answered_by`
-records it, but the cleanest measurement does not need the footnote. Unsetting the paid
-key also means a benchmark cannot spend money.
+**One provider per run.** Unsetting the paid key means a benchmark cannot spend money,
+and it keeps the lineup to one row of the picker.
+
+It is no longer what stops a row being scored on another model's answer, though: the app
+walks its whole lineup when a model fails in a way another model might not, so
+`harness.prepare` pins every turn to one attempt (`config.MAX_MODEL_ATTEMPTS = 1`). A
+turn that would have failed over is recorded as `refused` on the model that refused it,
+which is the measurement Axis B is asking for. Under a reader it would have been handed
+on instead.
 
 `evals/harness.py` drives `app.py` itself under the stubbed Streamlit, so what is
-measured is the real tool loop, the real history budget, the real failover and the real
-citation post-processing — including the answer *after* `links.strip_*` has rewritten it
-and the raw text before, which is the only way to see what those 840 lines removed.
+measured is the real tool loop, the real history budget and the real citation
+post-processing — including the answer *after* `links.strip_*` has rewritten it and the
+raw text before, which is the only way to see what those 840 lines removed. Failover is
+the one seam deliberately held open, for the reason above.
 
 **Keep the transcripts.** `--rescore` can only reach a number already reported if the raw
 turns still exist, and deleting a pre-fix run's transcripts in a tidy-up cost this file a

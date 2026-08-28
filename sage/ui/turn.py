@@ -17,26 +17,39 @@ from .view import View
 
 logger = logging.getLogger(__name__)
 
-# Why a model refused, in words a user can act on.
+# Why a model refused, in words a user can act on. One entry per failover kind — the
+# notice reads "{model} is unavailable ({reason})", so a kind with no entry here puts
+# its own internal name in front of the reader: "nemotron-3-ultra is unavailable
+# (empty)". `tests/test_app_smoke.py` holds the two lists together.
 REASONS = {
     "quota": "out of credit",
     "auth": "its key was rejected",
     "allowance": "its free allowance is used up",
+    "empty": "it returned no answer",
+    "rate_limit": "it is refusing requests for now",
+    "unavailable": "it is not responding",
+    "network": "it could not be reached",
+    "unknown": "it failed",
 }
 
 # Failures worth trying a different model for, rather than showing a card about. Each
 # one means "this model cannot answer and another might"; `View.alternative` decides
 # which other, because a spent key and a spent free allowance point in opposite
 # directions.
-FAILOVER_KINDS = frozenset({"quota", "auth", "allowance"})
-
-# How many models one turn may work through when each refusal is about the model
-# rather than the key. Bounded because every hop is another provider call, and a tier
-# with nothing left would otherwise walk the whole picker; three is enough to clear
-# the case this exists for — three of seven free models spent at once — without a
-# question ever costing more than a handful of calls. A hop can never repeat a model,
-# so unlike the cross-provider guard this cannot ping-pong.
-MAX_MODEL_HOPS = 3
+#
+# Written as the complement of what cannot be helped by switching, not as a list of
+# what can. It was the other way round — three kinds of eleven — and the eight left
+# out included the one a reader actually hit: `empty`, a model that answered nothing
+# at all, which ended the turn with a card advising a different model while the
+# machinery for choosing one sat unused. Reported from the running app on
+# `opencode:nemotron-3-ultra-free`. A short deny-list fails safe when a new kind is
+# added to `llm._MESSAGES`; a short allow-list fails into that dead end again.
+#
+# `context` is the exception and the reason it is one: the conversation is too long
+# for the *request*, so every model in the lineup gets the same oversized message and
+# refuses it the same way. Walking them is a certain failure per model, and the remedy
+# is the reader's — clear the chat — which is what the card says.
+FAILOVER_KINDS = llm.KINDS - {"context"}
 
 # Streamlit signals "stop this script and start again" by raising. Matched by class
 # name rather than imported, because the module those classes live in has moved
@@ -232,6 +245,24 @@ def describe(copy, calls: list[dict]) -> str:
     if READ_DOC in names:
         return copy.status_reading
     return copy.status_working
+
+
+def attempts_allowed(view: View) -> int:
+    """How many models this turn may ask, counting the one it started on.
+
+    The lineup is the natural ceiling and `config.MAX_MODEL_ATTEMPTS` only narrows it.
+    Nothing else is needed to make the walk terminate: `tried` is what
+    `View.alternative` skips, so a turn can never ask the same model twice and "every
+    model, once" is finite by construction.
+
+    The fixed three this replaces was a third of the lineup on the deployment it was
+    written for, and it was written for one case — several free models spent at the
+    same time. Stopping there means stopping while the models that would have answered
+    are still on the list, which is the whole complaint.
+    """
+    limit = config.MAX_MODEL_ATTEMPTS
+    ceiling = len(view.models) or 1
+    return min(limit, ceiling) if limit > 0 else ceiling
 
 
 def detail(view: View, exc: BaseException | None) -> str:
@@ -545,7 +576,6 @@ def run(view: View) -> None:
                 "redacted": sorted(set(redacted)),
             }
         )
-        st.session_state.failed_over = False
         st.session_state.tried = []
         # Only now is a failover a fact worth reporting: the replacement model
         # has produced this answer. Any older notice belongs to an older turn.
@@ -580,22 +610,24 @@ def run(view: View) -> None:
         answer.empty()
         tried = list(st.session_state.tried)
         alternative = view.alternative(exc.kind, skip=tried)
-        # A refusal about the *model* may be walked past — the next model behind the
-        # same key is a different allowance. A refusal about the *key* gets one hop,
-        # to the other provider, because a bad key would otherwise ping-pong.
-        per_model = exc.kind in view.PER_MODEL
-        may_switch = (
-            len(tried) < MAX_MODEL_HOPS if per_model
-            else not st.session_state.failed_over
-        )
+        # One ledger and one rule for every kind: each model in the lineup may be
+        # asked once, and `View.alternative` picks which is next. The *direction* still
+        # depends on the failure — a refusal about the model prefers the next model
+        # behind the same key, a refusal about the key prefers the other provider —
+        # but the budget does not, because `tried` makes a repeat impossible and a
+        # finite lineup walked without repeats cannot ping-pong.
+        #
+        # Which is why the `failed_over` boolean that used to guard the key-level case
+        # is gone rather than kept alongside this. It capped a refusal about the key at
+        # a single hop, and on the deployment it was written for — where the second
+        # key was *also* out of credit — that one hop landed on the second dead end and
+        # stopped, with every model that would have answered still on the list.
+        may_switch = len(tried) + 1 < attempts_allowed(view)
         if exc.kind in FAILOVER_KINDS and alternative is not None and may_switch:
             # Out of credit on one provider is exactly what the second one is for.
             logger.info("%s unusable (%s); failing over to %s",
                         model.key, exc.kind, alternative.key)
-            if per_model:
-                st.session_state.tried = [*tried, model.key]
-            else:
-                st.session_state.failed_over = True
+            st.session_state.tried = [*tried, model.key]
             st.session_state.failover_to = alternative.key
             st.session_state.switched_from = (model.label, exc.kind)
             # Present tense: the retry has not happened yet. The past-tense

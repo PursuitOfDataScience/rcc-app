@@ -616,10 +616,10 @@ class TestWhatASecondTurnInherits:
     """State that belongs to the turn before must not colour the one after.
 
     `_drive` mirrors the reset in `state.start_new_turn`, minus the limiter — and it has to,
-    because a conversation reuses one session. `tried` and `failed_over` are the two that
-    matter: inherited, the second question believes every model has already refused it and
-    the failover it needs never happens. `notice` is the visible one — "X was unavailable,
-    Y answered instead" belongs to the turn that switched.
+    because a conversation reuses one session. `tried` is the one that matters: inherited,
+    the second question believes every model has already refused it and the failover it
+    needs never happens. `notice` is the visible one — "X was unavailable, Y answered
+    instead" belongs to the turn that switched.
     """
 
     TURNS = [{"text": "how do I submit a batch job"}, {"text": "and for a GPU?"}]
@@ -630,7 +630,7 @@ class TestWhatASecondTurnInherits:
         assert [record["notice"] for record in records] == ["", ""]
 
     def test_a_failed_first_turn_does_not_stop_the_second_answering(self):
-        """The shape `tried` and `failed_over` would break if they carried over."""
+        """The shape `tried` would break if it carried over."""
         class Spent(Exception):
             status_code = 402
 

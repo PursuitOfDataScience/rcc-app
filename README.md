@@ -49,7 +49,9 @@ and a base URL in your profile.
 ## What you get
 
 - 🔗 **Real citations** — deep-linked to the exact heading, plus Related sections.
-- 🔀 **Model picker** — switch mid-conversation; a spent quota fails over on its own.
+- 🔀 **Model picker** — switch mid-conversation; a model that cannot answer — spent
+  quota, spent free allowance, an empty reply — hands the question on by itself, and
+  keeps going down the lineup until one answers.
 - ⏹ **Stop & edit** — cut an answer short, or reword a question and re-ask it.
 - 💡 **Ask about a passage** — select any text in an answer and follow up on it.
 - 📎 **Attachments** — PDFs, screenshots, job scripts, logs. Judged on bytes, not names.

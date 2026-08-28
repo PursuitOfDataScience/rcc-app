@@ -58,6 +58,13 @@ _MESSAGES = {
     "unknown": "Something went wrong reaching the assistant. Please try again.",
 }
 
+#: Every failure this module can name. Public because the UI decides what to do about
+#: each one and has to be able to enumerate them rather than list them again by hand:
+#: `sage/ui/turn.py` fails a turn over to another model for all of these *except* a
+#: named few, so a kind added here is automatically covered instead of silently
+#: dead-ending the reader until someone remembers the second list.
+KINDS = frozenset(_MESSAGES)
+
 
 class AssistantError(Exception):
     def __init__(self, kind: str, original: BaseException | None = None) -> None:
