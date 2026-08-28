@@ -23,6 +23,25 @@ STREAM_TIMEOUT_MS = 120_000
 _TIER_MARK = "free"
 
 
+def _shown(provider: str, model_id: str) -> str:
+    """What the profile calls this served id, or "" if it says nothing.
+
+    Imported inside the call rather than at the top of the module. `Model` is the
+    contract the adapters are written against and it is constructed in tests and tools
+    that have no profile loaded at all; a module-level import would make reading a
+    label depend on the whole composition root being up. Failing soft is the right
+    answer here anyway — a missing profile means the id speaks for itself, which is
+    what it did before this existed.
+    """
+    try:
+        from ..profile import active  # noqa: PLC0415
+
+        entry = active().provider(provider)
+    except Exception:  # noqa: BLE001 — a name is never worth failing a render for
+        return ""
+    return entry.label_for(model_id) if entry else ""
+
+
 @dataclass(frozen=True)
 class Model:
     provider: str
@@ -46,7 +65,22 @@ class Model:
         what goes upstream, and in the discovery filter that reads it — but a picker
         row is where a reader is choosing between models, and the marker says nothing
         about the choice. Removed by segment, so only a whole `-free-` word goes.
+
+        The profile gets the first word, for the case the tier rule above cannot reach:
+        an id that is not a name at all. A router's id describes the billing
+        arrangement — which free tier it draws on — and a reader choosing a row in a
+        picker is not choosing a billing arrangement. So a deployment may say what to
+        call one, and only that; the id is untouched in `key`, upstream, in the feedback
+        log, in `tools/agent_bench.py` and in the technical-details panel, so nothing
+        that measures a model ends up measuring a nickname.
+
+        Read through the profile rather than a table here, because a name is copy and
+        `sage/` is not allowed to hold the deployment's words — `tests/test_profile.py`
+        enforces that, and would fail on a literal in this file.
         """
+        shown = _shown(self.provider, self.id)
+        if shown:
+            return shown
         kept = [part for part in self.id.split("-") if part.lower() != _TIER_MARK]
         return "-".join(kept) or self.id
 
